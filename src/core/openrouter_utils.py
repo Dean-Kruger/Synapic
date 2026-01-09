@@ -9,7 +9,7 @@ and returns an empty list on failure.
 import logging
 import requests
 from typing import List, Tuple, Optional, Any
-import config
+from src.core import config
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 SITE_URL = "https://github.com/deanable/hugging-juice-face"
