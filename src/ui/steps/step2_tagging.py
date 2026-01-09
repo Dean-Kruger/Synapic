@@ -318,7 +318,8 @@ class ConfigDialog(ctk.CTkToplevel):
                 results = [m.id for m in models]
                 self.after(0, lambda: self.show_hf_results(results))
             except Exception as e:
-                self.after(0, lambda: self.show_hf_results([], error=str(e)))
+                error_msg = str(e)
+                self.after(0, lambda: self.show_hf_results([], error=error_msg))
         
         import threading
         threading.Thread(target=worker, daemon=True).start()
@@ -384,7 +385,8 @@ class ConfigDialog(ctk.CTkToplevel):
                 models, _ = openrouter_utils.find_models_by_task("image-to-text", limit=100)
                 self.after(0, lambda: self.show_or_results(models))
             except Exception as e:
-                self.after(0, lambda: self.show_or_results([], error=str(e)))
+                error_msg = str(e)
+                self.after(0, lambda: self.show_or_results([], error=error_msg))
                 
         import threading
         threading.Thread(target=worker, daemon=True).start()

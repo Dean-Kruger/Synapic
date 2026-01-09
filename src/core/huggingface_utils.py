@@ -14,7 +14,7 @@ import requests
 from requests.exceptions import HTTPError
 from transformers import pipeline, AutoConfig, AutoTokenizer
 from threading import RLock
-import config
+from src.core import config
 import json
 import sys
 import platform
