@@ -230,7 +230,6 @@ class ConfigDialog(ctk.CTkToplevel):
             
         self.lbl_status.configure(text=f"Downloading {mid}...")
         self.progress.set(0)
-        self.btn_config.configure(state="disabled") # Lock UI
         
         import threading
         threading.Thread(target=self._download_worker, args=(mid,), daemon=True).start()
