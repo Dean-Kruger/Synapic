@@ -18,7 +18,10 @@ class Step1Datasource(ctk.CTkFrame):
         title.grid(row=0, column=0, pady=(20, 30))
 
         # Source Selection (Radio Buttons)
-        self.source_var = ctk.StringVar(value="local")
+        # Prefill from session
+        ds = self.controller.session.datasource
+        self.source_var = ctk.StringVar(value=ds.type or "local")
+        
         self.rb_frame = ctk.CTkFrame(self.container)
         self.rb_frame.grid(row=1, column=0, pady=10)
         
@@ -46,6 +49,7 @@ class Step1Datasource(ctk.CTkFrame):
         ctk.CTkButton(nav_frame, text="Next Step", command=self.next_step, width=200, height=40).pack(pady=10)
 
     def init_local_frame(self):
+        ds = self.controller.session.datasource
         self.local_frame = ctk.CTkFrame(self.content_area)
         
         # Folder Selection
@@ -55,6 +59,9 @@ class Step1Datasource(ctk.CTkFrame):
         path_frame.pack(fill="x", padx=20)
         
         self.path_entry = ctk.CTkEntry(path_frame, placeholder_text="No folder selected...")
+        if ds.local_path:
+            self.path_entry.insert(0, ds.local_path)
+            
         self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
         ctk.CTkButton(path_frame, text="Browse", width=100, command=self.browse_folder).pack(side="right")
@@ -77,6 +84,7 @@ class Step1Datasource(ctk.CTkFrame):
         self.chk_tiff.pack(side="left", padx=20)
 
     def init_daminion_frame(self):
+        ds = self.controller.session.datasource
         self.daminion_frame = ctk.CTkFrame(self.content_area)
         
         # Connection Config
@@ -85,14 +93,20 @@ class Step1Datasource(ctk.CTkFrame):
         
         ctk.CTkLabel(self.daminion_frame, text="Host URL:").grid(row=0, column=0, **grid_kws)
         self.entry_host = ctk.CTkEntry(self.daminion_frame, placeholder_text="http://localhost:8080")
+        if ds.daminion_url:
+            self.entry_host.insert(0, ds.daminion_url)
         self.entry_host.grid(row=0, column=1, **grid_kws)
         
         ctk.CTkLabel(self.daminion_frame, text="Username:").grid(row=1, column=0, **grid_kws)
         self.entry_user = ctk.CTkEntry(self.daminion_frame)
+        if ds.daminion_user:
+            self.entry_user.insert(0, ds.daminion_user)
         self.entry_user.grid(row=1, column=1, **grid_kws)
         
         ctk.CTkLabel(self.daminion_frame, text="Password:").grid(row=2, column=0, **grid_kws)
         self.entry_pass = ctk.CTkEntry(self.daminion_frame, show="*")
+        if ds.daminion_pass:
+            self.entry_pass.insert(0, ds.daminion_pass)
         self.entry_pass.grid(row=2, column=1, **grid_kws)
         
         ctk.CTkButton(self.daminion_frame, text="Connect", fg_color="green", command=self.connect_daminion).grid(row=3, column=1, pady=20, sticky="e", padx=20)
@@ -158,6 +172,6 @@ class Step1Datasource(ctk.CTkFrame):
                 print("Select a folder!")
                 return
             self.controller.session.datasource.local_path = path
-        
+
         # Proceed
         self.controller.show_step("Step2Tagging")

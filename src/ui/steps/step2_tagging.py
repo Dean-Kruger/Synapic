@@ -18,7 +18,7 @@ class Step2Tagging(ctk.CTkFrame):
         title.grid(row=0, column=0, pady=(20, 30))
 
         # Engine Selection
-        self.engine_var = ctk.StringVar(value="huggingface")
+        self.engine_var = ctk.StringVar(value=self.controller.session.engine.provider or "huggingface")
         
         # Engine Cards (using Radio buttons for simplicity but styled)
         self.cards_frame = ctk.CTkFrame(self.container, fg_color="transparent")
