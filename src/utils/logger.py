@@ -124,6 +124,7 @@ def setup_logging(
 ) -> Path:
     """
     Initialize the logging system with file and console handlers.
+    Also redirects stdout/stderr to capture all terminal output.
     
     Args:
         log_level: Logging level for file handler (default: DEBUG)
@@ -174,12 +175,43 @@ def setup_logging(
     console_handler.addFilter(SensitiveDataFilter())
     root_logger.addHandler(console_handler)
     
+    # Redirect stdout and stderr to also write to log file
+    sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO, sys.stdout)
+    sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR, sys.stderr)
+    
     # Log the initialization
     logging.info("=" * 80)
     logging.info(f"Synapic Application Started - Log file: {log_file}")
     logging.info("=" * 80)
     
     return log_file
+
+
+class StreamToLogger:
+    """
+    File-like stream object that redirects writes to a logger instance.
+    Also writes to the original stream to maintain console output.
+    """
+    def __init__(self, logger: logging.Logger, log_level: int, original_stream):
+        self.logger = logger
+        self.log_level = log_level
+        self.original_stream = original_stream
+        self.linebuf = ''
+
+    def write(self, buf):
+        # Write to original stream (console)
+        if self.original_stream:
+            self.original_stream.write(buf)
+            self.original_stream.flush()
+        
+        # Also log it
+        for line in buf.rstrip().splitlines():
+            self.logger.log(self.log_level, line.rstrip())
+
+    def flush(self):
+        if self.original_stream:
+            self.original_stream.flush()
+
 
 
 def log_config(config_name: str, config_data: Dict[str, Any], logger: Optional[logging.Logger] = None):
