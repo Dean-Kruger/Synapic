@@ -23,6 +23,9 @@ GEOMETRY = "800x600"
 # Limit the number of models returned in search results to avoid UI overload.
 MODEL_SEARCH_LIMIT = 20
 
+# --- Zero Shot Defaults ---
+DEFAULT_CANDIDATE_LABELS = ["photography", "art", "nature", "portrait", "landscape", "urban", "people", "animal"]
+
 # --- Model Tasks ---
 MODEL_TASK_IMAGE_CLASSIFICATION = "image-classification"
 MODEL_TASK_ZERO_SHOT = "zero-shot-image-classification"

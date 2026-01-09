@@ -148,6 +148,12 @@ class ProcessingManager:
                     with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
                          result = self.model(img)
+                elif engine.task == config.MODEL_TASK_ZERO_SHOT:
+                    # Zero-Shot Classification
+                    # Requires candidate_labels
+                    with Image.open(path) as img:
+                         if img.mode != "RGB": img = img.convert("RGB")
+                         result = self.model(img, candidate_labels=config.DEFAULT_CANDIDATE_LABELS)
                 else:
                     # Classification
                      with Image.open(path) as img:
@@ -160,8 +166,7 @@ class ProcessingManager:
                 
                 params = {}
                 if engine.task == config.MODEL_TASK_ZERO_SHOT:
-                    # TODO: Get candidate labels from config
-                    params["candidate_labels"] = ["photography", "art", "nature", "portrait"] 
+                    params["candidate_labels"] = config.DEFAULT_CANDIDATE_LABELS
                 
                 result = provider_module.run_inference_api(
                     model_id=engine.model_id,
