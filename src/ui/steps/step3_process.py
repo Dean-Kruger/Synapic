@@ -60,15 +60,38 @@ class Step3Process(ctk.CTkFrame):
     def start_process(self):
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
-        self.lbl_status.configure(text="Processing started...")
-        self.log("Starting batch job...")
-        # TODO: Start Thread
+        self.lbl_status.configure(text="Initializing...")
+        
+        # Start Worker
+        from src.core.processing import ProcessingManager
+        
+        self.manager = ProcessingManager(
+            session=self.controller.session,
+            log_callback=self.safe_log,
+            progress_callback=self.safe_update_progress
+        )
+        self.manager.start()
 
     def stop_process(self):
+        if hasattr(self, 'manager'):
+            self.manager.abort()
+        
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
-        self.lbl_status.configure(text="Aborted by user.")
-        self.log("Job aborted.")
+        self.lbl_status.configure(text="Stopping...")
+
+    def safe_log(self, message):
+        self.after(0, lambda: self.log(message))
+
+    def safe_update_progress(self, pct, current, total):
+        def _update():
+            self.progress_bar.set(pct)
+            self.lbl_counter.configure(text=f"{current} / {total} Images")
+            if pct >= 1.0:
+                 self.lbl_status.configure(text="Completed.")
+                 self.btn_start.configure(state="normal")
+                 self.btn_stop.configure(state="disabled")
+        self.after(0, _update)
 
     def log(self, message):
         self.console.configure(state="normal")

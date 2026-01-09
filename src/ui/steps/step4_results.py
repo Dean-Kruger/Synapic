@@ -19,13 +19,13 @@ class Step4Results(ctk.CTkFrame):
         title.grid(row=0, column=0, pady=(20, 30))
 
         # Metrics Dashboard
-        metrics_frame = ctk.CTkFrame(self.container)
-        metrics_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
+        self.metrics_frame = ctk.CTkFrame(self.container)
+        self.metrics_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
         
-        self.create_metric(metrics_frame, "Total Processed", "0", 0)
-        self.create_metric(metrics_frame, "Successful", "0", 1, "green")
-        self.create_metric(metrics_frame, "Failed", "0", 2, "red")
-        self.create_metric(metrics_frame, "Skipped", "0", 3, "orange")
+        self.create_metric(self.metrics_frame, "Total Processed", "0", 0)
+        self.create_metric(self.metrics_frame, "Successful", "0", 1, "green")
+        self.create_metric(self.metrics_frame, "Failed", "0", 2, "red")
+        self.create_metric(self.metrics_frame, "Skipped", "0", 3, "orange")
 
         # Results Grid (Simple scrollable frame)
         ctk.CTkLabel(self.container, text="Session Details:", anchor="w").grid(row=2, column=0, sticky="nw", padx=20, pady=(10,0))
@@ -33,9 +33,29 @@ class Step4Results(ctk.CTkFrame):
         self.results_frame = ctk.CTkScrollableFrame(self.container, label_text="Filename | Status | Tags")
         self.results_frame.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
         
-        # Placeholder Data
-        for i in range(1, 6):
-            self.add_result_row(f"image_{i}.jpg", "Success", "cat, animal, cute")
+    def tkraise(self, *args, **kwargs):
+        super().tkraise(*args, **kwargs)
+        self.refresh_stats()
+
+    def refresh_stats(self):
+        s = self.controller.session
+        
+        # Update metrics
+        # We need store references to metric labels or rebuild them.
+        # Rebuilding is easier for this prototype.
+        for widget in self.metrics_frame.winfo_children():
+            widget.destroy()
+            
+        self.create_metric(self.metrics_frame, "Total Processed", str(s.processed_items), 0)
+        self.create_metric(self.metrics_frame, "Successful", str(s.processed_items - s.failed_items), 1, "green")
+        self.create_metric(self.metrics_frame, "Failed", str(s.failed_items), 2, "red")
+        
+        # Update Grid
+        for widget in self.results_frame.winfo_children():
+            widget.destroy()
+            
+        for res in s.results:
+            self.add_result_row(res.get("filename", "?"), res.get("status", "?"), res.get("tags", ""))
 
         # Actions
         action_frame = ctk.CTkFrame(self.container, fg_color="transparent")

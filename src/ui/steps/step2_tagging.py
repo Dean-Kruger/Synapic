@@ -51,6 +51,15 @@ class Step2Tagging(ctk.CTkFrame):
     def next_step(self):
         # Update session
         self.controller.session.engine.provider = self.engine_var.get()
+        
+        # We need to retrieve values from the dialog if it was opened, or use defaults/session
+        # This UI flow is a bit tricky because the dialog is modal.
+        # Ideally, the dialog should update the session directly when "Save" is clicked (if we had a Save button)
+        # Or we should have the inputs on the main card.
+        
+        # For now, let's assume the user configured it via the dialog which we will update to write to session.
+        pass
+        
         print(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
 
@@ -83,32 +92,57 @@ class ConfigDialog(ctk.CTkToplevel):
 
     def init_local_tab(self):
         ctk.CTkLabel(self.tab_local, text="Available Models:").pack(pady=10)
-        # TODO: Listbox or OptionMenu for models
-        ctk.CTkOptionMenu(self.tab_local, values=["vit-base-patch16-224", "resnet-50"]).pack(pady=10)
-        ctk.CTkButton(self.tab_local, text="Download / Load", command=lambda: print("Load Model")).pack(pady=10)
-        ctk.CTkLabel(self.tab_local, text="Status: Not Loaded", text_color="orange").pack(pady=20)
+        self.local_model_var = ctk.StringVar(value=self.session.engine.model_id or "google/vit-base-patch16-224")
+        ctk.CTkOptionMenu(self.tab_local, variable=self.local_model_var, values=["google/vit-base-patch16-224", "Salesforce/blip-image-captioning-base"]).pack(pady=10)
+        
+        ctk.CTkButton(self.tab_local, text="Save Configuration", command=self.save_local).pack(pady=20)
 
     def init_hf_tab(self):
         ctk.CTkLabel(self.tab_hf, text="API Key:").pack(pady=(20,5), anchor="w", padx=20)
         self.hf_key = ctk.CTkEntry(self.tab_hf, width=400, show="*")
+        self.hf_key.insert(0, self.session.engine.api_key or "")
         self.hf_key.pack(padx=20)
         
         ctk.CTkLabel(self.tab_hf, text="Model ID:").pack(pady=(20,5), anchor="w", padx=20)
         self.hf_model = ctk.CTkEntry(self.tab_hf, width=400)
-        self.hf_model.insert(0, "google/vit-base-patch16-224")
+        self.hf_model.insert(0, self.session.engine.model_id or "google/vit-base-patch16-224")
         self.hf_model.pack(padx=20)
         
-        ctk.CTkButton(self.tab_hf, text="Verify Key", command=lambda: print("Verify HF")).pack(pady=30)
+        ctk.CTkButton(self.tab_hf, text="Save Configuration", command=self.save_hf).pack(pady=30)
 
     def init_or_tab(self):
         ctk.CTkLabel(self.tab_or, text="API Key:").pack(pady=(20,5), anchor="w", padx=20)
         self.or_key = ctk.CTkEntry(self.tab_or, width=400, show="*")
+        self.or_key.insert(0, self.session.engine.api_key or "") 
         self.or_key.pack(padx=20)
         
         ctk.CTkLabel(self.tab_or, text="Model ID:").pack(pady=(20,5), anchor="w", padx=20)
         self.or_model = ctk.CTkEntry(self.tab_or, width=400)
+        self.or_model.insert(0, self.session.engine.model_id or "openai/gpt-4-vision-preview")
         self.or_model.pack(padx=20)
         
-        ctk.CTkLabel(self.tab_or, text="System Prompt:").pack(pady=(20,5), anchor="w", padx=20)
-        self.or_prompt = ctk.CTkTextbox(self.tab_or, height=100)
-        self.or_prompt.pack(padx=20, fill="x")
+        ctk.CTkButton(self.tab_or, text="Save Configuration", command=self.save_or).pack(pady=30)
+
+    def save_local(self):
+        self.session.engine.provider = "local"
+        self.session.engine.model_id = self.local_model_var.get()
+        # Naive task inference based on model name for demo
+        if "blip" in self.session.engine.model_id:
+            self.session.engine.task = "image-to-text"
+        else:
+            self.session.engine.task = "image-classification"
+        self.destroy()
+
+    def save_hf(self):
+        self.session.engine.provider = "huggingface"
+        self.session.engine.api_key = self.hf_key.get()
+        self.session.engine.model_id = self.hf_model.get()
+        self.session.engine.task = "image-classification" # Default
+        self.destroy()
+
+    def save_or(self):
+        self.session.engine.provider = "openrouter"
+        self.session.engine.api_key = self.or_key.get()
+        self.session.engine.model_id = self.or_model.get()
+        self.session.engine.task = "image-to-text" # LLMs are text gen
+        self.destroy()
