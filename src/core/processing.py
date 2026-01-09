@@ -79,14 +79,23 @@ class ProcessingManager:
             return files
 
         elif self.session.datasource.type == "daminion":
-            # TODO: Implement Daminion fetching logic
             if not self.session.daminion_client:
                 raise ValueError("Daminion client not connected")
             
             self.log("Fetching items from Daminion...")
-            # For now return placeholder IDs, logic to be added
-            # return self.session.daminion_client.get_items...
-            return [] 
+            
+            # Fetch based on scope
+            # TODO: Add support for 'selection' or 'collection' via session config
+            # For now, default to grabbing a batch of recent items or shared collection
+            
+            # Example: Get last 50 items
+            # items, total = self.session.daminion_client.get_media_items(start_id=1, batch_size=50)
+            
+            # Better: Get all items paginated (limit to 50 for testing)
+            items = self.session.daminion_client.get_all_items_paginated(batch_size=50, max_items=50)
+            
+            self.log(f"Retrieved {len(items)} items from Daminion.")
+            return items
         
         return []
 
@@ -105,23 +114,34 @@ class ProcessingManager:
             raise RuntimeError(f"Failed to load model: {e}")
 
     def _process_single_item(self, item):
+        path = None
+        is_daminion = isinstance(item, dict)
+        daminion_client = self.session.daminion_client
+        temp_thumb = None
+
         try:
             engine = self.session.engine
             
             # 1. Load Image
-            path = item if isinstance(item, Path) else None # Daminion TODO
-            if not path:
-                # TODO: Daminion thumbnail path
-                return
+            if is_daminion:
+                item_id = item.get('id')
+                filename = item.get('fileName') or f"Item {item_id}"
+                self.log(f"Processing Daminion Item: {filename}...")
+                
+                # Download thumbnail
+                temp_thumb = daminion_client.download_thumbnail(item_id)
+                if not temp_thumb or not temp_thumb.exists():
+                    raise RuntimeError(f"Could not download thumbnail for item {item_id}")
+                path = temp_thumb
+            else:
+                path = item
+                self.log(f"Processing: {path.name}...")
 
-            self.log(f"Processing: {path.name}...")
-            
             # 2. Inference
             result = None
             
             if engine.provider == "local":
                 # Local Inference
-                # TODO: Handle different tasks (classification vs captioning)
                 # Simple dispatch for now
                 if engine.task == config.MODEL_TASK_IMAGE_TO_TEXT:
                     # Captioning
@@ -155,24 +175,41 @@ class ProcessingManager:
             cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task)
             
             # 4. Write Metadata
-            success = image_processing.write_metadata(
-                image_path=path,
-                category=cat,
-                keywords=kws,
-                description=desc
-            )
+            if is_daminion:
+                success = daminion_client.update_item_metadata(
+                    item_id=item_id,
+                    category=cat,
+                    keywords=kws,
+                    description=desc
+                )
+            else:
+                success = image_processing.write_metadata(
+                    image_path=path,
+                    category=cat,
+                    keywords=kws,
+                    description=desc
+                )
             
             status = "Success" if success else "Write Failed"
             tags_str = f"Cat: {cat}, Kws: {len(kws)}, Desc: {desc[:20]}..."
             self.log(f"Result: {tags_str}")
             
             self.session.results.append({
-                "filename": path.name,
+                "filename": filename if is_daminion else path.name,
                 "status": status,
                 "tags": tags_str
             })
 
         except Exception as e:
-            logging.error(f"Failed to process {item}: {e}")
+            name = item.get('fileName') if is_daminion else (item.name if isinstance(item, Path) else str(item))
+            logging.error(f"Failed to process {name}: {e}")
             self.session.failed_items += 1
             self.log(f"Failed: {e}")
+        finally:
+            # Cleanup temp thumbnail if it was created
+            if temp_thumb and temp_thumb.exists():
+                try:
+                    import os
+                    os.remove(temp_thumb)
+                except Exception:
+                    pass

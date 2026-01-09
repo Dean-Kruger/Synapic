@@ -16,7 +16,12 @@ class App(ctk.CTk):
 
         # Initialize Session
         from src.core.session import Session
+        from src.utils.config_manager import load_config, save_config
         self.session = Session()
+        load_config(self.session)
+        
+        # Save on exit
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.container = ctk.CTkFrame(self)
         self.container.grid(row=0, column=0, sticky="nsew")
@@ -38,6 +43,14 @@ class App(ctk.CTk):
     def show_step(self, page_name):
         frame = self.steps[page_name]
         frame.tkraise()
+        # Trigger explicit refresh if supported (tkraise handles visibility but custom hooks might exist)
+        if hasattr(frame, 'refresh_stats'):
+             frame.refresh_stats()
+
+    def on_close(self):
+        from src.utils.config_manager import save_config
+        save_config(self.session)
+        self.destroy()
 
 if __name__ == "__main__":
     app = App()

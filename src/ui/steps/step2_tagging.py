@@ -93,9 +93,35 @@ class ConfigDialog(ctk.CTkToplevel):
     def init_local_tab(self):
         ctk.CTkLabel(self.tab_local, text="Available Models:").pack(pady=10)
         self.local_model_var = ctk.StringVar(value=self.session.engine.model_id or "google/vit-base-patch16-224")
-        ctk.CTkOptionMenu(self.tab_local, variable=self.local_model_var, values=["google/vit-base-patch16-224", "Salesforce/blip-image-captioning-base"]).pack(pady=10)
+        
+        # Flex row for dropdown + button
+        row = ctk.CTkFrame(self.tab_local, fg_color="transparent")
+        row.pack(pady=10)
+        
+        self.local_model_menu = ctk.CTkOptionMenu(row, variable=self.local_model_var, values=["google/vit-base-patch16-224", "Salesforce/blip-image-captioning-base"], width=300)
+        self.local_model_menu.pack(side="left", padx=5)
+        
+        ctk.CTkButton(row, text="Scan Cache", command=self.refresh_local_models, width=100).pack(side="left", padx=5)
         
         ctk.CTkButton(self.tab_local, text="Save Configuration", command=self.save_local).pack(pady=20)
+
+    def refresh_local_models(self):
+        try:
+            from src.core import huggingface_utils
+            # Scan for both tasks
+            models_cls = huggingface_utils.find_local_models_by_task("image-classification")
+            models_cap = huggingface_utils.find_local_models_by_task("image-to-text")
+            
+            all_models = list(set(models_cls + models_cap))
+            if not all_models:
+                all_models = ["google/vit-base-patch16-224", "Salesforce/blip-image-captioning-base"]
+                
+            self.local_model_menu.configure(values=all_models)
+            if all_models:
+                self.local_model_var.set(all_models[0])
+                
+        except Exception as e:
+            print(f"Error scanning models: {e}")
 
     def init_hf_tab(self):
         ctk.CTkLabel(self.tab_hf, text="API Key:").pack(pady=(20,5), anchor="w", padx=20)
