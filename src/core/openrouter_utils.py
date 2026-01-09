@@ -112,7 +112,13 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
     """
     import base64
     import json
+    import time
     from pathlib import Path
+    from src.utils.logger import log_api_request, log_api_response
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"[OpenRouter API] Starting inference - Model: {model_id}, Task: {task}")
+    start_time = time.time()
 
     headers = {}
     if token:
@@ -180,13 +186,19 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
         headers_json = headers.copy()
         headers_json["Content-Type"] = "application/json"
 
-        logging.debug(f"OpenRouter Request Body for {model_id}: {json.dumps(body)}")
+        logger.debug(f"OpenRouter Request Body for {model_id}: {json.dumps(body)}")
+        
+        log_api_request(logger, "POST", chat_url, headers=headers_json, data=body)
+        
         resp = requests.post(chat_url, headers=headers_json, json=body, timeout=60)
+        elapsed = time.time() - start_time
+        
+        log_api_response(logger, resp.status_code, elapsed_time=elapsed)
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError as re:
-            logging.error(f"OpenRouter Chat API failed: {re}")
-            logging.error(f"Response Content: {resp.text}")
+            logger.error(f"OpenRouter Chat API failed: {re}")
+            logger.error(f"Response Content: {resp.text}")
             raise re
         
         resp_json = resp.json()
@@ -260,6 +272,7 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
                     return [{'generated_text': outputs['text']}]
             return outputs
 
+        logger.info(f"[OpenRouter API] Inference successful - Duration: {elapsed:.3f}s")
         return outputs
 
     except requests.exceptions.HTTPError as e:
@@ -269,7 +282,8 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
         raise
 
     except Exception as first_err:
-        logging.debug(f"Chat endpoint failed ({first_err}); attempting multipart fallback: {fallback_url}")
+        logger.warning(f"[OpenRouter API] Chat endpoint failed ({type(first_err).__name__}): {first_err}")
+        logger.info(f"[OpenRouter API] Attempting multipart fallback: {fallback_url}")
         # FALLBACK: multipart upload to older outputs endpoint
         try:
             with open(img_path, "rb") as img_f:
@@ -277,8 +291,12 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
                 data = {}
                 if parameters:
                     data["parameters"] = parameters
-
+                
+                logger.info(f"[OpenRouter API] Sending multipart request to fallback endpoint")
                 resp = requests.post(fallback_url, headers=headers, files=files, data=data, timeout=60)
+                fallback_elapsed = time.time() - start_time
+                
+                log_api_response(logger, resp.status_code, elapsed_time=fallback_elapsed)
                 try:
                     resp.raise_for_status()
                 except requests.exceptions.HTTPError as e:
@@ -341,9 +359,12 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
                         return [{'generated_text': outputs['text']}]
                 return outputs
 
+            logger.info(f"[OpenRouter API] Fallback inference successful - Duration: {fallback_elapsed:.3f}s")
             return outputs
 
         except Exception as e:
-            logging.exception(f"OpenRouter API inference failed on fallback: {e}")
+            total_elapsed = time.time() - start_time
+            logger.error(f"[OpenRouter API] All inference attempts failed after {total_elapsed:.3f}s")
+            logger.exception(f"OpenRouter API inference failed on fallback: {e}")
             raise ValueError(f"OpenRouter inference failed: {e}")
 

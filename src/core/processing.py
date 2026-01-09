@@ -18,13 +18,19 @@ class ProcessingManager:
         self.progress = progress_callback
         self.stop_event = threading.Event()
         self.thread = None
+        self.logger = logging.getLogger(__name__)
 
     def start(self):
+        self.logger.info("Starting processing job")
+        self.logger.info(f"Datasource: {self.session.datasource.type}, Engine: {self.session.engine.provider}")
+        self.logger.info(f"Model: {self.session.engine.model_id}, Task: {self.session.engine.task}")
+        
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._run_job, daemon=True)
         self.thread.start()
 
     def abort(self):
+        self.logger.warning("Processing job abort requested")
         self.stop_event.set()
         self.log("Stopping job... please wait.")
 
@@ -40,6 +46,7 @@ class ProcessingManager:
                 return
 
             self.session.total_items = len(items)
+            self.logger.info(f"Processing job initialized - {len(items)} items queued")
             self.log(f"Found {len(items)} items to process.")
             self.progress(0, 0, len(items))
 
@@ -50,6 +57,7 @@ class ProcessingManager:
             # 3. Process Loop
             for i, item in enumerate(items):
                 if self.stop_event.is_set():
+                    self.logger.info(f"Job aborted by user after processing {i} items")
                     self.log("Job aborted by user.")
                     break
 
@@ -60,9 +68,12 @@ class ProcessingManager:
                 pct = (i + 1) / len(items)
                 self.progress(pct, i + 1, len(items))
 
+            
+            self.logger.info(f"Processing job completed - Processed: {self.session.processed_items}, Failed: {self.session.failed_items}")
             self.log("Job finished.")
 
         except Exception as e:
+            self.logger.exception("Processing job failed with exception")
             logging.exception("Processing failed")
             self.log(f"Error: {e}")
             self.session.failed_items += 1
@@ -76,12 +87,15 @@ class ProcessingManager:
             # Scan for images
             exts = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
             files = [p for p in path.iterdir() if p.suffix.lower() in exts]
+            self.logger.info(f"Found {len(files)} image files in local folder: {path}")
             return files
 
         elif self.session.datasource.type == "daminion":
             if not self.session.daminion_client:
                 raise ValueError("Daminion client not connected")
             
+            
+            self.logger.info("Fetching items from Daminion server")
             self.log("Fetching items from Daminion...")
             
             # Fetch based on scope
@@ -94,6 +108,8 @@ class ProcessingManager:
             # Better: Get all items paginated (limit to 50 for testing)
             items = self.session.daminion_client.get_all_items_paginated(batch_size=50, max_items=50)
             
+            
+            self.logger.info(f"Retrieved {len(items)} items from Daminion")
             self.log(f"Retrieved {len(items)} items from Daminion.")
             return items
         
@@ -101,6 +117,7 @@ class ProcessingManager:
 
     def _init_local_model(self):
         engine = self.session.engine
+        self.logger.info(f"Initializing local model: {engine.model_id}")
         self.log(f"Loading local model: {engine.model_id}...")
         
         try:
@@ -109,6 +126,7 @@ class ProcessingManager:
                 task=engine.task,
                 progress_queue=None # We handle progress via callback manually if needed, or update this to accept callback
             )
+            self.logger.info(f"Local model loaded successfully: {engine.model_id}")
             self.log("Model loaded successfully.")
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
@@ -126,6 +144,7 @@ class ProcessingManager:
             if is_daminion:
                 item_id = item.get('id')
                 filename = item.get('fileName') or f"Item {item_id}"
+                self.logger.debug(f"Processing Daminion item {item_id}: {filename}")
                 self.log(f"Processing Daminion Item: {filename}...")
                 
                 # Download thumbnail
@@ -135,6 +154,7 @@ class ProcessingManager:
                 path = temp_thumb
             else:
                 path = item
+                self.logger.debug(f"Processing local file: {path}")
                 self.log(f"Processing: {path.name}...")
 
             # 2. Inference
@@ -178,6 +198,7 @@ class ProcessingManager:
 
             # 3. Extract Tags
             cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task)
+            self.logger.debug(f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}")
             
             # 4. Write Metadata
             if is_daminion:
@@ -197,6 +218,7 @@ class ProcessingManager:
             
             status = "Success" if success else "Write Failed"
             tags_str = f"Cat: {cat}, Kws: {len(kws)}, Desc: {desc[:20]}..."
+            self.logger.info(f"Item processed successfully - Status: {status}, Tags: {tags_str}")
             self.log(f"Result: {tags_str}")
             
             self.session.results.append({
@@ -207,6 +229,8 @@ class ProcessingManager:
 
         except Exception as e:
             name = item.get('fileName') if is_daminion else (item.name if isinstance(item, Path) else str(item))
+            self.logger.error(f"Failed to process item '{name}': {type(e).__name__}: {str(e)}")
+            self.logger.exception("Full traceback:")
             logging.error(f"Failed to process {name}: {e}")
             self.session.failed_items += 1
             self.log(f"Failed: {e}")

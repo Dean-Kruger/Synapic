@@ -4,28 +4,47 @@ from pathlib import Path
 from dataclasses import asdict
 
 from src.core.session import Session, DatasourceConfig, EngineConfig
+from src.utils.logger import log_config
 
 CONFIG_PATH = Path.home() / ".synapic_v2_config.json"
 
 def save_config(session: Session):
+    """Save session configuration to disk with logging."""
+    logger = logging.getLogger(__name__)
+    
     try:
         data = {
             "datasource": asdict(session.datasource),
             "engine": asdict(session.engine)
         }
+        
+        # Log the configuration being saved (with sensitive data masked)
+        log_config("Saving Configuration", data, logger)
+        
         with open(CONFIG_PATH, "w") as f:
             json.dump(data, f, indent=2)
-        logging.info(f"Config saved to {CONFIG_PATH}")
+        
+        logger.info(f"Configuration saved successfully to {CONFIG_PATH}")
+        
     except Exception as e:
-        logging.error(f"Failed to save config: {e}")
+        logger.error(f"Failed to save configuration: {e}", exc_info=True)
 
 def load_config(session: Session):
+    """Load session configuration from disk with logging."""
+    logger = logging.getLogger(__name__)
+    
     if not CONFIG_PATH.exists():
+        logger.info(f"No existing configuration file found at {CONFIG_PATH}")
         return
 
     try:
+        logger.info(f"Loading configuration from {CONFIG_PATH}")
+        
         with open(CONFIG_PATH, "r") as f:
             data = json.load(f)
+        
+        # Log the loaded configuration (with sensitive data masked)
+        log_config("Loaded Configuration", data, logger)
             
         if "datasource" in data:
             ds_data = data["datasource"]
@@ -33,13 +52,19 @@ def load_config(session: Session):
             for k, v in ds_data.items():
                 if hasattr(session.datasource, k):
                     setattr(session.datasource, k, v)
+            logger.debug(f"Datasource configuration updated: type={session.datasource.type}")
 
         if "engine" in data:
             eng_data = data["engine"]
             for k, v in eng_data.items():
                 if hasattr(session.engine, k):
                     setattr(session.engine, k, v)
+            logger.debug(f"Engine configuration updated: provider={session.engine.provider}, task={session.engine.task}")
                     
-        logging.info("Config loaded successfully.")
+        logger.info("Configuration loaded and applied successfully")
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Configuration file is corrupted: {e}", exc_info=True)
     except Exception as e:
-        logging.error(f"Failed to load config: {e}")
+        logger.error(f"Failed to load configuration: {e}", exc_info=True)
+

@@ -604,6 +604,12 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
     Returns:
         The raw JSON response from the API.
     """
+    from src.utils.logger import log_api_request, log_api_response
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"[HuggingFace API] Starting inference - Model: {model_id}, Task: {task}")
+    start_time = time.time()
+    
     client = InferenceClient(token=token)
     
     # Map internal task names to API tasks if needed, though they usually match.
@@ -619,7 +625,8 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
         # .image_classification() is specific.
         # .image_to_text() is specific.
         
-        logging.info(f"calling API for {task} on {model_id}...")
+        logger.debug(f"Image path: {image_path}")
+        logger.debug(f"Parameters: {parameters}")
         
         if task == config.MODEL_TASK_IMAGE_CLASSIFICATION:
              try:
@@ -632,10 +639,18 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                 # Using the router endpoint
                 api_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
                 headers = {"Authorization": f"Bearer {token}"}
+                
+                log_api_request(logger, "POST", api_url, headers=headers, data=payload)
 
                 response = requests.post(api_url, headers=headers, json=payload)
+                elapsed = time.time() - start_time
+                
+                log_api_response(logger, response.status_code, elapsed_time=elapsed)
                 response.raise_for_status()
-                return response.json()
+                
+                result = response.json()
+                logger.info(f"[HuggingFace API] Inference successful - Duration: {elapsed:.3f}s")
+                return result
 
              except requests.exceptions.HTTPError as e:
                  if e.response.status_code in [404, 410]:
@@ -714,5 +729,7 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
              return client.post(json={"inputs": image_path}, model=model_id, task=task)
 
     except Exception as e:
-        logging.exception("API Inference failed:")
+        elapsed = time.time() - start_time
+        logger.error(f"[HuggingFace API] Inference failed after {elapsed:.3f}s: {type(e).__name__}: {str(e)}")
+        logger.exception("Full traceback:")
         raise
