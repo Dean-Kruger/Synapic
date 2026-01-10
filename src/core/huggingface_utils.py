@@ -327,169 +327,123 @@ def show_model_info_worker(model_id, q, token=None):
         logging.warning(f"Could not retrieve README for {model_id}. Error: {e}")
         q.put(("model_info_found", f"Could not retrieve README for {model_id}.\n\n{e}"))
 
-def load_model_with_progress(model_id, task, q, token=None, device=-1):
-    """Worker thread to load a model with enhanced granular progress reporting."""
-    logging.info(f"Starting model load for: {model_id} on device {device}")
-    
-    # Import enhanced progress tracking
-    tracker = None
-    set_progress_stage = None
-    ProgressStage = None
-    get_progress_tracker = None
+def download_model_worker(model_id, q, token=None):
+    """Worker thread specifically for downloading a model with accurate progress reporting."""
+    logging.info(f"Starting model download worker for: {model_id}")
     try:
-        from enhanced_progress import set_progress_stage, ProgressStage, get_progress_tracker
-        has_enhanced_progress = True
-        tracker = get_progress_tracker()
-    except ImportError:
-        has_enhanced_progress = False
-    
-    if has_enhanced_progress and tracker and set_progress_stage and ProgressStage:
-        tracker.start_tracking()
-        set_progress_stage(ProgressStage.CONNECTING, sub_stage=f"Connecting to Hugging Face Hub for {model_id}")
+        if is_model_downloaded(model_id, token=token):
+            logging.info(f"Model {model_id} already fully downloaded.")
+            q.put(("model_download_progress", (100, 100))) # Force full progress
+            q.put(("download_complete", model_id))
+            return
+
+        q.put(("status_update", f"Checking files for {model_id}..."))
+        
+        # Determine missing bytes to make progress bar accurate
+        api = HfApi(token=token)
+        model_info = api.model_info(repo_id=model_id)
+        
+        model_cache_dir = get_model_cache_dir(model_id)
+        snapshot_dir = os.path.join(model_cache_dir, 'snapshots')
+        
+        total_to_download = 0
+        for sibling in (model_info.siblings or []):
+            if sibling.rfilename.endswith(config.MODEL_FILE_EXCLUSIONS):
+                continue
+            
+            already_exists = False
+            if os.path.exists(snapshot_dir):
+                for snap in os.listdir(snapshot_dir):
+                    if os.path.exists(os.path.join(snapshot_dir, snap, sibling.rfilename)):
+                        already_exists = True
+                        break
+            
+            if not already_exists:
+                total_to_download += (sibling.size or 0)
+
+        # Fallback if calculation is zero (e.g. metadata only)
+        if total_to_download == 0:
+            total_to_download = sum(s.size for s in (model_info.siblings or []) if s.size)
+
+        q.put(("total_model_size", total_to_download))
+        logging.info(f"Target download size: {total_to_download} bytes.")
+        
+        TqdmToQueue.reset_overall_progress()
+        TqdmToQueue.set_overall_total_size(total_to_download)
+        TqdmToQueue._q = q
+        TqdmToQueue._update_type = "model_download_progress"
+        
+        q.put(("status_update", f"Downloading {model_id}..."))
+        
+        snapshot_download(
+            repo_id=model_id,
+            tqdm_class=TqdmToQueue, # type: ignore
+            token=token
+        )
+        
+        # Final update to ensure it hits 100%
+        q.put(("model_download_progress", (total_to_download, total_to_download)))
+        
+        logging.info(f"Model download complete for {model_id}.")
+        q.put(("download_complete", model_id))
+    except Exception as e:
+        logging.exception(f"Failed to download model: {model_id}")
+        q.put(("error", f"Failed to download model: {e}"))
+
+def load_model_with_progress(model_id, task, q, token=None, device=-1):
+    """Worker thread to load a model with progress reporting."""
+    logging.info(f"Starting model load for: {model_id} on device {device}")
     
     try:
         if not is_model_downloaded(model_id, token=token):
-            # Send initial status
-            q.put(("status_update", f"Starting download of model {model_id}..."))
-            logging.info(f"Downloading model files for {model_id}...")
+            q.put(("status_update", f"Checking files for {model_id}..."))
             
-            if has_enhanced_progress and set_progress_stage and ProgressStage:
-                set_progress_stage(ProgressStage.DOWNLOADING_MODEL, sub_stage="Getting model information")
-
-            # Get model info to calculate total size
             api = HfApi(token=token)
             model_info = api.model_info(repo_id=model_id)
-            total_model_size = sum(sibling.size for sibling in (model_info.siblings or []) if sibling.size is not None)
-
-            q.put(("total_model_size", total_model_size))
-            logging.info(f"Total model size for {model_id}: {total_model_size} bytes.")
             
-            if has_enhanced_progress and set_progress_stage and ProgressStage:
-                set_progress_stage(ProgressStage.DOWNLOADING_MODEL, sub_stage="Preparing download")
-                if tracker:
-                    tracker.total_bytes = total_model_size
+            # Simple missing bytes calculation for progress accuracy
+            total_missing = sum(s.size for s in (model_info.siblings or []) if s.size)
             
+            q.put(("total_model_size", total_missing))
             TqdmToQueue.reset_overall_progress()
-            TqdmToQueue.set_overall_total_size(total_model_size)
+            TqdmToQueue.set_overall_total_size(total_missing)
             TqdmToQueue._q = q
             TqdmToQueue._update_type = "model_download_progress"
             
-            if has_enhanced_progress and set_progress_stage and ProgressStage:
-                set_progress_stage(ProgressStage.DOWNLOADING_MODEL, sub_stage="Downloading model files")
-            
-            # Enhanced download progress tracking
-            total_files = len(model_info.siblings) if model_info.siblings else 0
-            downloaded_files = 0
-            
-            def enhanced_progress_callback(current_file, bytes_downloaded):
-                """Enhanced progress callback with file-level tracking."""
-                nonlocal downloaded_files
-                downloaded_files += 1
-                
-                # Send enhanced progress update
-                q.put({
-                    'type': 'model_download_progress',
-                    'progress': bytes_downloaded / total_model_size if total_model_size > 0 else 0,
-                    'bytes_downloaded': bytes_downloaded,
-                    'total_bytes': total_model_size,
-                    'current_file': current_file,
-                    'downloaded_files': downloaded_files,
-                    'total_files': total_files,
-                    'status': f"Downloading {current_file} ({downloaded_files}/{total_files})"
-                })
-                
-                if has_enhanced_progress and tracker:
-                    tracker.update_download_progress(
-                        bytes_downloaded, 
-                        total_model_size, 
-                        current_file,
-                        0.0  # Speed would be calculated externally
-                    )
-            
-            # Download with enhanced progress tracking
-            local_model_path = snapshot_download(
-                repo_id=model_id,
-                tqdm_class=TqdmToQueue, # type: ignore
-                token=token
-            )
-            
-            if has_enhanced_progress and set_progress_stage and ProgressStage:
-                set_progress_stage(ProgressStage.DOWNLOADING_MODEL, sub_stage="Download completed")
-            
-            logging.info(f"Model download complete for {model_id}.")
-            q.put(("status_update", f"Model download completed for {model_id}"))
+            q.put(("status_update", f"Downloading {model_id}..."))
+            local_model_path = snapshot_download(repo_id=model_id, tqdm_class=TqdmToQueue, token=token)
+            q.put(("model_download_progress", (total_missing, total_missing)))
         else:
-            logging.info(f"Model {model_id} is already downloaded.")
-            
-            if has_enhanced_progress and set_progress_stage and ProgressStage:
-                set_progress_stage(ProgressStage.DOWNLOADING_MODEL, sub_stage="Model already downloaded")
-            
-            # Get the latest snapshot path
+            logging.info(f"Model {model_id} already downloaded.")
             model_cache_dir = get_model_cache_dir(model_id)
             snapshot_dir = os.path.join(model_cache_dir, 'snapshots')
             latest_snapshot = os.listdir(snapshot_dir)[-1]
             local_model_path = os.path.join(snapshot_dir, latest_snapshot)
 
-        if has_enhanced_progress and tracker and set_progress_stage and ProgressStage:
-            set_progress_stage(ProgressStage.LOADING_MODEL, sub_stage="Initializing AI model")
-        
         q.put(("status_update", f"Initializing model {model_id}..."))
-        logging.info(f"Initializing pipeline for {model_id}...")
         
-        # Validation and Auto-Task Detection
+        # Auto-Task Detection
         try:
             cfg_path = os.path.join(local_model_path, "config.json")
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as cf:
                     cfg = json.load(cf)
-                
-                if "model_type" not in cfg:
-                    logging.warning(f"Model {model_id} missing 'model_type' in config.json. May fail loading.")
-                
-                # Check for task mismatch
                 suggested = get_suggested_task(cfg)
                 if suggested != task:
-                    logging.warning(f"⚠️ Task mismatch detected for {model_id}! Requested: '{task}', Suggested: '{suggested}'")
-                    # If requested is classification but model is generative, it WILL fail. 
-                    # We should probably force the suggested task if it's certain.
                     if task == config.MODEL_TASK_IMAGE_CLASSIFICATION and suggested == config.MODEL_TASK_IMAGE_TO_TEXT:
-                         logging.info(f"Overriding task to '{suggested}' to prevent crash with generative model.")
                          task = suggested
                     elif task == config.MODEL_TASK_IMAGE_TO_TEXT and suggested == config.MODEL_TASK_IMAGE_CLASSIFICATION:
-                         logging.info(f"Overriding task to '{suggested}' for classification model.")
                          task = suggested
+        except Exception: pass
 
-        except Exception as e:
-            logging.debug(f"Task validation failed: {e}")
-
-        # Try to load tokenizer with failover to slow tokenizer if fast fails (fixes Qwen2-VL local load issue)
-        tokenizer = None
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(local_model_path)
-        except Exception:
-            try:
-                logging.info("Default/Fast tokenizer load failed, trying use_fast=False...")
-                tokenizer = AutoTokenizer.from_pretrained(local_model_path, use_fast=False)
-            except Exception as e:
-                logging.warning(f"Failed to load tokenizer (fast and slow): {e}")
-
-        if tokenizer:
-            model = pipeline(task, model=local_model_path, tokenizer=tokenizer, device=device)
-        else:
-            model = pipeline(task, model=local_model_path, device=device)
-        
-        if has_enhanced_progress and set_progress_stage and ProgressStage:
-            set_progress_stage(ProgressStage.COMPLETE, sub_stage="Model loaded successfully")
+        # Load pipeline (transformers handles processor/tokenizer automatically for multi-modal)
+        model = pipeline(task, model=local_model_path, device=device)
         
         logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id}")
         q.put(("model_loaded", {"model": model, "model_name": model_id}))
 
     except Exception as e:
         logging.exception(f"Failed to load model: {model_id}")
-        
-        if has_enhanced_progress and tracker:
-            tracker.mark_error(f"Model loading failed: {e}")
-        
         q.put(("error", f"Failed to load model: {e}"))
 
 
@@ -572,41 +526,16 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as cf:
                     cfg = json.load(cf)
-                
-                if "model_type" not in cfg:
-                    logging.warning(f"Model {model_id} missing 'model_type' in config.json. May fail loading.")
-                
-                # Check for task mismatch
                 suggested = get_suggested_task(cfg)
                 if suggested != task:
-                    logging.warning(f"⚠️ Task mismatch detected for {model_id}! Requested: '{task}', Suggested: '{suggested}'")
-                    # If requested is classification but model is generative, it WILL fail. 
-                    # We should probably force the suggested task if it's certain.
                     if task == config.MODEL_TASK_IMAGE_CLASSIFICATION and suggested == config.MODEL_TASK_IMAGE_TO_TEXT:
-                         logging.info(f"Overriding task to '{suggested}' to prevent crash with generative model.")
                          task = suggested
                     elif task == config.MODEL_TASK_IMAGE_TO_TEXT and suggested == config.MODEL_TASK_IMAGE_CLASSIFICATION:
-                         logging.info(f"Overriding task to '{suggested}' for classification model.")
                          task = suggested
-
-        except Exception as e:
-            logging.debug(f"Task validation failed: {e}")
+        except Exception: pass
             
-        # Try to load tokenizer with failover to slow tokenizer if fast fails (fixes Qwen2-VL local load issue)
-        tokenizer = None
-        try:
-            tokenizer = AutoTokenizer.from_pretrained(local_model_path)
-        except Exception:
-            try:
-                logging.info("Default/Fast tokenizer load failed, trying use_fast=False...")
-                tokenizer = AutoTokenizer.from_pretrained(local_model_path, use_fast=False)
-            except Exception as e:
-                logging.warning(f"Failed to load tokenizer (fast and slow): {e}")
-        
-        if tokenizer:
-            model = pipeline(task, model=local_model_path, tokenizer=tokenizer, device=device)
-        else:
-            model = pipeline(task, model=local_model_path, device=device)
+        # Initialize pipeline without manual tokenizer for multi-modal stability
+        model = pipeline(task, model=local_model_path, device=device)
 
         logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id} on device {device}")
         return model

@@ -620,17 +620,47 @@ class DownloadManagerDialog(ctk.CTkToplevel):
     def start_download(self, model_id):
         self.lbl_status.configure(text=f"Downloading {model_id}...", text_color="gray")
         self.progress.set(0)
+        
+        import queue
+        from src.core import huggingface_utils
+        
+        self.download_queue = queue.Queue()
         import threading
-        threading.Thread(target=self._download_worker, args=(model_id,), daemon=True).start()
+        threading.Thread(
+            target=huggingface_utils.download_model_worker, 
+            args=(model_id, self.download_queue), 
+            daemon=True
+        ).start()
+        
+        self.poll_download_queue()
 
-    def _download_worker(self, model_id):
+    def poll_download_queue(self):
         try:
-            from huggingface_hub import snapshot_download
-            # In a real app, we'd want to track progress better, but let's keep it simple for now
-            snapshot_download(repo_id=model_id)
-            self.after(0, lambda: self.on_download_complete(model_id))
-        except Exception as e:
-            self.after(0, lambda: self.lbl_status.configure(text=f"Download failed: {e}", text_color="red"))
+            while True:
+                msg_type, data = self.download_queue.get_nowait()
+                
+                if msg_type == "model_download_progress":
+                    downloaded, total = data
+                    if total > 0:
+                        self.progress.set(downloaded / total)
+                        # Optional: Update status with %
+                        # self.lbl_status.configure(text=f"Downloading... {downloaded/total*100:.1f}%")
+                
+                elif msg_type == "status_update":
+                    self.lbl_status.configure(text=data, text_color="gray")
+                
+                elif msg_type == "download_complete":
+                    self.on_download_complete(data)
+                    return # Stop polling
+                
+                elif msg_type == "error":
+                    self.lbl_status.configure(text=f"Download failed: {data}", text_color="red")
+                    return # Stop polling
+                    
+        except queue.Empty:
+            # Continue polling if not closed
+            if self.winfo_exists():
+                self.after(100, self.poll_download_queue)
 
     def on_download_complete(self, model_id):
         self.lbl_status.configure(text=f"Download complete: {model_id}!", text_color="green")
