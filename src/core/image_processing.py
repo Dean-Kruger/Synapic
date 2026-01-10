@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 import piexif
 from iptcinfo3 import IPTCInfo
 
-import config
+from src.core import config
 
 class ImageValidationError(Exception):
     """Raised when image validation fails."""

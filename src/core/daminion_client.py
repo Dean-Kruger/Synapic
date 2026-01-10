@@ -600,8 +600,6 @@ class DaminionClient:
 
             extract_properties(response)
             
-            extract_properties(response)
-            
             logging.info(f"[DAMINION] [OK] Mapped {len(self._tag_map) // 2} tags to GUIDs.")
             logging.info(f"[DAMINION] Available Tags: {list(self._tag_map.keys())}")
             

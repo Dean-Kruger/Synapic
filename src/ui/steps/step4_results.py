@@ -1,4 +1,8 @@
 import customtkinter as ctk
+import os
+import subprocess
+import platform
+from pathlib import Path
 
 class Step4Results(ctk.CTkFrame):
     def __init__(self, parent, controller):
@@ -85,7 +89,27 @@ class Step4Results(ctk.CTkFrame):
         ctk.CTkLabel(row, text=tags, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
 
     def open_logs(self):
-        print("Opening logs...")
+        """Open the log folder in the system file explorer."""
+        from src.utils.logger import LOG_DIR
+        
+        try:
+            if not LOG_DIR.exists():
+                print(f"Log directory does not exist: {LOG_DIR}")
+                return
+            
+            # Platform-specific folder opening
+            system = platform.system()
+            if system == 'Windows':
+                os.startfile(LOG_DIR)
+            elif system == 'Darwin':  # macOS
+                subprocess.run(['open', str(LOG_DIR)])
+            else:  # Linux and others
+                subprocess.run(['xdg-open', str(LOG_DIR)])
+                
+            print(f"Opened log folder: {LOG_DIR}")
+            
+        except Exception as e:
+            print(f"Failed to open log folder: {e}")
 
     def export_report(self):
         print("Exporting report...")

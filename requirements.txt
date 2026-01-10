@@ -1,3 +1,6 @@
 customtkinter
 requests
 pillow
+piexif
+iptcinfo3
+tqdm

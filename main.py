@@ -32,6 +32,8 @@ def main():
         raise
     finally:
         logger.info("Application shutdown")
+        from src.utils.logger import shutdown_logging
+        shutdown_logging()
 
 if __name__ == "__main__":
     main()
