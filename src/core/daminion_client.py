@@ -401,13 +401,30 @@ class DaminionClient:
         for endpoint in tried:
             try:
                 response = self._make_request(endpoint)
-                items = response.get('mediaItems') or response.get('items') or response.get('data') or response.get('collections') or response
-                if isinstance(items, dict):
-                     # Handle dictionary response {id: item, ...}
-                    return list(items.values())
-                if isinstance(items, list):
-                    return items
-            except Exception:
+                if not response:
+                    continue
+                
+                # Handle list response directly
+                if isinstance(response, list):
+                    return response
+                
+                # Handle dictionary response
+                if isinstance(response, dict):
+                    items = response.get('mediaItems') or response.get('items') or response.get('data') or response.get('collections')
+                    
+                    if isinstance(items, list):
+                        return items
+                    if isinstance(items, dict):
+                        # Some APIs return {id: item, ...}
+                        # Check if first value is a dict to be sure it's items
+                        vals = list(items.values())
+                        if vals and isinstance(vals[0], dict):
+                            return vals
+                        # If items was the full response or a wrapper, we might need to be more clever
+                        # but returning empty is safer than returning metadata
+                        return []
+            except Exception as e:
+                logging.debug(f"Endpoint {endpoint} failed: {e}")
                 continue
 
         logging.warning(f"Could not retrieve items for shared collection {collection_id}")
@@ -816,6 +833,10 @@ class DaminionClient:
         # 2. Client-side filtering for Approval Status and Untagged fields
         filtered_items = []
         for item in items:
+            if not isinstance(item, dict):
+                logging.debug(f"Skipping non-dictionary item in filter loop: {type(item)}")
+                continue
+
             # Check Approval Status
             # Property: 2 (Status) or 'Status' field
             status = item.get('Status') or item.get('status')

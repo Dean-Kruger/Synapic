@@ -285,6 +285,16 @@ def extract_tags_from_result(
             if text:
                 # For Captioning, the text IS the description.
                 description = text.strip()
+                
+                # Cleanup: remove common prompt prefixes that VLMs might echo back
+                prefixes_to_strip = ["Describe the image.", "Describe this image.", "Caption:", "Description:"]
+                for prefix in prefixes_to_strip:
+                    if description.lower().startswith(prefix.lower()):
+                        description = description[len(prefix):].strip()
+                        # Handle potential colon or leading chars left over
+                        if description.startswith(":") or description.startswith("."):
+                            description = description[1:].strip()
+                
                 # We do NOT extract keywords from caption anymore.
                 keywords = []
 

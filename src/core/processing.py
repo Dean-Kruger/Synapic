@@ -189,7 +189,16 @@ class ProcessingManager:
                     # Captioning
                     with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
-                         result = self.model(img)
+                         
+                         # Modern VLMs (e.g. Qwen2-VL) require a prompt, otherwise 
+                         # they fail during preprocessing with KeyError: 'input_ids'.
+                         # Standard models like BLIP/GIT often support prompts too.
+                         try:
+                             # Provide a default prompt and limit length
+                             result = self.model(img, prompt="Describe the image.", generate_kwargs={"max_new_tokens": 128})
+                         except Exception as e:
+                             self.logger.debug(f"Prompted inference failed ({e}), falling back to simple call.")
+                             result = self.model(img)
                 elif engine.task == config.MODEL_TASK_ZERO_SHOT:
                     # Zero-Shot Classification
                     # Requires candidate_labels
