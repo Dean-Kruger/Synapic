@@ -15,6 +15,15 @@ OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 SITE_URL = "https://github.com/deanable/hugging-juice-face"
 SITE_NAME = "Hugging Juice Face"
 
+# Whitelist of known free vision models that support system messages
+# These models have been verified to work with developer instructions
+FREE_VISION_MODELS_WITH_SYSTEM_SUPPORT = [
+    "google/gemini-2.0-flash-exp:free",
+    "google/gemini-flash-1.5-exp",
+    "nvidia/nemotron-nano-2-vl:free",
+    "qwen/qwen-2.5-vl-3b-instruct:free",
+]
+
 
 def _extract_models_from_response(resp_json):
     # Support list, dict with 'models', and dict with 'data'
@@ -61,10 +70,72 @@ def _is_image_model(model_meta: dict) -> bool:
     return False
 
 
+def _is_free_model(model_meta: dict) -> bool:
+    """Check if a model is free to use (no cost per token)."""
+    # Check if model ID is in our known free models list
+    model_id = model_meta.get("id") or model_meta.get("model") or model_meta.get("name") or ""
+    if any(known in model_id for known in FREE_VISION_MODELS_WITH_SYSTEM_SUPPORT):
+        return True
+    
+    # Check pricing information
+    pricing = model_meta.get("pricing") or {}
+    if isinstance(pricing, dict):
+        # Check if both prompt and completion are free
+        prompt_price = pricing.get("prompt")
+        completion_price = pricing.get("completion")
+        
+        # Convert to float and check if zero
+        try:
+            if prompt_price is not None and completion_price is not None:
+                prompt_val = float(prompt_price) if isinstance(prompt_price, (int, float, str)) else None
+                completion_val = float(completion_price) if isinstance(completion_price, (int, float, str)) else None
+                if prompt_val == 0 and completion_val == 0:
+                    return True
+        except (ValueError, TypeError):
+            pass
+    
+    # Check if ":free" suffix in model ID
+    if ":free" in model_id.lower():
+        return True
+    
+    return False
+
+
+def _supports_system_messages(model_meta: dict) -> bool:
+    """Check if a model supports system messages (developer instructions)."""
+    # First check our whitelist of known compatible models
+    model_id = model_meta.get("id") or model_meta.get("model") or model_meta.get("name") or ""
+    if any(known in model_id for known in FREE_VISION_MODELS_WITH_SYSTEM_SUPPORT):
+        return True
+    
+    # Check if model metadata explicitly states system message support
+    if model_meta.get("supports_system_message") is True:
+        return True
+    
+    # Check architecture for system message support indicators
+    arch = model_meta.get("architecture") or {}
+    if isinstance(arch, dict):
+        if arch.get("supports_system_message") is True:
+            return True
+    
+    # Gemma models generally don't support system messages
+    if "gemma" in model_id.lower():
+        return False
+    
+    # For safety, if we can't determine support, exclude it
+    # (better to show fewer models than to show broken ones)
+    return False
+
+
 def find_models_by_task(task: str, token: Optional[str] = None, limit: int = 50) -> Tuple[List[str], List[str]]:
     """Return (model_ids, downloaded_models)
 
     For OpenRouter there is no local download concept here, so downloaded_models is an empty list.
+    
+    Filters models to only include:
+    - Image-capable models (vision/multimodal)
+    - Free models (no cost per token)
+    - Models that support system messages (developer instructions)
     """
     headers = {}
     if token:
@@ -77,11 +148,23 @@ def find_models_by_task(task: str, token: Optional[str] = None, limit: int = 50)
         r.raise_for_status()
         data = r.json()
         models = _extract_models_from_response(data)
+        
         # Filter for image-capable models
         image_models = [m for m in models if isinstance(m, dict) and _is_image_model(m)]
-        model_ids = [m.get("id") or m.get("model") or m.get("name") for m in image_models]
+        
+        # Further filter for free models with system message support
+        compatible_models = [
+            m for m in image_models 
+            if _is_free_model(m) and _supports_system_messages(m)
+        ]
+        
+        model_ids = [m.get("id") or m.get("model") or m.get("name") for m in compatible_models]
         # Remove None and take unique
         model_ids = [m for m in model_ids if m]
+        
+        # Log the filtering results
+        logging.info(f"OpenRouter model discovery: {len(models)} total, {len(image_models)} vision, {len(compatible_models)} free+system-msg")
+        
         # Limit
         model_ids = model_ids[:limit]
         return model_ids, []
