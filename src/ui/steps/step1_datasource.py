@@ -1,9 +1,12 @@
 import customtkinter as ctk
+import logging
+from tkinter import messagebox
 
 class Step1Datasource(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
+        self.logger = logging.getLogger(__name__)
         
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -12,13 +15,13 @@ class Step1Datasource(ctk.CTkFrame):
         self.container = ctk.CTkFrame(self)
         self.container.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         self.container.grid_columnconfigure(0, weight=1)
+        self.container.grid_rowconfigure(2, weight=1)
 
         # Title
         title = ctk.CTkLabel(self.container, text="Step 1: Datasource", font=("Roboto", 24, "bold"))
         title.grid(row=0, column=0, pady=(20, 30))
 
         # Source Selection (Radio Buttons)
-        # Prefill from session
         ds = self.controller.session.datasource
         self.source_var = ctk.StringVar(value=ds.type or "local")
         
@@ -32,8 +35,16 @@ class Step1Datasource(ctk.CTkFrame):
         r2.pack(side="left", padx=20, pady=10)
 
         # Content Area (Dynamic)
-        self.content_area = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.content_area.grid(row=2, column=0, sticky="nsew", pady=20, padx=20)
+        self.canvas = ctk.CTkCanvas(self.container, bg="#2b2b2b", highlightthickness=0)
+        self.scrollbar = ctk.CTkScrollbar(self.container, orientation="vertical", command=self.canvas.yview)
+        self.content_area = ctk.CTkFrame(self.canvas, fg_color="transparent")
+        
+        self.content_area.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=self.content_area, anchor="nw", width=700) # Fixed width for scrollable area
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.grid(row=2, column=0, sticky="nsew", pady=20, padx=(20, 5))
+        self.scrollbar.grid(row=2, column=0, sticky="nse", pady=20, padx=(0, 20))
         
         # Initialize Frames
         self.init_local_frame()
@@ -53,7 +64,7 @@ class Step1Datasource(ctk.CTkFrame):
         self.local_frame = ctk.CTkFrame(self.content_area)
         
         # Folder Selection
-        ctk.CTkLabel(self.local_frame, text="Select Image Folder:", font=("Roboto", 16)).pack(anchor="w", pady=(10, 5), padx=20)
+        ctk.CTkLabel(self.local_frame, text="Select Image Folder:", font=("Roboto", 16, "bold")).pack(anchor="w", pady=(10, 5), padx=20)
         
         path_frame = ctk.CTkFrame(self.local_frame, fg_color="transparent")
         path_frame.pack(fill="x", padx=20)
@@ -61,16 +72,21 @@ class Step1Datasource(ctk.CTkFrame):
         self.path_entry = ctk.CTkEntry(path_frame, placeholder_text="No folder selected...")
         if ds.local_path:
             self.path_entry.insert(0, ds.local_path)
-            
         self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
         ctk.CTkButton(path_frame, text="Browse", width=100, command=self.browse_folder).pack(side="right")
         
+        # Recursive Checkbox
+        self.chk_recursive = ctk.CTkCheckBox(self.local_frame, text="Include subfolders (Recursive scan)")
+        if ds.local_recursive:
+            self.chk_recursive.select()
+        self.chk_recursive.pack(anchor="w", padx=20, pady=10)
+        
         # File Filters
-        ctk.CTkLabel(self.local_frame, text="File Types:", font=("Roboto", 16)).pack(anchor="w", pady=(20, 5), padx=20)
+        ctk.CTkLabel(self.local_frame, text="File Types:", font=("Roboto", 16, "bold")).pack(anchor="w", pady=(20, 5), padx=20)
         
         filter_frame = ctk.CTkFrame(self.local_frame, fg_color="transparent")
-        filter_frame.pack(fill="x", padx=20)
+        filter_frame.pack(fill="x", padx=20, pady=(0, 10))
         
         self.chk_jpg = ctk.CTkCheckBox(filter_frame, text="JPG/JPEG")
         self.chk_jpg.select()
@@ -88,34 +104,41 @@ class Step1Datasource(ctk.CTkFrame):
         self.daminion_frame = ctk.CTkFrame(self.content_area)
         
         # Connection Config
-        grid_kws = {"padx": 20, "pady": 10, "sticky": "ew"}
         self.daminion_frame.grid_columnconfigure(1, weight=1)
+        grid_kws = {"padx": 20, "pady": 5, "sticky": "ew"}
         
-        ctk.CTkLabel(self.daminion_frame, text="Host URL:").grid(row=0, column=0, **grid_kws)
+        ctk.CTkLabel(self.daminion_frame, text="Daminion Server Configuration", font=("Roboto", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=20, sticky="w")
+        
+        ctk.CTkLabel(self.daminion_frame, text="Host URL:").grid(row=1, column=0, **grid_kws)
         self.entry_host = ctk.CTkEntry(self.daminion_frame, placeholder_text="http://localhost:8080")
         if ds.daminion_url:
             self.entry_host.insert(0, ds.daminion_url)
-        self.entry_host.grid(row=0, column=1, **grid_kws)
+        self.entry_host.grid(row=1, column=1, **grid_kws)
         
-        ctk.CTkLabel(self.daminion_frame, text="Username:").grid(row=1, column=0, **grid_kws)
+        ctk.CTkLabel(self.daminion_frame, text="Username:").grid(row=2, column=0, **grid_kws)
         self.entry_user = ctk.CTkEntry(self.daminion_frame)
         if ds.daminion_user:
             self.entry_user.insert(0, ds.daminion_user)
-        self.entry_user.grid(row=1, column=1, **grid_kws)
+        self.entry_user.grid(row=2, column=1, **grid_kws)
         
-        ctk.CTkLabel(self.daminion_frame, text="Password:").grid(row=2, column=0, **grid_kws)
+        ctk.CTkLabel(self.daminion_frame, text="Password:").grid(row=3, column=0, **grid_kws)
         self.entry_pass = ctk.CTkEntry(self.daminion_frame, show="*")
         if ds.daminion_pass:
             self.entry_pass.insert(0, ds.daminion_pass)
-        self.entry_pass.grid(row=2, column=1, **grid_kws)
+        self.entry_pass.grid(row=3, column=1, **grid_kws)
         
-        ctk.CTkButton(self.daminion_frame, text="Connect", fg_color="green", command=self.connect_daminion).grid(row=3, column=1, pady=20, sticky="e", padx=20)
+        self.btn_connect = ctk.CTkButton(self.daminion_frame, text="Connect", fg_color="green", command=self.connect_daminion)
+        self.btn_connect.grid(row=4, column=1, pady=10, sticky="e", padx=20)
         
-        # Scope Selection (Hidden until connected)
-        self.scope_frame = ctk.CTkFrame(self.daminion_frame)
-        # Placeholder for post-connect UI
-        ctk.CTkLabel(self.scope_frame, text="Catalog Scope (Connect first)", text_color="gray").pack(pady=20)
-        self.scope_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=20, pady=10)
+        # Advanced Filters Area
+        self.filters_container = ctk.CTkFrame(self.daminion_frame, fg_color="transparent")
+        self.filters_container.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(10, 20))
+        self.filters_container.grid_columnconfigure(0, weight=1)
+        
+        if self.controller.session.daminion_client and self.controller.session.daminion_client.authenticated:
+             self.show_advanced_daminion_filters()
+        else:
+             ctk.CTkLabel(self.filters_container, text="Connect to see filtering options", text_color="gray", font=("Roboto", 12, "italic")).pack(pady=20)
 
     def toggle_source_view(self):
         # Clear content area
@@ -124,8 +147,10 @@ class Step1Datasource(ctk.CTkFrame):
             
         if self.source_var.get() == "local":
             self.local_frame.pack(fill="both", expand=True)
+            self.canvas.yview_moveto(0)
         else:
             self.daminion_frame.pack(fill="both", expand=True)
+            self.canvas.yview_moveto(0)
 
     def browse_folder(self):
         directory = ctk.filedialog.askdirectory()
@@ -139,39 +164,138 @@ class Step1Datasource(ctk.CTkFrame):
         pwd = self.entry_pass.get()
         
         if not host or not user:
-            print("Error: detailed error handling to be added") 
+            messagebox.showerror("Error", "Host URL and Username are required.")
             return
 
-        # Update Session
-        self.controller.session.datasource.type = "daminion"
-        self.controller.session.datasource.daminion_url = host
-        self.controller.session.datasource.daminion_user = user
-        self.controller.session.datasource.daminion_pass = pwd
+        self.btn_connect.configure(state="disabled", text="Connecting...")
         
-        # Connect
-        success = self.controller.session.connect_daminion()
-        if success:
-            print("Connected!")
-            # TODO: Show scopes
-            for widget in self.scope_frame.winfo_children():
-                widget.destroy()
-            ctk.CTkLabel(self.scope_frame, text="Connected!", text_color="green").pack()
-            # In a real impl, we'd fetch catalogs here
-        else:
-            print("Failed to connect.")
+        # Update Session
+        ds = self.controller.session.datasource
+        ds.daminion_url = host
+        ds.daminion_user = user
+        ds.daminion_pass = pwd
+        
+        def _bg_connect():
+            success = self.controller.session.connect_daminion()
+            self.after(0, lambda: self._on_connected(success))
             
+        import threading
+        threading.Thread(target=_bg_connect, daemon=True).start()
+
+    def _on_connected(self, success):
+        self.btn_connect.configure(state="normal", text="Connect")
+        if success:
+            self.show_advanced_daminion_filters()
+        else:
+            messagebox.showerror("Connection Failed", "Could not connect to Daminion server. Check URL and credentials.")
+
+    def show_advanced_daminion_filters(self):
+        # Clear container
+        for widget in self.filters_container.winfo_children():
+            widget.destroy()
+            
+        ds = self.controller.session.datasource
+        client = self.controller.session.daminion_client
+        
+        # 1. Target Scope
+        ctk.CTkLabel(self.filters_container, text="Catalog Target Scope:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
+        
+        self.scope_var = ctk.StringVar(value=ds.daminion_scope)
+        scope_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
+        scope_frame.pack(fill="x", padx=20)
+        
+        ctk.CTkRadioButton(scope_frame, text="All Items", variable=self.scope_var, value="all").pack(side="left", padx=(0, 20))
+        ctk.CTkRadioButton(scope_frame, text="Saved Search", variable=self.scope_var, value="saved_search").pack(side="left", padx=20)
+        ctk.CTkRadioButton(scope_frame, text="Collection", variable=self.scope_var, value="collection").pack(side="left", padx=20)
+
+        # 2. Dynamic Dropdowns
+        dropdown_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
+        dropdown_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Saved Searches
+        try:
+            searches = client.get_saved_searches()
+            search_names = [s.get('value') or s.get('name') for s in searches] if searches else []
+            self.search_map = {s.get('value') or s.get('name'): s.get('id') for s in searches} if searches else {}
+            
+            self.saved_search_var = ctk.StringVar(value=ds.daminion_saved_search or (search_names[0] if search_names else "None"))
+            ctk.CTkLabel(dropdown_frame, text="Saved Search:").pack(side="left", padx=(0, 5))
+            ctk.CTkOptionMenu(dropdown_frame, variable=self.saved_search_var, values=search_names if search_names else ["No Saved Searches Found"]).pack(side="left", padx=(0, 20))
+        except Exception as e:
+            self.logger.error(f"Failed to fetch saved searches: {e}")
+
+        # Collections
+        try:
+            collections = client.get_shared_collections()
+            col_names = [c.get('name') or c.get('title') for c in collections] if collections else []
+            self.col_map = {c.get('name') or c.get('title'): c.get('id') for c in collections} if collections else {}
+            
+            self.collection_var = ctk.StringVar(value=ds.daminion_catalog_id or (col_names[0] if col_names else "None"))
+            ctk.CTkLabel(dropdown_frame, text="Collection:").pack(side="left", padx=(0, 5))
+            ctk.CTkOptionMenu(dropdown_frame, variable=self.collection_var, values=col_names if col_names else ["No Collections Found"]).pack(side="left")
+        except Exception as e:
+            self.logger.error(f"Failed to fetch collections: {e}")
+
+        # 3. Untagged Filters
+        ctk.CTkLabel(self.filters_container, text="Target Only Untagged Fields:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
+        
+        untagged_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
+        untagged_frame.pack(fill="x", padx=20)
+        
+        self.chk_untagged_kws = ctk.CTkCheckBox(untagged_frame, text="Keywords")
+        if ds.daminion_untagged_keywords: self.chk_untagged_kws.select()
+        self.chk_untagged_kws.pack(side="left", padx=(0, 20))
+        
+        self.chk_untagged_cats = ctk.CTkCheckBox(untagged_frame, text="Categories")
+        if ds.daminion_untagged_categories: self.chk_untagged_cats.select()
+        self.chk_untagged_cats.pack(side="left", padx=20)
+        
+        self.chk_untagged_desc = ctk.CTkCheckBox(untagged_frame, text="Description")
+        if ds.daminion_untagged_description: self.chk_untagged_desc.select()
+        self.chk_untagged_desc.pack(side="left", padx=20)
+
+        # 4. Approval Status
+        ctk.CTkLabel(self.filters_container, text="Approval Status:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
+        
+        self.approval_var = ctk.StringVar(value=ds.daminion_approval_status)
+        status_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
+        status_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        ctk.CTkRadioButton(status_frame, text="Any", variable=self.approval_var, value="all").pack(side="left", padx=(0, 20))
+        ctk.CTkRadioButton(status_frame, text="Approved", variable=self.approval_var, value="approved").pack(side="left", padx=20)
+        ctk.CTkRadioButton(status_frame, text="Rejected", variable=self.approval_var, value="rejected").pack(side="left", padx=20)
+        ctk.CTkRadioButton(status_frame, text="Unassigned (Waiting Room)", variable=self.approval_var, value="unassigned").pack(side="left", padx=20)
+
     def next_step(self):
         # Save state
+        ds = self.controller.session.datasource
         mode = self.source_var.get()
-        self.controller.session.datasource.type = mode
+        ds.type = mode
         
         if mode == "local":
             path = self.path_entry.get()
             if not path:
-                # TODO: Alert
-                print("Select a folder!")
+                messagebox.showwarning("Warning", "Please select a folder first.")
                 return
-            self.controller.session.datasource.local_path = path
+            ds.local_path = path
+            ds.local_recursive = self.chk_recursive.get()
+        else:
+            if not self.controller.session.daminion_client or not self.controller.session.daminion_client.authenticated:
+                 messagebox.showwarning("Warning", "Please connect to Daminion first.")
+                 return
+                 
+            # Save Daminion Filters
+            ds.daminion_scope = self.scope_var.get()
+            ds.daminion_approval_status = self.approval_var.get()
+            ds.daminion_untagged_keywords = self.chk_untagged_kws.get()
+            ds.daminion_untagged_categories = self.chk_untagged_cats.get()
+            ds.daminion_untagged_description = self.chk_untagged_desc.get()
+            
+            # Map names back to IDs
+            if ds.daminion_scope == "saved_search":
+                 ds.daminion_saved_search = self.search_map.get(self.saved_search_var.get())
+            elif ds.daminion_scope == "collection":
+                 ds.daminion_catalog_id = self.col_map.get(self.collection_var.get())
 
         # Proceed
         self.controller.show_step("Step2Tagging")

@@ -79,35 +79,50 @@ class ProcessingManager:
             self.session.failed_items += 1
 
     def _fetch_items(self):
-        if self.session.datasource.type == "local":
-            path = Path(self.session.datasource.local_path)
+        ds = self.session.datasource
+        if ds.type == "local":
+            path = Path(ds.local_path)
             if not path.exists():
                 raise FileNotFoundError(f"Folder not found: {path}")
             
             # Scan for images
             exts = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
-            files = [p for p in path.iterdir() if p.suffix.lower() in exts]
-            self.logger.info(f"Found {len(files)} image files in local folder: {path}")
+            
+            if ds.local_recursive:
+                 self.logger.info(f"Performing recursive scan of {path}")
+                 files = [p for p in path.rglob("*") if p.suffix.lower() in exts]
+            else:
+                 self.logger.info(f"Performing shallow scan of {path}")
+                 files = [p for p in path.iterdir() if p.suffix.lower() in exts]
+            
+            self.logger.info(f"Found {len(files)} image files in local folder: {path} (recursive={ds.local_recursive})")
             return files
 
-        elif self.session.datasource.type == "daminion":
+        elif ds.type == "daminion":
             if not self.session.daminion_client:
                 raise ValueError("Daminion client not connected")
             
-            
-            self.logger.info("Fetching items from Daminion server")
+            self.logger.info(f"Fetching items from Daminion - Scope: {ds.daminion_scope}, Approval: {ds.daminion_approval_status}")
             self.log("Fetching items from Daminion...")
             
-            # Fetch based on scope
-            # TODO: Add support for 'selection' or 'collection' via session config
-            # For now, default to grabbing a batch of recent items or shared collection
+            # Build untagged fields list
+            untagged_fields = []
+            if ds.daminion_untagged_keywords: untagged_fields.append("Keywords")
+            if ds.daminion_untagged_categories: untagged_fields.append("Categories")
+            if ds.daminion_untagged_description: untagged_fields.append("Description")
             
-            # Example: Get last 50 items
-            # items, total = self.session.daminion_client.get_media_items(start_id=1, batch_size=50)
+            # Determine max items based on scope
+            # For testing/demo, we might want to cap 'all' but allow 'saved_search' or 'collection' to be larger
+            max_to_fetch = None if ds.daminion_scope != "all" else 100
             
-            # Better: Get all items paginated (limit to 50 for testing)
-            items = self.session.daminion_client.get_all_items_paginated(batch_size=50, max_items=50)
-            
+            items = self.session.daminion_client.get_items_filtered(
+                scope=ds.daminion_scope,
+                saved_search_id=ds.daminion_saved_search,
+                collection_id=ds.daminion_catalog_id,
+                untagged_fields=untagged_fields,
+                approval_status=ds.daminion_approval_status,
+                max_items=max_to_fetch
+            )
             
             self.logger.info(f"Retrieved {len(items)} items from Daminion")
             self.log(f"Retrieved {len(items)} items from Daminion.")
@@ -124,10 +139,17 @@ class ProcessingManager:
             self.model = huggingface_utils.load_model(
                 model_id=engine.model_id,
                 task=engine.task,
-                progress_queue=None # We handle progress via callback manually if needed, or update this to accept callback
+                progress_queue=None
             )
-            self.logger.info(f"Local model loaded successfully: {engine.model_id}")
-            self.log("Model loaded successfully.")
+            
+            # Sync task if it was auto-corrected by load_model
+            actual_task = getattr(self.model, "task", None)
+            if actual_task and actual_task != engine.task:
+                self.logger.info(f"Syncing session task from '{engine.task}' to actual pipeline task '{actual_task}'")
+                engine.task = actual_task
+
+            self.logger.info(f"Local model loaded successfully: {engine.model_id} (Task: {engine.task})")
+            self.log(f"Model loaded successfully (Task: {engine.task}).")
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
 

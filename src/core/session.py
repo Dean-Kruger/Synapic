@@ -7,11 +7,17 @@ from .daminion_client import DaminionClient
 class DatasourceConfig:
     type: str = "local" # 'local' or 'daminion'
     local_path: str = ""
+    local_recursive: bool = False
     daminion_url: str = ""
     daminion_user: str = ""
     daminion_pass: str = ""
     daminion_catalog_id: str = ""
-    daminion_scope: str = "all" # 'all', 'selection', 'collection'
+    daminion_scope: str = "all" # 'all', 'selection', 'collection', 'saved_search'
+    daminion_saved_search: str = ""
+    daminion_untagged_keywords: bool = False
+    daminion_untagged_categories: bool = False
+    daminion_untagged_description: bool = False
+    daminion_approval_status: str = "all" # 'all', 'approved', 'rejected', 'unassigned'
 
 @dataclass
 class EngineConfig:

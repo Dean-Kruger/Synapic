@@ -435,7 +435,13 @@ class DaminionClient:
 
         try:
             response = self._make_request(endpoint, method='GET')
-            items = response.get('mediaItems', [])
+            # Handle different response shapes
+            items = []
+            if isinstance(response, list):
+                items = response
+            elif isinstance(response, dict):
+                items = response.get('mediaItems') or response.get('items') or response.get('data') or []
+            
             logging.info(f"[DAMINION] [OK] Structured query returned {len(items)} items")
             return items
         except DaminionAPIError as e:
@@ -444,6 +450,23 @@ class DaminionClient:
                 self._structured_query_unavailable = True
                 return None
             raise
+
+    def get_saved_searches(self) -> List[Dict]:
+        """Retrieve list of saved searches via the tag tree or specialized endpoint."""
+        logging.info("[DAMINION] Fetching saved searches...")
+        # Try specialized endpoint first if it exists
+        try:
+            endpoint = "/api/MediaItems/GetSavedSearches"
+            response = self._make_request(endpoint)
+            if isinstance(response, list):
+                return response
+            if isinstance(response, dict):
+                return response.get('values') or response.get('items') or response.get('data') or []
+        except:
+             pass
+             
+        # Fallback to general tag values for "Saved Searches"
+        return self.get_tag_values("Saved Searches")
 
 
     def search_items(self, query: str, index: int = 0, page_size: int = 200) -> Optional[List[Dict]]:
@@ -741,17 +764,10 @@ class DaminionClient:
 
         Returns:
             Tuple of (list of media items, total count)
-
-        Note:
-            This endpoint returns items missing required metadata.
-            May return empty if all items are properly tagged.
         """
-        # Try structured query first (assuming 'status:untagged' corresponds to a specific property)
-        # This is a guess; the exact property ID for "Status" might differ.
-        # Let's try with the text search first as it's more standard.
-
         # Try efficient text-based server-side search first
-        items = self.search_items(query="status:untagged", page_size=500)
+        query = "status:untagged"
+        items = self.search_items(query=query, page_size=500)
         if items is not None:
             total = len(items)
             logging.info(f"Retrieved {len(items)} untagged items via server-side search.")
@@ -765,6 +781,76 @@ class DaminionClient:
         total = response.get('totalCount', 0)
         logging.info(f"Retrieved {len(items)} untagged items from legacy endpoint.")
         return items, total
+
+    def get_items_filtered(self, 
+                          scope: str = "all",
+                          saved_search_id: Optional[Union[str, int]] = None,
+                          collection_id: Optional[Union[str, int]] = None,
+                          untagged_fields: List[str] = None,
+                          approval_status: str = "all",
+                          max_items: Optional[int] = None,
+                          progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict]:
+        """
+        Retrieve media items based on advanced filters.
+        
+        Args:
+            scope: 'all', 'saved_search', 'collection'
+            saved_search_id: ID of the saved search to use if scope is 'saved_search'
+            collection_id: ID of collection if scope is 'collection'
+            untagged_fields: List of fields like ['Keywords', 'Description'] that must be empty
+            approval_status: 'all', 'approved', 'rejected', 'unassigned'
+        """
+        logging.info(f"[DAMINION] Fetching items with scope={scope}, approval={approval_status}, untagged={untagged_fields}")
+        
+        # 1. Start with base set of items based on scope
+        items = []
+        if scope == "saved_search" and saved_search_id:
+             # If it's a 'Saved Search' tag, we fetch items by tag.
+             items = self.get_items_by_tag("Saved Searches", saved_search_id)
+        elif scope == "collection" and collection_id:
+             items = self.get_shared_collection_items(collection_id)
+        else:
+             # Default: fetch all items paginated (with max_items limit)
+             items = self.get_all_items_paginated(max_items=max_items, progress_callback=progress_callback)
+
+        # 2. Client-side filtering for Approval Status and Untagged fields
+        filtered_items = []
+        for item in items:
+            # Check Approval Status
+            # Property: 2 (Status) or 'Status' field
+            status = item.get('Status') or item.get('status')
+            
+            if approval_status == "approved" and str(status).lower() != "approved":
+                continue
+            if approval_status == "rejected" and str(status).lower() != "rejected":
+                continue
+            if approval_status == "unassigned" and status is not None and str(status).strip() != "":
+                continue
+
+            # Check Untagged fields
+            if untagged_fields:
+                is_any_field_empty = False
+                # Daminion JSON keys can be 'Keywords' or 'keywords'
+                # Create a lowercase map for robust lookup
+                item_lower = {k.lower(): v for k, v in item.items()}
+                
+                for field in untagged_fields:
+                    val = item_lower.get(field.lower())
+                    if not val or not str(val).strip() or val == []:
+                        is_any_field_empty = True
+                        break
+                
+                if not is_any_field_empty:
+                    # All selected untagged fields have data, so skip this item
+                    continue
+                
+            filtered_items.append(item)
+            
+            if max_items and len(filtered_items) >= max_items:
+                break
+                
+        logging.info(f"[DAMINION] Filtering complete. Returning {len(filtered_items)} items.")
+        return filtered_items
 
     def download_thumbnail(self, item_id: str, width: int = 300,
                           height: int = 300) -> Optional[Path]:
