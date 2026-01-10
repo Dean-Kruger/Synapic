@@ -263,10 +263,28 @@ class ConfigDialog(ctk.CTkToplevel):
             local_models = huggingface_utils.find_local_models()
             model_info = local_models.get(self.session.engine.model_id)
             if model_info:
-                self.session.engine.task = model_info['config'].get("pipeline_tag", "image-classification")
+                # Use the newly added suggested_task from hf_utils
+                self.session.engine.task = model_info.get('suggested_task', "image-classification")
+                print(f"Setting task for {self.session.engine.model_id} to {self.session.engine.task}")
         except:
             pass
         self.destroy()
+
+    def validate_model_id(self, model_id, provider):
+        """Basic validation to prevent using OR models with HF engine and vice versa."""
+        if provider == "huggingface":
+            if ":" in model_id and not "/" in model_id.split(":")[0]:
+                # Looks like 'google/gemini...:free' or similar
+                import tkinter.messagebox as mb
+                return mb.askyesno("Potential Error", 
+                                  f"The model ID '{model_id}' looks like it might be an OpenRouter model.\n\n"
+                                  "Are you sure you want to use it with the Hugging Face engine?")
+        elif provider == "openrouter":
+            if "/" in model_id and ":" not in model_id:
+                # Looks like 'org/model' without a suffix, which is common for HF
+                # OpenRouter also uses org/model but often has suffixes or specific names
+                pass
+        return True
 
     def init_hf_tab(self):
         self.tab_hf.grid_columnconfigure(0, weight=1)
@@ -455,17 +473,31 @@ class ConfigDialog(ctk.CTkToplevel):
         self.or_model.insert(0, mid)
 
     def save_hf(self):
+        model_id = self.hf_model.get()
+        if not self.validate_model_id(model_id, "huggingface"):
+            return
+
         self.session.engine.provider = "huggingface"
         self.session.engine.api_key = self.hf_key.get()
-        self.session.engine.model_id = self.hf_model.get()
-        # Default multimodal task
-        self.session.engine.task = "image-to-text"
+        self.session.engine.model_id = model_id
+        
+        # Try to infer task or default to image-to-text for multi-modal
+        # Classification models often have 'vit', 'resnet', 'siglip' but no 'caption' or 'desc'
+        if any(x in model_id.lower() for x in ["vit-base-patch", "resnet-", "siglip-", "bits-"]):
+             self.session.engine.task = "image-classification"
+        else:
+             self.session.engine.task = "image-to-text"
+             
         self.destroy()
 
     def save_or(self):
+        model_id = self.or_model.get()
+        if not self.validate_model_id(model_id, "openrouter"):
+            return
+
         self.session.engine.provider = "openrouter"
         self.session.engine.api_key = self.or_key.get()
-        self.session.engine.model_id = self.or_model.get()
+        self.session.engine.model_id = model_id
         # OpenRouter is primarily chat/generation -> image-to-text task in our logical mapping
         # But could be zero-shot if we prompt it right. For now, default to image-to-text (captioning/describe)
         self.session.engine.task = "image-to-text" 
