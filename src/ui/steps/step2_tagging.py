@@ -39,6 +39,32 @@ class Step2Tagging(ctk.CTkFrame):
         ctk.CTkButton(nav_frame, text="Previous", command=lambda: self.controller.show_step("Step1Datasource"), width=150, fg_color="gray").pack(side="left", padx=20)
         ctk.CTkButton(nav_frame, text="Next Step", command=self.next_step, width=200, height=40).pack(side="right", padx=20)
 
+        # Traces for color coding
+        self.engine_var.trace_add("write", lambda *args: self.update_config_button_color())
+        self.update_config_button_color()
+
+    def update_config_button_color(self):
+        engine = self.engine_var.get()
+        is_ready = False
+        
+        if engine == "local":
+            try:
+                from src.core import huggingface_utils
+                local_models = huggingface_utils.find_local_models()
+                is_ready = len(local_models) > 0
+            except:
+                is_ready = False
+        elif engine == "huggingface":
+            # Check if key exists in session
+            is_ready = bool(self.controller.session.engine.api_key)
+        elif engine == "openrouter":
+            is_ready = bool(self.controller.session.engine.api_key)
+            
+        if is_ready:
+            self.btn_config.configure(fg_color="#2FA572", hover_color="#288E62") # Green
+        else:
+            self.btn_config.configure(fg_color="#E74C3C", hover_color="#C0392B") # Red
+
     def create_engine_card(self, parent, text, value, col):
         card = ctk.CTkRadioButton(parent, text=text, variable=self.engine_var, value=value, font=("Roboto", 16))
         card.grid(row=0, column=col, padx=20, pady=20)
@@ -47,6 +73,8 @@ class Step2Tagging(ctk.CTkFrame):
         engine = self.engine_var.get()
         # Pass session to dialog
         dialog = ConfigDialog(self, self.controller.session, initial_tab=engine)
+        self.wait_window(dialog)
+        self.update_config_button_color()
         
     def next_step(self):
         # Update session
@@ -63,13 +91,20 @@ class Step2Tagging(ctk.CTkFrame):
         print(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
 
+    def refresh_stats(self): # Called by App.show_step
+        self.update_config_button_color()
+
 
 class ConfigDialog(ctk.CTkToplevel):
     def __init__(self, parent, session, initial_tab="huggingface"):
         super().__init__(parent)
         self.session = session
         self.title("Engine Configuration")
-        self.geometry("600x500")
+        self.geometry("700x600")
+        
+        # Make modal
+        self.transient(parent)
+        self.grab_set()
         
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -105,9 +140,9 @@ class ConfigDialog(ctk.CTkToplevel):
                                               text_color="gray")
         self.cache_count_label.pack(side="left", padx=5)
         
-        ctk.CTkButton(header, text="+ Download New Model", 
+        ctk.CTkButton(header, text="+ Find & Download Models", 
                       command=self.open_download_manager, 
-                      width=150).pack(side="right", padx=5)
+                      width=180).pack(side="right", padx=5)
 
         # List of cached models ONLY
         self.local_list_frame = ctk.CTkScrollableFrame(
@@ -249,57 +284,70 @@ class ConfigDialog(ctk.CTkToplevel):
         
         warning_text = ctk.CTkLabel(
             warning_frame, 
-            text="⚡ API Test Mode: Free tier has rate limits (~15 req/hour). Test models before downloading for local use.",
+            text="⚡ API Test Mode: Free tier has rate limits (~15 req/hour). Multi-modal models (Image+Text) are supported.",
             wraplength=500,
             font=("Roboto", 11)
         )
         warning_text.pack(side="left", padx=5, pady=8)
 
-        # Task Selection
-        row2 = ctk.CTkFrame(self.tab_hf, fg_color="transparent")
-        row2.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
-        ctk.CTkLabel(row2, text="Task:").pack(side="left")
-        self.hf_task_var = ctk.StringVar(value=self.session.engine.task or "image-classification")
-        self.hf_task_menu = ctk.CTkOptionMenu(row2, variable=self.hf_task_var, 
-                                           values=["image-classification", "image-to-text", "zero-shot-image-classification"],
-                                           width=200)
-        self.hf_task_menu.pack(side="left", padx=10)
-        
-        # Search
+        # Search Tools (Mirroring OR style)
         row3 = ctk.CTkFrame(self.tab_hf, fg_color="transparent")
-        row3.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
-        self.hf_search = ctk.CTkEntry(row3, placeholder_text="Search generic models...")
+        row3.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        self.hf_search = ctk.CTkEntry(row3, placeholder_text="Search multi-modal models (e.g. 'blip', 'vit-gpt2')...")
         self.hf_search.pack(side="left", fill="x", expand=True, padx=(0,5))
-        ctk.CTkButton(row3, text="Search", width=80, command=self.search_hf_online).pack(side="left")
+        self.hf_search.bind("<Return>", lambda e: self.search_hf_online())
+        ctk.CTkButton(row3, text="Search Hub", width=100, command=self.search_hf_online).pack(side="left")
 
         # List
-        self.hf_list = ctk.CTkScrollableFrame(self.tab_hf, label_text="Recommended Models (Sorted by Downloads)")
-        self.hf_list.grid(row=4, column=0, sticky="nsew", padx=10, pady=5)
+        self.hf_list = ctk.CTkScrollableFrame(self.tab_hf, label_text="Recommended Multi-modal Models")
+        self.hf_list.grid(row=3, column=0, sticky="nsew", padx=10, pady=5)
 
         # Selection
         row4 = ctk.CTkFrame(self.tab_hf, fg_color="transparent")
-        row4.grid(row=5, column=0, sticky="ew", padx=10, pady=(5,20))
+        row4.grid(row=4, column=0, sticky="ew", padx=10, pady=(10,20))
+        
         ctk.CTkLabel(row4, text="Selected:").pack(side="left")
-        self.hf_model = ctk.CTkEntry(row4, width=300)
-        self.hf_model.insert(0, self.session.engine.model_id or "google/vit-base-patch16-224")
+        self.hf_model = ctk.CTkEntry(row4, width=250)
+        self.hf_model.insert(0, self.session.engine.model_id or "Salesforce/blip-image-captioning-base")
         self.hf_model.pack(side="left", padx=10, fill="x", expand=True)
-        ctk.CTkButton(row4, text="Save Config", command=self.save_hf).pack(side="right")
+        
+        btn_save_config = ctk.CTkButton(row4, text="Save Config", width=100, command=self.save_hf)
+        btn_save_config.pack(side="right", padx=5)
+        
+        btn_download = ctk.CTkButton(row4, text="Download for Local Use", width=150, fg_color="#2FA572", command=self.download_selected_hf_for_local)
+        btn_download.pack(side="right", padx=5)
+
+    def download_selected_hf_for_local(self):
+        model_id = self.hf_model.get()
+        if not model_id: return
+        
+        # Open download manager directly for this model
+        dm = DownloadManagerDialog(self, self.session)
+        dm.search_entry.delete(0, "end")
+        dm.search_entry.insert(0, model_id)
+        dm.start_search()
 
     def search_hf_online(self):
         query = self.hf_search.get()
-        task = self.hf_task_var.get()
+        # Default to multimodal tasks
+        tasks = ["image-to-text", "visual-question-answering"]
         
         # Clear list
         for w in self.hf_list.winfo_children(): w.destroy()
-        ctk.CTkLabel(self.hf_list, text="Searching...", text_color="gray").pack()
+        ctk.CTkLabel(self.hf_list, text="Searching Hub (Multi-modal only)...", text_color="gray").pack(pady=10)
         
         def worker():
             try:
                 from huggingface_hub import list_models
-                # Filter strictly by task
-                models = list_models(filter=task, search=query, limit=15, sort="downloads", direction=-1)
-                results = [m.id for m in models]
-                self.after(0, lambda: self.show_hf_results(results))
+                # Combine results from typical multimodal tasks
+                all_results = []
+                for t in tasks:
+                    models = list_models(filter=t, search=query, limit=10, sort="downloads", direction=-1)
+                    all_results.extend([m.id for m in models])
+                
+                # Deduplicate
+                unique_results = list(dict.fromkeys(all_results))
+                self.after(0, lambda: self.show_hf_results(unique_results))
             except Exception as e:
                 error_msg = str(e)
                 self.after(0, lambda: self.show_hf_results([], error=error_msg))
@@ -397,7 +445,8 @@ class ConfigDialog(ctk.CTkToplevel):
         self.session.engine.provider = "huggingface"
         self.session.engine.api_key = self.hf_key.get()
         self.session.engine.model_id = self.hf_model.get()
-        self.session.engine.task = self.hf_task_var.get()
+        # Default multimodal task
+        self.session.engine.task = "image-to-text"
         self.destroy()
 
     def save_or(self):
@@ -430,18 +479,14 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         
-        ctk.CTkLabel(header, text="Task:").pack(side="left", padx=5)
-        self.task_var = ctk.StringVar(value="image-classification")
-        self.task_menu = ctk.CTkOptionMenu(header, variable=self.task_var, 
-                                           values=["image-classification", "image-to-text", "zero-shot-image-classification"],
-                                           width=180)
-        self.task_menu.pack(side="left", padx=5)
+        # Task dropdown removed to simplify for average user - focusing on multi-modal
+        self.task_var = ctk.StringVar(value="image-to-text")
         
-        self.search_entry = ctk.CTkEntry(header, placeholder_text="Search models (e.g. 'vit', 'blip')...", width=300)
+        self.search_entry = ctk.CTkEntry(header, placeholder_text="Search multi-modal models (e.g. 'blip', 'vit', 'qwen')...", width=350)
         self.search_entry.pack(side="left", padx=5, fill="x", expand=True)
         self.search_entry.bind("<Return>", lambda e: self.start_search())
         
-        ctk.CTkButton(header, text="Search Hub", command=self.start_search, width=100).pack(side="left", padx=5)
+        ctk.CTkButton(header, text="Search Hub", command=self.start_search, width=120).pack(side="left", padx=5)
 
         # Results area
         self.results_frame = ctk.CTkScrollableFrame(self, label_text="Hugging Face Hub Results")
@@ -473,8 +518,13 @@ class DownloadManagerDialog(ctk.CTkToplevel):
     def _search_worker(self, query, task):
         try:
             from huggingface_hub import list_models
-            models = list_models(filter=task, search=query, limit=15, sort="downloads", direction=-1)
-            results = [m.id for m in models]
+            tasks = ["image-to-text", "visual-question-answering"]
+            all_found = []
+            for t in tasks:
+                models = list_models(filter=t, search=query, limit=10, sort="downloads", direction=-1)
+                all_found.extend([m.id for m in models])
+            
+            results = list(dict.fromkeys(all_found)) # Dedupe
             self.after(0, lambda: self.show_search_results(results))
         except Exception as e:
             self.after(0, lambda: self.lbl_status.configure(text=f"Error: {e}", text_color="red"))
@@ -508,7 +558,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.parent.tabview.set("Hugging Face")
         self.parent.hf_model.delete(0, "end")
         self.parent.hf_model.insert(0, model_id)
-        self.parent.hf_task_var.set(self.task_var.get())
+        # self.parent.hf_task_var.set(self.task_var.get()) # Task var removed from HF tab
         self.lbl_status.configure(text=f"Selected {model_id} for API testing. Switch to 'Hugging Face' tab.")
         # Optional: focus parent
         self.parent.focus_set()

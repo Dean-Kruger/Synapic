@@ -4,3 +4,6 @@ pillow
 piexif
 iptcinfo3
 tqdm
+huggingface_hub
+transformers
+torch
