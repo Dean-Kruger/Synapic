@@ -531,6 +531,16 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
 # API Inference Support
 # -------------------------------------------------------------------------
 
+class RateLimitError(Exception):
+    """Raised when Hugging Face API rate limit is exceeded."""
+    def __init__(self, retry_after=None):
+        self.retry_after = retry_after
+        msg = f"Hugging Face API rate limit exceeded."
+        if retry_after:
+            msg += f" Retry after {retry_after} seconds."
+        msg += " Consider downloading the model for unlimited local inference."
+        super().__init__(msg)
+
 def rate_limit_handler(max_retries=3, initial_delay=1.0):
     """
     Decorator to handle rate limiting and network errors for API calls.
@@ -567,7 +577,11 @@ def rate_limit_handler(max_retries=3, initial_delay=1.0):
                                   except:
                                       pass
 
-                        logging.warning(f"Rate limited. Waiting {wait_time:.2f}s before retry {retries+1}/{max_retries}...")
+                        logging.warning(
+                            f"⚠️ Rate limited by Hugging Face API. "
+                            f"Waiting {wait_time:.0f}s before retry {retries+1}/{max_retries}... "
+                            f"Consider downloading the model for unlimited local inference."
+                        )
                         time.sleep(wait_time)
                         retries += 1
                         delay *= 2 # Exponential backoff for subsequent defaults
