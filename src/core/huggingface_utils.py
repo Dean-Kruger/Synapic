@@ -107,6 +107,38 @@ def get_model_cache_dir(model_id):
     """Returns the cache directory for a given model."""
     return os.path.join(HUGGINGFACE_HUB_CACHE, f"models--{model_id.replace('/', '--')}")
 
+def get_dir_size(path: Path) -> int:
+    """Calculate the total size of a directory in bytes."""
+    total = 0
+    try:
+        for entry in os.scandir(path):
+            if entry.is_file():
+                total += entry.stat().st_size
+            elif entry.is_dir():
+                total += get_dir_size(Path(entry.path))
+    except (OSError, PermissionError):
+        pass
+    return total
+
+def format_size(size_bytes: int) -> str:
+    """Format bytes as a human-readable string."""
+    if size_bytes == 0: return "0 B"
+    units = ("B", "KB", "MB", "GB", "TB")
+    i = 0
+    while size_bytes >= 1024 and i < len(units)-1:
+        size_bytes /= 1024
+        i += 1
+    return f"{size_bytes:.1f} {units[i]}"
+
+def get_remote_model_size(model_id: str, token: Optional[str] = None) -> int:
+    """Fetch the total size of a model from the Hub in bytes."""
+    try:
+        api = HfApi(token=token)
+        model_info = api.model_info(repo_id=model_id)
+        return sum(s.size for s in (model_info.siblings or []) if s.size is not None)
+    except:
+        return 0
+
 def is_model_downloaded(model_id, token=None):
     """Check if a model is fully downloaded."""
     try:
@@ -212,9 +244,15 @@ def find_local_models() -> dict[str, dict]:
             if config_path.exists():
                 with open(config_path, "r", encoding="utf-8") as f:
                     model_config = json.load(f)
+                
+                # Calculate size of the entire model directory (snapshots + metadata)
+                size_bytes = get_dir_size(model_dir)
+                
                 local_models[model_id] = {
                     'config': model_config,
-                    'path': latest_snapshot
+                    'path': latest_snapshot,
+                    'size_bytes': size_bytes,
+                    'size_str': format_size(size_bytes)
                 }
         except Exception as e:
             logging.debug(f"Could not inspect model {model_id}: {e}")

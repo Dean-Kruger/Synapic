@@ -183,16 +183,21 @@ class ConfigDialog(ctk.CTkToplevel):
             if not all_local:
                 ctk.CTkLabel(
                     self.local_list_frame, 
-                    text="No models downloaded yet.\nClick '+ Download New Model' to browse the Hub.",
+                    text="No models downloaded yet.\nClick '+ Find & Download Models' to browse the Hub.",
                     text_color="gray",
                     justify="center"
                 ).pack(pady=20)
-                self.cache_count_label.configure(text="(0 models)")
+                self.cache_count_label.configure(text="(0 models, 0 B)")
             else:
-                self.cache_count_label.configure(text=f"({len(all_local)} models)")
+                total_bytes = sum(m.get('size_bytes', 0) for m in all_local.values())
+                total_str = huggingface_utils.format_size(total_bytes)
+                self.cache_count_label.configure(text=f"({len(all_local)} models, {total_str})")
                 
-                for model_id in all_local.keys():
-                    self.add_cached_model_item(model_id)
+                # Sort models by size descending
+                sorted_models = sorted(all_local.items(), key=lambda x: x[1].get('size_bytes', 0), reverse=True)
+                
+                for model_id, info in sorted_models:
+                    self.add_cached_model_item(model_id, info.get('size_str', 'Unknown size'))
                     
         except Exception as e:
             ctk.CTkLabel(
@@ -201,14 +206,14 @@ class ConfigDialog(ctk.CTkToplevel):
                 text_color="red"
             ).pack()
 
-    def add_cached_model_item(self, model_id):
+    def add_cached_model_item(self, model_id, size_str):
         """Add a cached model to the list."""
         frame = ctk.CTkFrame(self.local_list_frame)
         frame.pack(fill="x", pady=2)
         
         btn = ctk.CTkButton(
             frame, 
-            text=f"✓ {model_id}", 
+            text=f"✓ {model_id} ({size_str})", 
             fg_color="transparent", 
             border_width=1,
             text_color="green",
@@ -338,16 +343,24 @@ class ConfigDialog(ctk.CTkToplevel):
         
         def worker():
             try:
-                from huggingface_hub import list_models
                 # Combine results from typical multimodal tasks
                 all_results = []
                 for t in tasks:
-                    models = list_models(filter=t, search=query, limit=10, sort="downloads", direction=-1)
+                    models = list_models(filter=t, search=query, limit=5, sort="downloads", direction=-1)
                     all_results.extend([m.id for m in models])
                 
                 # Deduplicate
                 unique_results = list(dict.fromkeys(all_results))
-                self.after(0, lambda: self.show_hf_results(unique_results))
+                
+                # Fetch sizes
+                from src.core import huggingface_utils
+                results_with_size = []
+                for mid in unique_results:
+                    size_bytes = huggingface_utils.get_remote_model_size(mid)
+                    size_str = huggingface_utils.format_size(size_bytes)
+                    results_with_size.append((mid, size_str))
+
+                self.after(0, lambda: self.show_hf_results(results_with_size))
             except Exception as e:
                 error_msg = str(e)
                 self.after(0, lambda: self.show_hf_results([], error=error_msg))
@@ -366,8 +379,8 @@ class ConfigDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self.hf_list, text="No models found.").pack()
             return
 
-        for mid in results:
-            btn = ctk.CTkButton(self.hf_list, text=mid, fg_color="transparent", border_width=1, 
+        for mid, size_str in results:
+            btn = ctk.CTkButton(self.hf_list, text=f"{mid} ({size_str})", fg_color="transparent", border_width=1, 
                                 anchor="w", command=lambda m=mid: self.select_hf_model(m))
             btn.pack(fill="x", pady=2)
 
@@ -518,14 +531,23 @@ class DownloadManagerDialog(ctk.CTkToplevel):
     def _search_worker(self, query, task):
         try:
             from huggingface_hub import list_models
+            from src.core import huggingface_utils
             tasks = ["image-to-text", "visual-question-answering"]
             all_found = []
             for t in tasks:
-                models = list_models(filter=t, search=query, limit=10, sort="downloads", direction=-1)
+                models = list_models(filter=t, search=query, limit=5, sort="downloads", direction=-1)
                 all_found.extend([m.id for m in models])
             
-            results = list(dict.fromkeys(all_found)) # Dedupe
-            self.after(0, lambda: self.show_search_results(results))
+            unique_ids = list(dict.fromkeys(all_found)) # Dedupe
+            
+            # Fetch sizes
+            results_with_size = []
+            for mid in unique_ids:
+                size_bytes = huggingface_utils.get_remote_model_size(mid)
+                size_str = huggingface_utils.format_size(size_bytes)
+                results_with_size.append((mid, size_str))
+
+            self.after(0, lambda: self.show_search_results(results_with_size))
         except Exception as e:
             self.after(0, lambda: self.lbl_status.configure(text=f"Error: {e}", text_color="red"))
 
@@ -535,14 +557,14 @@ class DownloadManagerDialog(ctk.CTkToplevel):
              ctk.CTkLabel(self.results_frame, text="No models found matching your query.", text_color="gray").pack(pady=20)
              return
              
-        for mid in results:
-            self.add_result_item(mid)
+        for mid, size_str in results:
+            self.add_result_item(mid, size_str)
 
-    def add_result_item(self, model_id):
+    def add_result_item(self, model_id, size_str):
         frame = ctk.CTkFrame(self.results_frame)
         frame.pack(fill="x", pady=5, padx=5)
         
-        ctk.CTkLabel(frame, text=model_id, font=("Roboto", 12, "bold"), anchor="w").pack(side="left", padx=10, fill="x", expand=True)
+        ctk.CTkLabel(frame, text=f"{model_id} ({size_str})", font=("Roboto", 12, "bold"), anchor="w").pack(side="left", padx=10, fill="x", expand=True)
         
         # Buttons
         btn_test = ctk.CTkButton(frame, text="Test via API", width=100, fg_color="#3B8ED0", 
