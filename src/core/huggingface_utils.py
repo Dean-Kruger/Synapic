@@ -216,6 +216,35 @@ def find_models_worker(task, q, token=None):
         logging.exception("Failed to find models.")
         q.put(("error", f"Failed to find models: {e}"))
 
+def get_suggested_task(model_config: dict) -> str:
+    """
+    Suggests a pipeline task based on model configuration (architectures, pipeline_tag).
+    """
+    # 1. Check explicit pipeline_tag (from Hub metadata, might be in config if saved by some tools)
+    if "pipeline_tag" in model_config:
+        return model_config["pipeline_tag"]
+
+    # 2. Check architectures
+    archs = model_config.get("architectures", [])
+    for arch in archs:
+        arch_lower = arch.lower()
+        if "forimageclassification" in arch_lower:
+            return config.MODEL_TASK_IMAGE_CLASSIFICATION
+        if "forconditionalgeneration" in arch_lower:
+            return config.MODEL_TASK_IMAGE_TO_TEXT
+        if "visionencoderdecoder" in arch_lower:
+            return config.MODEL_TASK_IMAGE_TO_TEXT
+        if "clipmodel" in arch_lower or "siglipmodel" in arch_lower:
+            return config.MODEL_TASK_ZERO_SHOT
+    
+    # 3. Check model_type for known multi-modal models
+    mtype = model_config.get("model_type", "").lower()
+    if mtype in ["blip", "blip-2", "git", "qwen2_vl", "llava"]:
+        return config.MODEL_TASK_IMAGE_TO_TEXT
+    
+    # Default fallback
+    return config.MODEL_TASK_IMAGE_CLASSIFICATION
+
 def find_local_models() -> dict[str, dict]:
     """
     Finds all locally cached models by scanning the cache.
@@ -248,11 +277,15 @@ def find_local_models() -> dict[str, dict]:
                 # Calculate size of the entire model directory (snapshots + metadata)
                 size_bytes = get_dir_size(model_dir)
                 
+                # Infer suggested task
+                suggested_task = get_suggested_task(model_config)
+                
                 local_models[model_id] = {
                     'config': model_config,
                     'path': latest_snapshot,
                     'size_bytes': size_bytes,
-                    'size_str': format_size(size_bytes)
+                    'size_str': format_size(size_bytes),
+                    'suggested_task': suggested_task
                 }
         except Exception as e:
             logging.debug(f"Could not inspect model {model_id}: {e}")
@@ -402,25 +435,33 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
         
         q.put(("status_update", f"Initializing model {model_id}..."))
         logging.info(f"Initializing pipeline for {model_id}...")
-        # Basic compatibility check: ensure config.json has a model_type for transformers pipelines
+        
+        # Validation and Auto-Task Detection
         try:
             cfg_path = os.path.join(local_model_path, "config.json")
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as cf:
                     cfg = json.load(cf)
+                
                 if "model_type" not in cfg:
-                    raise ValueError(
-                        f"Model {model_id} does not appear to be a standard transformers model (missing 'model_type' in {cfg_path})."
-                        " The model may require a custom loader (e.g., OpenCLIP/timm) and cannot be loaded with the default pipeline."
-                    )
-        except ValueError:
-            raise
-        except Exception:
-            # If we can't inspect the config for any reason, proceed to let pipeline raise a clear error.
-            pass
-        if has_enhanced_progress and set_progress_stage and ProgressStage:
-            pass
-        
+                    logging.warning(f"Model {model_id} missing 'model_type' in config.json. May fail loading.")
+                
+                # Check for task mismatch
+                suggested = get_suggested_task(cfg)
+                if suggested != task:
+                    logging.warning(f"⚠️ Task mismatch detected for {model_id}! Requested: '{task}', Suggested: '{suggested}'")
+                    # If requested is classification but model is generative, it WILL fail. 
+                    # We should probably force the suggested task if it's certain.
+                    if task == config.MODEL_TASK_IMAGE_CLASSIFICATION and suggested == config.MODEL_TASK_IMAGE_TO_TEXT:
+                         logging.info(f"Overriding task to '{suggested}' to prevent crash with generative model.")
+                         task = suggested
+                    elif task == config.MODEL_TASK_IMAGE_TO_TEXT and suggested == config.MODEL_TASK_IMAGE_CLASSIFICATION:
+                         logging.info(f"Overriding task to '{suggested}' for classification model.")
+                         task = suggested
+
+        except Exception as e:
+            logging.debug(f"Task validation failed: {e}")
+
         # Try to load tokenizer with failover to slow tokenizer if fast fails (fixes Qwen2-VL local load issue)
         tokenizer = None
         try:
@@ -440,7 +481,7 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
         if has_enhanced_progress and set_progress_stage and ProgressStage:
             set_progress_stage(ProgressStage.COMPLETE, sub_stage="Model loaded successfully")
         
-        logging.info(f"Model pipeline loaded successfully for: {model_id}")
+        logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id}")
         q.put(("model_loaded", {"model": model, "model_name": model_id}))
 
     except Exception as e:
@@ -524,22 +565,33 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
 
         if q:
             q.put(("status_update", f"Initializing model {model_id}..."))
-        # Basic compatibility check: ensure config.json has a model_type for transformers pipelines
+        
+        # Validation and Auto-Task Detection
         try:
             cfg_path = os.path.join(local_model_path, "config.json")
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as cf:
                     cfg = json.load(cf)
+                
                 if "model_type" not in cfg:
-                    raise ValueError(
-                        f"Model {model_id} does not appear to be a standard transformers model (missing 'model_type' in {cfg_path})."
-                        " The model may require a custom loader (e.g., OpenCLIP/timm) and cannot be loaded with the default pipeline."
-                    )
-        except ValueError:
-            raise
-        except Exception:
-            # If we can't inspect the config for any reason, proceed to let pipeline raise a clear error.
-            pass
+                    logging.warning(f"Model {model_id} missing 'model_type' in config.json. May fail loading.")
+                
+                # Check for task mismatch
+                suggested = get_suggested_task(cfg)
+                if suggested != task:
+                    logging.warning(f"⚠️ Task mismatch detected for {model_id}! Requested: '{task}', Suggested: '{suggested}'")
+                    # If requested is classification but model is generative, it WILL fail. 
+                    # We should probably force the suggested task if it's certain.
+                    if task == config.MODEL_TASK_IMAGE_CLASSIFICATION and suggested == config.MODEL_TASK_IMAGE_TO_TEXT:
+                         logging.info(f"Overriding task to '{suggested}' to prevent crash with generative model.")
+                         task = suggested
+                    elif task == config.MODEL_TASK_IMAGE_TO_TEXT and suggested == config.MODEL_TASK_IMAGE_CLASSIFICATION:
+                         logging.info(f"Overriding task to '{suggested}' for classification model.")
+                         task = suggested
+
+        except Exception as e:
+            logging.debug(f"Task validation failed: {e}")
+            
         # Try to load tokenizer with failover to slow tokenizer if fast fails (fixes Qwen2-VL local load issue)
         tokenizer = None
         try:
@@ -556,7 +608,7 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
         else:
             model = pipeline(task, model=local_model_path, device=device)
 
-        logging.info(f"Model pipeline loaded successfully (with pre-loaded tokenizer) for: {model_id} (sync) on device {device}")
+        logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id} on device {device}")
         return model
 
     except Exception as e:
