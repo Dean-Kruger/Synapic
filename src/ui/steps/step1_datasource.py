@@ -228,7 +228,8 @@ class Step1Datasource(ctk.CTkFrame):
         try:
             collections = client.get_shared_collections()
             col_names = [c.get('name') or c.get('title') for c in collections] if collections else []
-            self.col_map = {c.get('name') or c.get('title'): c.get('id') for c in collections} if collections else {}
+            # Prefer 'code' for shared collections as recommended by API documentation
+            self.col_map = {c.get('name') or c.get('title'): c.get('code') or c.get('id') for c in collections} if collections else {}
             
             self.collection_var = ctk.StringVar(value=ds.daminion_catalog_id or (col_names[0] if col_names else "None"))
             ctk.CTkLabel(dropdown_frame, text="Collection:").pack(side="left", padx=(0, 5))

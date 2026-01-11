@@ -391,11 +391,13 @@ class DaminionClient:
         to be passed as a parameter. The exact server-side parameters may vary by
         Daminion version; we attempt common query names.
         """
-        # try a couple of common parameter formats to support different server versions
+        # try multiple endpoint formats based on Daminion API documentation
+        # code is preferred for PublicItems
         tried = [
+            f"/api/SharedCollection/PublicItems?code={collection_id}&index={index}&size={page_size}&sortag=0&asc=true",
+            f"/api/SharedCollection/PublicItems/{collection_id}/{index}/{page_size}/0/true",
             f"/api/SharedCollection/GetItems?id={collection_id}&index={index}&pageSize={page_size}",
-            f"/api/SharedCollection/GetItems?collectionId={collection_id}&index={index}&pageSize={page_size}",
-            f"/api/SharedCollection/PublicItems/{collection_id}/{index}/{page_size}/0/true"
+            f"/api/SharedCollection/GetItems?collectionId={collection_id}&index={index}&pageSize={page_size}"
         ]
 
         for endpoint in tried:
@@ -478,12 +480,40 @@ class DaminionClient:
             if isinstance(response, list):
                 return response
             if isinstance(response, dict):
-                return response.get('values') or response.get('items') or response.get('data') or []
-        except:
-             pass
+                searches = response.get('values') or response.get('items') or response.get('data') or []
+                if searches:
+                    return searches
+        except Exception as e:
+             logging.debug(f"[DAMINION] Specialized GetSavedSearches endpoint failed: {e}")
              
         # Fallback to general tag values for "Saved Searches"
-        return self.get_tag_values("Saved Searches")
+        searches = self.get_tag_values("Saved Searches")
+        
+        # Methodology check: The API works with IDs so it is not intuitive. 
+        # ID 40 is the standard TagID for Saved Searches in Daminion.
+        if not searches:
+            logging.info("[DAMINION] 'Saved Searches' name failed in schema. Trying hardcoded Tag ID 40...")
+            # We skip the prefix check in get_tag_values by calling it with a name it might not find,
+            # but we can also just implement the ID-based fetch directly here to be sure.
+            for endpoint in [
+                "/api/indexedTagValues/getIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000",
+                "/api/IndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000"
+            ]:
+                try:
+                    response = self._make_request(endpoint)
+                    items = []
+                    if isinstance(response, list):
+                        items = response
+                    elif isinstance(response, dict):
+                        items = response.get('data') or response.get('values') or response.get('items') or []
+                    
+                    if items:
+                        logging.info(f"[DAMINION] Found {len(items)} saved searches via Tag ID 40.")
+                        return items
+                except Exception:
+                    continue
+        
+        return searches
 
 
     def search_items(self, query: str, index: int = 0, page_size: int = 200) -> Optional[List[Dict]]:
@@ -612,20 +642,12 @@ class DaminionClient:
                         # Also store lowercase version for robust lookup
                         self._tag_map[p_name.lower()] = str(p_guid)
                         
-                        # DEBUG: Check if we have an integer ID in the fields
-                        if p_name == "Collections" or p_name == "Flag":
-                             logging.info(f"[DAMINION] DEBUG Schema Object for '{p_name}': {obj.keys()}")
-                             if 'id' in obj:
-                                 logging.info(f"[DAMINION] DEBUG ID for '{p_name}': {obj['id']} (Type: {type(obj['id'])})")
-                             # Try to populate int ID from here if possible?
-                             # Usually GetDefaultLayout returns 'id' as 'PropertyID' (int)?
-                             # Or 'propertyID'?
-                             
-                             potential_id = obj.get('id') or obj.get('propertyID') or obj.get('PropertyID')
-                             if potential_id and isinstance(potential_id, int):
-                                 self._tag_id_map[p_name] = potential_id
-                                 self._tag_id_map[p_name.lower()] = potential_id
-                                 logging.info(f"[DAMINION] Found Integer ID {potential_id} for '{p_name}' in Layout.")
+                        # DEBUG: Map integer IDs for all properties if present
+                        potential_id = obj.get('id') or obj.get('propertyID') or obj.get('PropertyID')
+                        if potential_id and isinstance(potential_id, int):
+                            self._tag_id_map[p_name] = potential_id
+                            self._tag_id_map[p_name.lower()] = potential_id
+                            logging.debug(f"[DAMINION] Found Integer ID {potential_id} for '{p_name}' in Layout.")
 
                     # Recurse into children
                     for key, value in obj.items():
@@ -688,17 +710,19 @@ class DaminionClient:
         if not guid and tag_name == "Collection":
              guid = self._tag_map.get("Collections")
         
-        if not guid:
+        if not guid and tag_name != "Saved Searches":
             logging.warning(f"Tag '{tag_name}' not found in schema.")
             return []
 
         # Try to look up Integer ID first (preferred for IndexedTagValues)
         int_id = self._tag_id_map.get(tag_name) or self._tag_id_map.get(tag_name.lower()) or self._tag_id_map.get(tag_name.title()) 
-        if int_id is None and tag_name == "Collection":
-             int_id = self._tag_id_map.get("Collections")
+        if int_id is None:
+            if tag_name == "Collection":
+                int_id = self._tag_id_map.get("Collections")
+            elif tag_name == "Saved Searches":
+                int_id = 40 # Standard Daminion TagID for Saved Searches
 
         if int_id is None:
-            # Maybe we haven't fetched schema? (Already called above)
             logging.debug(f"Tag '{tag_name}' has no integer ID mapped. IndexedTagValues might fail.")
 
         # Candidate endpoints:
@@ -765,6 +789,16 @@ class DaminionClient:
              if items is not None:
                  return items
         
+        # Specialized fallback for Saved Searches (Tag ID 40)
+        # Methodology: API works with IDs so we use standard ID 40 for Saved Searches
+        if tag_name == "Saved Searches" and value_id:
+             logging.info(f"[DAMINION] Querying Saved Search {value_id} using ID 40 fallback...")
+             q = f"40,{value_id}"
+             ops = "40,any"
+             items = self.get_items_by_query(q, ops)
+             if items:
+                 return items
+
         # Fallback to search if name provided
         if value_name:
              # If tag is "Collection", query should be "Place:London" (if Place)
