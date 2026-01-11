@@ -103,40 +103,46 @@ class Step1Datasource(ctk.CTkFrame):
         ds = self.controller.session.datasource
         self.daminion_frame = ctk.CTkFrame(self.content_area)
         
-        # Connection Config
-        self.daminion_frame.grid_columnconfigure(1, weight=1)
+        # 1. Connection Config Area
         grid_kws = {"padx": 20, "pady": 5, "sticky": "ew"}
+        self.config_container = ctk.CTkFrame(self.daminion_frame)
+        self.config_container.grid(row=0, column=0, columnspan=2, **grid_kws, pady=(10, 15))
+        self.config_container.grid_columnconfigure(1, weight=1)
         
-        ctk.CTkLabel(self.daminion_frame, text="Daminion Server Configuration", font=("Roboto", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=20, sticky="w")
+        ctk.CTkLabel(self.config_container, text="Daminion Server Configuration", font=("Roboto", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=20, sticky="w")
         
-        ctk.CTkLabel(self.daminion_frame, text="Host URL:").grid(row=1, column=0, **grid_kws)
-        self.entry_host = ctk.CTkEntry(self.daminion_frame, placeholder_text="http://localhost:8080")
+        ctk.CTkLabel(self.config_container, text="Host URL:").grid(row=1, column=0, **grid_kws)
+        self.entry_host = ctk.CTkEntry(self.config_container, placeholder_text="http://localhost:8080")
         if ds.daminion_url:
             self.entry_host.insert(0, ds.daminion_url)
         self.entry_host.grid(row=1, column=1, **grid_kws)
         
-        ctk.CTkLabel(self.daminion_frame, text="Username:").grid(row=2, column=0, **grid_kws)
-        self.entry_user = ctk.CTkEntry(self.daminion_frame)
+        ctk.CTkLabel(self.config_container, text="Username:").grid(row=2, column=0, **grid_kws)
+        self.entry_user = ctk.CTkEntry(self.config_container)
         if ds.daminion_user:
             self.entry_user.insert(0, ds.daminion_user)
         self.entry_user.grid(row=2, column=1, **grid_kws)
         
-        ctk.CTkLabel(self.daminion_frame, text="Password:").grid(row=3, column=0, **grid_kws)
-        self.entry_pass = ctk.CTkEntry(self.daminion_frame, show="*")
+        ctk.CTkLabel(self.config_container, text="Password:").grid(row=3, column=0, **grid_kws)
+        self.entry_pass = ctk.CTkEntry(self.config_container, show="*")
         if ds.daminion_pass:
             self.entry_pass.insert(0, ds.daminion_pass)
         self.entry_pass.grid(row=3, column=1, **grid_kws)
         
-        self.btn_connect = ctk.CTkButton(self.daminion_frame, text="Connect", fg_color="green", command=self.connect_daminion)
+        self.btn_connect = ctk.CTkButton(self.config_container, text="Connect", fg_color="green", command=self.connect_daminion)
         self.btn_connect.grid(row=4, column=1, pady=10, sticky="e", padx=20)
+
+        # 2. Connection Status / Disconnect Area (Hidden by default)
+        self.status_container = ctk.CTkFrame(self.daminion_frame, fg_color="transparent")
+        # grid will be managed in toggle_config
         
-        # Advanced Filters Area
+        # 3. Advanced Filters Area
         self.filters_container = ctk.CTkFrame(self.daminion_frame, fg_color="transparent")
         self.filters_container.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=(10, 20))
         self.filters_container.grid_columnconfigure(0, weight=1)
         
         if self.controller.session.daminion_client and self.controller.session.daminion_client.authenticated:
-             self.show_advanced_daminion_filters()
+             self.show_connected_view()
         else:
              ctk.CTkLabel(self.filters_container, text="Connect to see filtering options", text_color="gray", font=("Roboto", 12, "italic")).pack(pady=20)
 
@@ -185,9 +191,37 @@ class Step1Datasource(ctk.CTkFrame):
     def _on_connected(self, success):
         self.btn_connect.configure(state="normal", text="Connect")
         if success:
-            self.show_advanced_daminion_filters()
+            self.show_connected_view()
         else:
             messagebox.showerror("Connection Failed", "Could not connect to Daminion server. Check URL and credentials.")
+
+    def disconnect_daminion(self):
+        self.controller.session.daminion_client = None
+        self.status_container.grid_forget()
+        self.config_container.grid(row=0, column=0, columnspan=2, padx=20, pady=(10, 15), sticky="ew")
+        
+        # Clear filters
+        for widget in self.filters_container.winfo_children():
+            widget.destroy()
+        ctk.CTkLabel(self.filters_container, text="Connect to see filtering options", text_color="gray", font=("Roboto", 12, "italic")).pack(pady=20)
+
+    def show_connected_view(self):
+        # Hide config
+        self.config_container.grid_forget()
+        
+        # Show status/disconnect
+        for widget in self.status_container.winfo_children():
+            widget.destroy()
+            
+        self.status_container.grid(row=0, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
+        
+        status_frame = ctk.CTkFrame(self.status_container, fg_color="#1a1a1a")
+        status_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(status_frame, text=f"Connected to Daminion as {self.entry_user.get()}", font=("Roboto", 14, "bold"), text_color="green").pack(side="left", padx=20, pady=10)
+        ctk.CTkButton(status_frame, text="Disconnect", fg_color="#990000", hover_color="#660000", width=100, command=self.disconnect_daminion).pack(side="right", padx=20, pady=10)
+        
+        self.show_advanced_daminion_filters()
 
     def show_advanced_daminion_filters(self):
         # Clear container
@@ -197,45 +231,54 @@ class Step1Datasource(ctk.CTkFrame):
         ds = self.controller.session.datasource
         client = self.controller.session.daminion_client
         
-        # 1. Target Scope
-        ctk.CTkLabel(self.filters_container, text="Catalog Target Scope:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
+        # 1. Tabbed Target Scope
+        self.tabview = ctk.CTkTabview(self.filters_container, height=150)
+        self.tabview.pack(fill="x", padx=20, pady=10)
         
-        self.scope_var = ctk.StringVar(value=ds.daminion_scope)
-        scope_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        scope_frame.pack(fill="x", padx=20)
-        
-        ctk.CTkRadioButton(scope_frame, text="All Items", variable=self.scope_var, value="all").pack(side="left", padx=(0, 20))
-        ctk.CTkRadioButton(scope_frame, text="Saved Search", variable=self.scope_var, value="saved_search").pack(side="left", padx=20)
-        ctk.CTkRadioButton(scope_frame, text="Collection", variable=self.scope_var, value="collection").pack(side="left", padx=20)
+        self.tabview.add("All Items")
+        self.tabview.add("Saved Searches")
+        self.tabview.add("Shared Collections")
 
-        # 2. Dynamic Dropdowns
-        dropdown_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        dropdown_frame.pack(fill="x", padx=20, pady=10)
-        
-        # Saved Searches
+        # Map current scope to tab
+        scope_map = {"all": "All Items", "saved_search": "Saved Searches", "collection": "Shared Collections"}
+        current_tab = scope_map.get(ds.daminion_scope, "All Items")
+        self.tabview.set(current_tab)
+
+        # Content for All Items
+        ctk.CTkLabel(self.tabview.tab("All Items"), text="Processing all items (limited to 100 for safety during full scan).", text_color="gray").pack(pady=20)
+
+
+        # Content for Saved Searches
         try:
             searches = client.get_saved_searches()
             search_names = [s.get('value') or s.get('name') for s in searches] if searches else []
             self.search_map = {s.get('value') or s.get('name'): s.get('id') for s in searches} if searches else {}
             
             self.saved_search_var = ctk.StringVar(value=ds.daminion_saved_search or (search_names[0] if search_names else "None"))
-            ctk.CTkLabel(dropdown_frame, text="Saved Search:").pack(side="left", padx=(0, 5))
-            ctk.CTkOptionMenu(dropdown_frame, variable=self.saved_search_var, values=search_names if search_names else ["No Saved Searches Found"]).pack(side="left", padx=(0, 20))
+            
+            ss_frame = self.tabview.tab("Saved Searches")
+            ctk.CTkLabel(ss_frame, text="Select Saved Search:").pack(pady=(10, 5))
+            ctk.CTkOptionMenu(ss_frame, variable=self.saved_search_var, values=search_names if search_names else ["No Saved Searches Found"], width=300).pack(pady=10)
         except Exception as e:
             self.logger.error(f"Failed to fetch saved searches: {e}")
+            ctk.CTkLabel(self.tabview.tab("Saved Searches"), text="Failed to load saved searches").pack()
 
-        # Collections
+
+        # Content for Shared Collections
         try:
             collections = client.get_shared_collections()
             col_names = [c.get('name') or c.get('title') for c in collections] if collections else []
-            # Prefer 'code' for shared collections as recommended by API documentation
             self.col_map = {c.get('name') or c.get('title'): c.get('code') or c.get('id') for c in collections} if collections else {}
             
             self.collection_var = ctk.StringVar(value=ds.daminion_catalog_id or (col_names[0] if col_names else "None"))
-            ctk.CTkLabel(dropdown_frame, text="Collection:").pack(side="left", padx=(0, 5))
-            ctk.CTkOptionMenu(dropdown_frame, variable=self.collection_var, values=col_names if col_names else ["No Collections Found"]).pack(side="left")
+            
+            sc_frame = self.tabview.tab("Shared Collections")
+            ctk.CTkLabel(sc_frame, text="Select Shared Collection:").pack(pady=(10, 5))
+            ctk.CTkOptionMenu(sc_frame, variable=self.collection_var, values=col_names if col_names else ["No Collections Found"], width=300).pack(pady=10)
         except Exception as e:
             self.logger.error(f"Failed to fetch collections: {e}")
+            ctk.CTkLabel(self.tabview.tab("Shared Collections"), text="Failed to load shared collections").pack()
+
 
         # 3. Untagged Filters
         ctk.CTkLabel(self.filters_container, text="Target Only Untagged Fields:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
@@ -286,7 +329,10 @@ class Step1Datasource(ctk.CTkFrame):
                  return
                  
             # Save Daminion Filters
-            ds.daminion_scope = self.scope_var.get()
+            tab = self.tabview.get()
+            tab_map = {"All Items": "all", "Saved Searches": "saved_search", "Shared Collections": "collection"}
+            ds.daminion_scope = tab_map[tab]
+            
             ds.daminion_approval_status = self.approval_var.get()
             ds.daminion_untagged_keywords = self.chk_untagged_kws.get()
             ds.daminion_untagged_categories = self.chk_untagged_cats.get()
