@@ -12,7 +12,7 @@ from huggingface_hub import list_models, hf_hub_download, snapshot_download, HfA
 from huggingface_hub.constants import HUGGINGFACE_HUB_CACHE
 import requests
 from requests.exceptions import HTTPError
-from transformers import pipeline, AutoConfig, AutoTokenizer
+from transformers import pipeline, AutoConfig, AutoTokenizer, AutoProcessor
 from threading import RLock
 from src.core import config
 import json
@@ -534,10 +534,31 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
                          task = suggested
         except Exception: pass
             
-        # Initialize pipeline without manual tokenizer for multi-modal stability
-        model = pipeline(task, model=local_model_path, device=device)
+        # Initialize pipeline with processor for multi-modal stability
+        # For modern VLMs (Qwen2-VL, LLaVA), 'image-text-to-text' is preferred
+        pipeline_task = task
+        try:
+            cfg_path = os.path.join(local_model_path, "config.json")
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as cf:
+                    m_cfg = json.load(cf)
+                m_type = m_cfg.get("model_type", "").lower()
+                if m_type in ["qwen2_vl", "llava"]:
+                    pipeline_task = "image-text-to-text"
+                    logging.info(f"Using '{pipeline_task}' pipeline for model type '{m_type}'")
+        except Exception: pass
 
-        logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id} on device {device}")
+        # Load processor if it exists
+        processor = None
+        try:
+            processor = AutoProcessor.from_pretrained(local_model_path)
+            logging.debug("AutoProcessor loaded successfully.")
+        except Exception:
+            logging.debug("No AutoProcessor found, falling back to default pipeline behavior.")
+
+        model = pipeline(pipeline_task, model=local_model_path, processor=processor, device=device)
+
+        logging.info(f"Model pipeline ({pipeline_task}) loaded successfully for: {model_id} on device {device}")
         return model
 
     except Exception as e:

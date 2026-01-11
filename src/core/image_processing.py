@@ -275,12 +275,27 @@ def extract_tags_from_result(
                 logging.info(f"Zero-Shot Category: '{category}' (Score: >={threshold})")
 
         elif model_task == config.MODEL_TASK_IMAGE_TO_TEXT:
-            # Result: [{'generated_text': '...'}]
+            # Result: [{'generated_text': '...'}] or chat-style structures
             text = ""
+            raw_gen = None
             if isinstance(result, list) and len(result) > 0:
-                text = result[0].get('generated_text', '')
+                raw_gen = result[0].get('generated_text', '')
             elif isinstance(result, dict):
-                text = result.get('generated_text', '')
+                raw_gen = result.get('generated_text', '')
+            
+            # If raw_gen is a list of messages (chat format), extract assistant text
+            if isinstance(raw_gen, list):
+                for msg in raw_gen:
+                    if isinstance(msg, dict) and msg.get('role') == 'assistant':
+                        content = msg.get('content', '')
+                        if isinstance(content, list):
+                            for item in content:
+                                if isinstance(item, dict) and item.get('type') == 'text':
+                                    text += item.get('text', '')
+                        elif isinstance(content, str):
+                            text += content
+            elif isinstance(raw_gen, str):
+                text = raw_gen
             
             if text:
                 # For Captioning, the text IS the description.
