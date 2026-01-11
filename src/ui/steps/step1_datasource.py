@@ -106,7 +106,7 @@ class Step1Datasource(ctk.CTkFrame):
         # 1. Connection Config Area
         grid_kws = {"padx": 20, "pady": 5, "sticky": "ew"}
         self.config_container = ctk.CTkFrame(self.daminion_frame)
-        self.config_container.grid(row=0, column=0, columnspan=2, **grid_kws, pady=(10, 15))
+        self.config_container.grid(row=0, column=0, columnspan=2, padx=20, pady=(10, 15), sticky="ew")
         self.config_container.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(self.config_container, text="Daminion Server Configuration", font=("Roboto", 16, "bold")).grid(row=0, column=0, columnspan=2, pady=(10, 15), padx=20, sticky="w")
