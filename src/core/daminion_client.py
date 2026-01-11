@@ -838,7 +838,7 @@ class DaminionClient:
                           saved_search_id: Optional[Union[str, int]] = None,
                           collection_id: Optional[Union[str, int]] = None,
                           untagged_fields: List[str] = None,
-                          approval_status: str = "all",
+                          status_filter: str = "all",
                           max_items: Optional[int] = None,
                           progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict]:
         """
@@ -849,9 +849,9 @@ class DaminionClient:
             saved_search_id: ID of the saved search to use if scope is 'saved_search'
             collection_id: ID of collection if scope is 'collection'
             untagged_fields: List of fields like ['Keywords', 'Description'] that must be empty
-            approval_status: 'all', 'approved', 'rejected', 'unassigned'
+            status_filter: 'all', 'approved' (flagged), 'rejected', 'unassigned' (unflagged)
         """
-        logging.info(f"[DAMINION] Fetching items with scope={scope}, approval={approval_status}, untagged={untagged_fields}")
+        logging.info(f"[DAMINION] Fetching items with scope={scope}, status={status_filter}, untagged={untagged_fields}")
         
         # 1. Start with base set of items based on scope
         items = []
@@ -871,15 +871,15 @@ class DaminionClient:
                 logging.debug(f"Skipping non-dictionary item in filter loop: {type(item)}")
                 continue
 
-            # Check Approval Status
-            # Property: 2 (Status) or 'Status' field
+            # Check Status (Flagging)
+            # Daminion Property: 2 (Status) or 'Status' field
             status = item.get('Status') or item.get('status')
             
-            if approval_status == "approved" and str(status).lower() != "approved":
+            if status_filter == "approved" and str(status).lower() != "approved":
                 continue
-            if approval_status == "rejected" and str(status).lower() != "rejected":
+            if status_filter == "rejected" and str(status).lower() != "rejected":
                 continue
-            if approval_status == "unassigned" and status is not None and str(status).strip() != "":
+            if status_filter == "unassigned" and status is not None and str(status).strip() != "":
                 continue
 
             # Check Untagged fields

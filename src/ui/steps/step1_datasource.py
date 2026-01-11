@@ -34,6 +34,10 @@ class Step1Datasource(ctk.CTkFrame):
         r2 = ctk.CTkRadioButton(self.rb_frame, text="Daminion Server", variable=self.source_var, value="daminion", command=self.toggle_source_view)
         r2.pack(side="left", padx=20, pady=10)
 
+        # Count Label (global for datasource)
+        self.lbl_total_count = ctk.CTkLabel(self.container, text="", font=("Roboto", 14, "italic"), text_color="gray")
+        self.lbl_total_count.grid(row=1, column=0, sticky="e", padx=40)
+
         # Content Area (Dynamic)
         self.canvas = ctk.CTkCanvas(self.container, bg="#2b2b2b", highlightthickness=0)
         self.scrollbar = ctk.CTkScrollbar(self.container, orientation="vertical", command=self.canvas.yview)
@@ -228,11 +232,14 @@ class Step1Datasource(ctk.CTkFrame):
         for widget in self.filters_container.winfo_children():
             widget.destroy()
             
+        self.search_map = {}
+        self.col_map = {}
+        
         ds = self.controller.session.datasource
         client = self.controller.session.daminion_client
         
         # 1. Tabbed Target Scope
-        self.tabview = ctk.CTkTabview(self.filters_container, height=150)
+        self.tabview = ctk.CTkTabview(self.filters_container, height=150, command=self.update_count)
         self.tabview.pack(fill="x", padx=20, pady=10)
         
         self.tabview.add("All Items")
@@ -258,7 +265,8 @@ class Step1Datasource(ctk.CTkFrame):
             
             ss_frame = self.tabview.tab("Saved Searches")
             ctk.CTkLabel(ss_frame, text="Select Saved Search:").pack(pady=(10, 5))
-            ctk.CTkOptionMenu(ss_frame, variable=self.saved_search_var, values=search_names if search_names else ["No Saved Searches Found"], width=300).pack(pady=10)
+            self.opt_search = ctk.CTkOptionMenu(ss_frame, variable=self.saved_search_var, values=search_names if search_names else ["No Saved Searches Found"], width=300, command=self.update_count)
+            self.opt_search.pack(pady=10)
         except Exception as e:
             self.logger.error(f"Failed to fetch saved searches: {e}")
             ctk.CTkLabel(self.tabview.tab("Saved Searches"), text="Failed to load saved searches").pack()
@@ -274,7 +282,8 @@ class Step1Datasource(ctk.CTkFrame):
             
             sc_frame = self.tabview.tab("Shared Collections")
             ctk.CTkLabel(sc_frame, text="Select Shared Collection:").pack(pady=(10, 5))
-            ctk.CTkOptionMenu(sc_frame, variable=self.collection_var, values=col_names if col_names else ["No Collections Found"], width=300).pack(pady=10)
+            self.opt_col = ctk.CTkOptionMenu(sc_frame, variable=self.collection_var, values=col_names if col_names else ["No Collections Found"], width=300, command=self.update_count)
+            self.opt_col.pack(pady=10)
         except Exception as e:
             self.logger.error(f"Failed to fetch collections: {e}")
             ctk.CTkLabel(self.tabview.tab("Shared Collections"), text="Failed to load shared collections").pack()
@@ -286,29 +295,86 @@ class Step1Datasource(ctk.CTkFrame):
         untagged_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
         untagged_frame.pack(fill="x", padx=20)
         
-        self.chk_untagged_kws = ctk.CTkCheckBox(untagged_frame, text="Keywords")
+        self.chk_untagged_kws = ctk.CTkCheckBox(untagged_frame, text="Keywords", command=self.update_count)
         if ds.daminion_untagged_keywords: self.chk_untagged_kws.select()
         self.chk_untagged_kws.pack(side="left", padx=(0, 20))
         
-        self.chk_untagged_cats = ctk.CTkCheckBox(untagged_frame, text="Categories")
+        self.chk_untagged_cats = ctk.CTkCheckBox(untagged_frame, text="Categories", command=self.update_count)
         if ds.daminion_untagged_categories: self.chk_untagged_cats.select()
         self.chk_untagged_cats.pack(side="left", padx=20)
         
-        self.chk_untagged_desc = ctk.CTkCheckBox(untagged_frame, text="Description")
+        self.chk_untagged_desc = ctk.CTkCheckBox(untagged_frame, text="Description", command=self.update_count)
         if ds.daminion_untagged_description: self.chk_untagged_desc.select()
         self.chk_untagged_desc.pack(side="left", padx=20)
 
-        # 4. Approval Status
-        ctk.CTkLabel(self.filters_container, text="Approval Status:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
+        # 4. Filter by Status
+        ctk.CTkLabel(self.filters_container, text="Filter by Status:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
         
-        self.approval_var = ctk.StringVar(value=ds.daminion_approval_status)
+        self.status_var = ctk.StringVar(value=ds.status_filter)
         status_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
         status_frame.pack(fill="x", padx=20, pady=(0, 20))
         
-        ctk.CTkRadioButton(status_frame, text="Any", variable=self.approval_var, value="all").pack(side="left", padx=(0, 20))
-        ctk.CTkRadioButton(status_frame, text="Approved", variable=self.approval_var, value="approved").pack(side="left", padx=20)
-        ctk.CTkRadioButton(status_frame, text="Rejected", variable=self.approval_var, value="rejected").pack(side="left", padx=20)
-        ctk.CTkRadioButton(status_frame, text="Unassigned (Waiting Room)", variable=self.approval_var, value="unassigned").pack(side="left", padx=20)
+        ctk.CTkRadioButton(status_frame, text="Any", variable=self.status_var, value="all", command=self.update_count).pack(side="left", padx=(0, 20))
+        ctk.CTkRadioButton(status_frame, text="Flagged", variable=self.status_var, value="approved", command=self.update_count).pack(side="left", padx=20)
+        ctk.CTkRadioButton(status_frame, text="Rejected", variable=self.status_var, value="rejected", command=self.update_count).pack(side="left", padx=20)
+        ctk.CTkRadioButton(status_frame, text="Unflagged", variable=self.status_var, value="unassigned", command=self.update_count).pack(side="left", padx=20)
+
+        # Triger initial count
+        self.update_count()
+
+
+    def update_count(self, *args):
+        if not self.controller.session.daminion_client or not self.controller.session.daminion_client.authenticated:
+            self.lbl_total_count.configure(text="")
+            return
+
+        self.lbl_total_count.configure(text="Counting...")
+        
+        import threading
+        def _bg_count():
+            try:
+                # 1. Gather state
+                tab = self.tabview.get()
+                tab_map = {"All Items": "all", "Saved Searches": "saved_search", "Shared Collections": "collection"}
+                scope = tab_map[tab]
+                
+                status = self.status_var.get()
+                
+                untagged = []
+                if hasattr(self, 'chk_untagged_kws'):
+                    if self.chk_untagged_kws.get(): untagged.append("Keywords")
+                if hasattr(self, 'chk_untagged_cats'):
+                    if self.chk_untagged_cats.get(): untagged.append("Categories")
+                if hasattr(self, 'chk_untagged_desc'):
+                    if self.chk_untagged_desc.get(): untagged.append("Description")
+                
+                ss_id = None
+                if scope == "saved_search" and hasattr(self, 'saved_search_var'):
+                    ss_id = self.search_map.get(self.saved_search_var.get())
+                
+                col_id = None
+                if scope == "collection" and hasattr(self, 'collection_var'):
+                    col_id = self.col_map.get(self.collection_var.get())
+                
+                max_to_fetch = 100 if scope == "all" else None
+                
+                items = self.controller.session.daminion_client.get_items_filtered(
+                    scope=scope,
+                    saved_search_id=ss_id,
+                    collection_id=col_id,
+                    untagged_fields=untagged,
+                    status_filter=status,
+                    max_items=max_to_fetch
+                )
+                
+                count = len(items)
+                suffix = " (capped)" if scope == "all" and count >= 100 else ""
+                self.after(0, lambda: self.lbl_total_count.configure(text=f"Records: {count}{suffix}"))
+            except Exception as e:
+                self.logger.error(f"Count failed: {e}")
+                self.after(0, lambda: self.lbl_total_count.configure(text="Count Error"))
+        
+        threading.Thread(target=_bg_count, daemon=True).start()
 
     def next_step(self):
         # Save state
@@ -333,7 +399,7 @@ class Step1Datasource(ctk.CTkFrame):
             tab_map = {"All Items": "all", "Saved Searches": "saved_search", "Shared Collections": "collection"}
             ds.daminion_scope = tab_map[tab]
             
-            ds.daminion_approval_status = self.approval_var.get()
+            ds.status_filter = self.status_var.get()
             ds.daminion_untagged_keywords = self.chk_untagged_kws.get()
             ds.daminion_untagged_categories = self.chk_untagged_cats.get()
             ds.daminion_untagged_description = self.chk_untagged_desc.get()

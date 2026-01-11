@@ -102,7 +102,7 @@ class ProcessingManager:
             if not self.session.daminion_client:
                 raise ValueError("Daminion client not connected")
             
-            self.logger.info(f"Fetching items from Daminion - Scope: {ds.daminion_scope}, Approval: {ds.daminion_approval_status}")
+            self.logger.info(f"Fetching items from Daminion - Scope: {ds.daminion_scope}, Status: {ds.status_filter}")
             self.log("Fetching items from Daminion...")
             
             # Build untagged fields list
@@ -120,7 +120,7 @@ class ProcessingManager:
                 saved_search_id=ds.daminion_saved_search,
                 collection_id=ds.daminion_catalog_id,
                 untagged_fields=untagged_fields,
-                approval_status=ds.daminion_approval_status,
+                status_filter=ds.status_filter,
                 max_items=max_to_fetch
             )
             
@@ -193,18 +193,9 @@ class ProcessingManager:
                          # Check if the pipeline is modern image-text-to-text (e.g. Qwen2-VL)
                          if hasattr(self.model, "task") and self.model.task == "image-text-to-text":
                              prompt = "Describe the image."
-                             # Format for multi-modal conversation
-                             messages = [
-                                 {
-                                     "role": "user",
-                                     "content": [
-                                         {"type": "image", "image": img},
-                                         {"type": "text", "text": prompt},
-                                     ],
-                                 }
-                             ]
                              try:
-                                 result = self.model(messages, max_new_tokens=128)
+                                 # For image-text-to-text pipelines, pass image and prompt explicitly
+                                 result = self.model(img, prompt=prompt, generate_kwargs={"max_new_tokens": 128})
                              except Exception as e:
                                  self.logger.error(f"VLM inference failed: {e}")
                                  raise

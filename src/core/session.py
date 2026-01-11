@@ -17,7 +17,7 @@ class DatasourceConfig:
     daminion_untagged_keywords: bool = False
     daminion_untagged_categories: bool = False
     daminion_untagged_description: bool = False
-    daminion_approval_status: str = "all" # 'all', 'approved', 'rejected', 'unassigned'
+    status_filter: str = "all" # 'all', 'approved', 'rejected', 'unassigned'
 
 @dataclass
 class EngineConfig:
