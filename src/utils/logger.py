@@ -17,6 +17,8 @@ from typing import Any, Dict, Optional, Callable
 from functools import wraps
 import time
 import json
+import queue
+import threading
 
 
 # Log directory configuration
@@ -115,6 +117,89 @@ def mask_sensitive_data(data: Any, mask_value: str = "***") -> Any:
     
     else:
         return data
+
+
+class StreamToLogger:
+    """
+    Thread-safe file-like stream object that redirects writes to a logger instance.
+    Uses a queue and background thread to prevent race conditions and garbled output.
+    """
+    def __init__(self, logger: logging.Logger, log_level: int, original_stream):
+        self.logger = logger
+        self.log_level = log_level
+        self.original_stream = original_stream
+        self.queue = queue.Queue()
+        self.lock = threading.Lock()
+        self.running = True
+        
+        # Start background thread for processing log messages
+        self.thread = threading.Thread(target=self._process_queue, daemon=True)
+        self.thread.start()
+
+    def write(self, buf):
+        """Write to console and queue for logging."""
+        # Thread-safe write to original stream (console)
+        with self.lock:
+            if self.original_stream:
+                try:
+                    self.original_stream.write(buf)
+                    self.original_stream.flush()
+                except Exception:
+                    pass  # Ignore console write errors
+        
+        # Queue for background logging (non-blocking)
+        if buf.strip():  # Only queue non-empty messages
+            self.queue.put(buf)
+
+    def flush(self):
+        """Flush the original stream."""
+        with self.lock:
+            if self.original_stream:
+                try:
+                    self.original_stream.flush()
+                except Exception:
+                    pass
+    
+    def _process_queue(self):
+        """Background thread that processes queued log messages."""
+        while self.running:
+            try:
+                # Wait for messages with timeout to allow checking running flag
+                buf = self.queue.get(timeout=0.1)
+                
+                # Log each line separately
+                for line in buf.rstrip().splitlines():
+                    if line.strip():  # Only log non-empty lines
+                        self.logger.log(self.log_level, line.rstrip())
+                        
+            except queue.Empty:
+                continue
+            except Exception as e:
+                # Log errors in the logging system itself (to file only)
+                try:
+                    self.logger.error(f"Error in logging thread: {e}")
+                except Exception:
+                    pass
+    
+    def shutdown(self):
+        """Stop the background thread and flush remaining messages."""
+        self.running = False
+        
+        # Process any remaining messages in the queue
+        while not self.queue.empty():
+            try:
+                buf = self.queue.get_nowait()
+                for line in buf.rstrip().splitlines():
+                    if line.strip():
+                        self.logger.log(self.log_level, line.rstrip())
+            except queue.Empty:
+                break
+            except Exception:
+                pass
+        
+        # Wait for thread to finish
+        if self.thread.is_alive():
+            self.thread.join(timeout=1.0)
 
 
 def setup_logging(
@@ -217,91 +302,7 @@ def shutdown_logging():
     logging.info("Logging system shutdown complete")
 
 
-import queue
-import threading
 
-
-class StreamToLogger:
-    """
-    Thread-safe file-like stream object that redirects writes to a logger instance.
-    Uses a queue and background thread to prevent race conditions and garbled output.
-    """
-    def __init__(self, logger: logging.Logger, log_level: int, original_stream):
-        self.logger = logger
-        self.log_level = log_level
-        self.original_stream = original_stream
-        self.queue = queue.Queue()
-        self.lock = threading.Lock()
-        self.running = True
-        
-        # Start background thread for processing log messages
-        self.thread = threading.Thread(target=self._process_queue, daemon=True)
-        self.thread.start()
-
-    def write(self, buf):
-        """Write to console and queue for logging."""
-        # Thread-safe write to original stream (console)
-        with self.lock:
-            if self.original_stream:
-                try:
-                    self.original_stream.write(buf)
-                    self.original_stream.flush()
-                except Exception:
-                    pass  # Ignore console write errors
-        
-        # Queue for background logging (non-blocking)
-        if buf.strip():  # Only queue non-empty messages
-            self.queue.put(buf)
-
-    def flush(self):
-        """Flush the original stream."""
-        with self.lock:
-            if self.original_stream:
-                try:
-                    self.original_stream.flush()
-                except Exception:
-                    pass
-    
-    def _process_queue(self):
-        """Background thread that processes queued log messages."""
-        while self.running:
-            try:
-                # Wait for messages with timeout to allow checking running flag
-                buf = self.queue.get(timeout=0.1)
-                
-                # Log each line separately
-                for line in buf.rstrip().splitlines():
-                    if line.strip():  # Only log non-empty lines
-                        self.logger.log(self.log_level, line.rstrip())
-                        
-            except queue.Empty:
-                continue
-            except Exception as e:
-                # Log errors in the logging system itself (to file only)
-                try:
-                    self.logger.error(f"Error in logging thread: {e}")
-                except Exception:
-                    pass
-    
-    def shutdown(self):
-        """Stop the background thread and flush remaining messages."""
-        self.running = False
-        
-        # Process any remaining messages in the queue
-        while not self.queue.empty():
-            try:
-                buf = self.queue.get_nowait()
-                for line in buf.rstrip().splitlines():
-                    if line.strip():
-                        self.logger.log(self.log_level, line.rstrip())
-            except queue.Empty:
-                break
-            except Exception:
-                pass
-        
-        # Wait for thread to finish
-        if self.thread.is_alive():
-            self.thread.join(timeout=1.0)
 
 
 

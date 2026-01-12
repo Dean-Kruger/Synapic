@@ -358,17 +358,31 @@ class Step1Datasource(ctk.CTkFrame):
                 
                 max_to_fetch = 100 if scope == "all" else None
                 
-                items = self.controller.session.daminion_client.get_items_filtered(
+                # Try efficient counting first
+                count = self.controller.session.daminion_client.get_filtered_item_count(
                     scope=scope,
                     saved_search_id=ss_id,
                     collection_id=col_id,
                     untagged_fields=untagged,
-                    status_filter=status,
-                    max_items=max_to_fetch
+                    status_filter=status
                 )
                 
-                count = len(items)
-                suffix = " (capped)" if scope == "all" and count >= 100 else ""
+                suffix = ""
+                if count == -1:
+                    # Fallback to fetching items with a cap to Estimate
+                    limit_fallback = 100
+                    items = self.controller.session.daminion_client.get_items_filtered(
+                        scope=scope,
+                        saved_search_id=ss_id,
+                        collection_id=col_id,
+                        untagged_fields=untagged,
+                        status_filter=status,
+                        max_items=limit_fallback
+                    )
+                    count = len(items)
+                    if count >= limit_fallback:
+                        suffix = "+"
+                
                 self.after(0, lambda: self.lbl_total_count.configure(text=f"Records: {count}{suffix}"))
             except Exception as e:
                 self.logger.error(f"Count failed: {e}")

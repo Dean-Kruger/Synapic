@@ -519,35 +519,37 @@ class DaminionClient:
     def search_items(self, query: str, index: int = 0, page_size: int = 200) -> Optional[List[Dict]]:
         """
         Search for items on the server using a query string.
-        Falls back to client-side filtering if the search endpoint is not available.
+        Uses GET /api/MediaItems/Get (POST /Search is deprecated/unavailable).
 
         Args:
             query: The search query (e.g., 'status:untagged', 'flag:rejected').
-            index: The starting index for pagination.
-            page_size: The number of items to return per page.
+            index: The starting index.
+            page_size: The number of items to return.
 
         Returns:
-            A list of media items matching the search query, or None if fallback is needed.
+            A list of media items matching the search query.
         """
         if self._search_endpoint_unavailable:
             logging.warning("[DAMINION] Search endpoint is unavailable, cannot perform server-side search.")
             return None
 
         logging.info(f"[DAMINION] Searching items with query: '{query}'")
-        endpoint = "/api/MediaItems/Search"
-        data = {
-            "search": query,
-            "start": index,
-            "length": page_size
-        }
+        # Use GET /api/MediaItems/Get which returns totalCount and mediaItems
+        endpoint = f"/api/MediaItems/Get?search={urllib.parse.quote(query)}&start={index}&length={page_size}"
+        
         try:
-            response = self._make_request(endpoint, method='POST', data=data)
-            items = response.get('mediaItems', [])
+            response = self._make_request(endpoint, method='GET')
+            items = []
+            if isinstance(response, dict):
+                items = response.get('mediaItems') or response.get('items') or response.get('data') or []
+            elif isinstance(response, list):
+                items = response
+
             logging.info(f"[DAMINION] [OK] Server-side search returned {len(items)} items")
             return items
         except DaminionAPIError as e:
             if "404" in str(e):
-                logging.warning("[DAMINION] Search endpoint not found (404). Falling back to client-side filtering.")
+                logging.warning("[DAMINION] Search endpoint '/api/MediaItems/Get' not found (404).")
                 self._search_endpoint_unavailable = True
                 return None
             raise
@@ -809,6 +811,62 @@ class DaminionClient:
              
         return []
 
+    def get_filtered_item_count(self, scope: str = "all",
+                               saved_search_id: Optional[Union[str, int]] = None,
+                               collection_id: Optional[Union[str, int]] = None,
+                               untagged_fields: List[str] = None,
+                               status_filter: str = "all") -> int:
+        """
+        Efficiently count items matching filters without downloading them.
+        """
+        # 1. Simple Case: All items, no sub-filters
+        if scope == "all" and status_filter == "all" and not untagged_fields:
+            return self.get_total_count()
+
+        # 2. Status Only (Global)
+        if scope == "all" and not untagged_fields:
+            if status_filter == "approved":
+                return self._count_query("status:approved")
+            elif status_filter == "rejected":
+                # 'Flagged' often means rejected or flagged in Daminion depending on usage,
+                # here we mean specifically Rejected status
+                return self._count_query("status:rejected")
+            elif status_filter == "unassigned":
+                return self._count_query("status:untagged") # Or status:unassigned? defaulting to untagged logic
+        
+        # 3. Untagged Fields (Text Search)
+        # If we have complex logic, we might need client-side, but let's try server search
+        if untagged_fields:
+             # Construct query like "Keywords:null" or "status:untagged"
+             # Since Daminion search syntax varies, "status:untagged" covers most "untagged" cases globally.
+             # If specific fields: "Keywords:(empty)" might work but is risky.
+             # We stick to status:untagged if simple
+             if "Keywords" in untagged_fields:
+                 return self._count_query("status:untagged")
+
+        # 4. Fallback: If we can't count efficiently, return -1 or estimation?
+        # Better to return -1 to indicate "Calculation required" or just 0 if unknown
+        # But UI expects a number.
+        # Let's try to fetch a small batch to check if empty? No, we need count.
+        
+        # If scope is Saved Search, we really want to query it.
+        # But Daminion ID-based queries are hard without GetByQuery.
+        # If we strictly can't count, we return 0 or maybe fetch headers?
+        
+        # For now, return -1 to signal UI to maybe show "Many" or "..."
+        return -1
+
+    def _count_query(self, query: str) -> int:
+        """Helper to count via Search endpoint."""
+        try:
+            endpoint = f"/api/MediaItems/Get?search={urllib.parse.quote(query)}&start=0&length=1"
+            response = self._make_request(endpoint, method='GET')
+            if isinstance(response, dict):
+                return response.get('totalCount', 0)
+        except Exception:
+            pass
+        return 0
+
     def get_untagged_items(self) -> Tuple[List[Dict], int]:
         """
         Retrieve media items that don't have all required metadata.
@@ -855,11 +913,18 @@ class DaminionClient:
         
         # 1. Start with base set of items based on scope
         items = []
-        if scope == "saved_search" and saved_search_id:
-             # If it's a 'Saved Search' tag, we fetch items by tag.
-             items = self.get_items_by_tag("Saved Searches", saved_search_id)
-        elif scope == "collection" and collection_id:
-             items = self.get_shared_collection_items(collection_id)
+        if scope == "saved_search":
+             if saved_search_id:
+                 items = self.get_items_by_tag("Saved Searches", saved_search_id)
+             else:
+                 logging.warning("[DAMINION] Scope is 'saved_search' but no ID provided. Returning empty.")
+                 items = []
+        elif scope == "collection":
+             if collection_id:
+                 items = self.get_shared_collection_items(collection_id)
+             else:
+                 logging.warning("[DAMINION] Scope is 'collection' but no ID provided. Returning empty.")
+                 items = []
         else:
              # Default: fetch all items paginated (with max_items limit)
              items = self.get_all_items_paginated(max_items=max_items, progress_callback=progress_callback)
