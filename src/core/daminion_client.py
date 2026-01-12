@@ -393,42 +393,61 @@ class DaminionClient:
         """
         # try multiple endpoint formats based on Daminion API documentation
         # code is preferred for PublicItems
-        tried = [
+        # 1. Try with ID first (as passed)
+        # 2. If ID fails, fetch collection details to get the "accessCode" and try that.
+        
+        # Candidate endpoints
+        tried_endpoints = [
+            f"/api/SharedCollection/GetItems?id={collection_id}&index={index}&pageSize={page_size}", 
+            f"/api/SharedCollection/GetItems?collectionId={collection_id}&index={index}&pageSize={page_size}",
+             # PublicItems requires 'code' (accessCode), not internal ID often.
             f"/api/SharedCollection/PublicItems?code={collection_id}&index={index}&size={page_size}&sortag=0&asc=true",
             f"/api/SharedCollection/PublicItems/{collection_id}/{index}/{page_size}/0/true",
-            f"/api/SharedCollection/GetItems?id={collection_id}&index={index}&pageSize={page_size}",
-            f"/api/SharedCollection/GetItems?collectionId={collection_id}&index={index}&pageSize={page_size}"
         ]
 
-        for endpoint in tried:
-            try:
-                response = self._make_request(endpoint)
-                if not response:
-                    continue
-                
-                # Handle list response directly
-                if isinstance(response, list):
-                    return response
-                
-                # Handle dictionary response
-                if isinstance(response, dict):
-                    items = response.get('mediaItems') or response.get('items') or response.get('data') or response.get('collections')
-                    
-                    if isinstance(items, list):
-                        return items
-                    if isinstance(items, dict):
-                        # Some APIs return {id: item, ...}
-                        # Check if first value is a dict to be sure it's items
-                        vals = list(items.values())
-                        if vals and isinstance(vals[0], dict):
-                            return vals
-                        # If items was the full response or a wrapper, we might need to be more clever
-                        # but returning empty is safer than returning metadata
-                        return []
-            except Exception as e:
-                logging.debug(f"Endpoint {endpoint} failed: {e}")
-                continue
+        # Helper to try a list of endpoints
+        def try_fetch(endpoints):
+            for endpoint in endpoints:
+                try:
+                    response = self._make_request(endpoint)
+                    if not response: continue
+                    if isinstance(response, list): return response
+                    if isinstance(response, dict):
+                         # Look for common wrapper names
+                         for k in ['mediaItems', 'items', 'data', 'collections']:
+                             if k in response:
+                                 val = response[k]
+                                 if isinstance(val, list): return val
+                                 if isinstance(val, dict) and val: # check for {id:item} map
+                                      vlist = list(val.values())
+                                      if vlist and isinstance(vlist[0], dict): return vlist
+                except Exception:
+                    pass
+            return None
 
+        # Attempt 1: Use passed ID directly
+        items = try_fetch(tried_endpoints)
+        if items is not None: return items
+
+        # Attempt 2: If passed arg was integer-like ID, fetch Details to get 'accessCode'
+        # The 'PublicItems' endpoint typically needs the alphanumeric accessCode (e.g. 'pjrzp5ny')
+        try:
+            details_ep = f"/api/SharedCollection/GetDetails/{collection_id}"
+            details = self._make_request(details_ep)
+            if isinstance(details, dict):
+                 access_code = details.get('accessCode')
+                 if access_code and access_code != str(collection_id):
+                     logging.info(f"[DAMINION] Retrying shared collection fetch with accessCode: {access_code}")
+                     code_endpoints = [
+                        f"/api/SharedCollection/PublicItems?code={access_code}&index={index}&size={page_size}&sortag=0&asc=true",
+                        f"/api/SharedCollection/PublicItems/{access_code}/{index}/{page_size}/0/true"
+                     ]
+                     items = try_fetch(code_endpoints)
+                     if items is not None: return items
+        except Exception as e:
+            logging.debug(f"[DAMINION] Failed to fetch collection details for ID {collection_id}: {e}")
+
+        # If we reach here, we failed
         logging.warning(f"Could not retrieve items for shared collection {collection_id}")
         return []
 
@@ -492,12 +511,11 @@ class DaminionClient:
         # Methodology check: The API works with IDs so it is not intuitive. 
         # ID 40 is the standard TagID for Saved Searches in Daminion.
         if not searches:
-            logging.info("[DAMINION] 'Saved Searches' name failed in schema. Trying hardcoded Tag ID 40...")
-            # We skip the prefix check in get_tag_values by calling it with a name it might not find,
-            # but we can also just implement the ID-based fetch directly here to be sure.
+            # Probe revealed Saved Searches ID is 39 on this server
+            logging.info("[DAMINION] 'Saved Searches' name failed in schema. Trying hardcoded Tag ID 39...")
             for endpoint in [
-                "/api/indexedTagValues/getIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000",
-                "/api/IndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000"
+                "/api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000",
+                "/api/IndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000"
             ]:
                 try:
                     response = self._make_request(endpoint)
@@ -508,7 +526,7 @@ class DaminionClient:
                         items = response.get('data') or response.get('values') or response.get('items') or []
                     
                     if items:
-                        logging.info(f"[DAMINION] Found {len(items)} saved searches via Tag ID 40.")
+                        logging.info(f"[DAMINION] Found {len(items)} saved searches via Tag ID 39.")
                         return items
                 except Exception:
                     continue
@@ -690,6 +708,12 @@ class DaminionClient:
                              count_ids += 1
                 
                 logging.info(f"[DAMINION] Mapped {count_ids} tags to Integer IDs from /api/settings/getTags.")
+                
+                # Force map Saved Searches ID 39 if not found, based on probe
+                if 'saved searches' not in self._tag_id_map:
+                     self._tag_id_map['saved searches'] = 39
+                     logging.info(f"[DAMINION] 'Saved Searches' manually mapped to ID 39.")
+                     
             except Exception as e:
                 logging.warning(f"[DAMINION] Failed to fetch tag integer IDs via /api/settings/getTags: {e}")
 

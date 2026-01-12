@@ -1,0 +1,257 @@
+2026-01-12 13:22:13 - root - INFO - [logger.py:271] - ================================================================================
+2026-01-12 13:22:13 - root - INFO - [logger.py:272] - Synapic Application Started - Log file: C:\Users\deank\.synapic\logs\synapic.log
+2026-01-12 13:22:13 - root - INFO - [logger.py:273] - ================================================================================
+2026-01-12 13:22:13 - __main__ - INFO - [main.py:22] - Initializing Synapic application
+2026-01-12 13:22:13 - __main__ - INFO - [main.py:23] - Python version: 3.13.9 (tags/v3.13.9:8183fa5, Oct 14 2025, 14:09:13) [MSC v.1944 64 bit (AMD64)]
+2026-01-12 13:22:13 - __main__ - INFO - [main.py:24] - Working directory: c:\Users\deank\sourcecode\Synapic
+2026-01-12 13:22:13 - src.ui.app - INFO - [app.py:9] - Initializing main application window
+2026-01-12 13:22:13 - src.ui.app - DEBUG - [app.py:17] - UI theme configured: Dark mode with blue color theme
+2026-01-12 13:22:13 - src.ui.app - INFO - [app.py:26] - Creating new session
+2026-01-12 13:22:13 - src.core.session - INFO - [session.py:33] - Initializing new session
+2026-01-12 13:22:13 - src.core.session - DEBUG - [session.py:47] - Session initialized - Datasource: local, Engine: huggingface
+2026-01-12 13:22:13 - src.ui.app - INFO - [app.py:29] - Loading saved configuration
+2026-01-12 13:22:13 - src.utils.config_manager - INFO - [config_manager.py:41] - Loading configuration from C:\Users\deank\.synapic_v2_config.json
+2026-01-12 13:22:13 - src.utils.config_manager - INFO - [logger.py:323] - Configuration: Loaded Configuration
+2026-01-12 13:22:13 - src.utils.config_manager - DEBUG - [logger.py:324] - Loaded Configuration details: {
+  "datasource": {
+    "type": "daminion",
+    "local_path": "",
+    "local_recursive": false,
+    "daminion_url": "http://researchserver.juicefilm.local/daminion",
+    "daminion_user": "admin",
+    "daminion_pass": "***",
+    "daminion_catalog_id": "",
+    "daminion_scope": "all",
+    "daminion_saved_search": "",
+    "daminion_untagged_keywords": false,
+    "daminion_untagged_categories": false,
+    "daminion_untagged_description": false,
+    "status_filter": "all"
+  },
+  "engine": {
+    "provider": "openrouter",
+    "model_id": "openai/gpt-4-vision-preview",
+    "api_key": "***d7de",
+    "system_prompt": "",
+    "task": "image-to-text"
+  }
+}
+2026-01-12 13:22:13 - src.utils.config_manager - DEBUG - [config_manager.py:55] - Datasource configuration updated: type=daminion
+2026-01-12 13:22:13 - src.utils.config_manager - DEBUG - [config_manager.py:62] - Engine configuration updated: provider=openrouter, task=image-to-text
+2026-01-12 13:22:13 - src.utils.config_manager - INFO - [config_manager.py:64] - Configuration loaded and applied successfully
+2026-01-12 13:22:13 - src.ui.app - INFO - [app.py:44] - Creating UI steps
+2026-01-12 13:22:13 - src.ui.app - DEBUG - [app.py:47] - Creating step: Step1Datasource
+2026-01-12 13:22:13 - src.ui.app - DEBUG - [app.py:47] - Creating step: Step2Tagging
+2026-01-12 13:22:13 - src.ui.app - DEBUG - [app.py:47] - Creating step: Step3Process
+2026-01-12 13:22:13 - src.ui.app - DEBUG - [app.py:47] - Creating step: Step4Results
+2026-01-12 13:22:13 - src.ui.app - INFO - [app.py:52] - Showing initial step: Step1Datasource
+2026-01-12 13:22:13 - src.ui.app - INFO - [app.py:56] - Navigating to step: Step1Datasource
+2026-01-12 13:22:13 - __main__ - INFO - [main.py:27] - Application window created successfully
+2026-01-12 13:22:15 - src.core.session - INFO - [session.py:56] - Connecting to Daminion server at http://researchserver.juicefilm.local/daminion
+2026-01-12 13:22:15 - src.core.session - DEBUG - [session.py:57] - Daminion user: admin
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:90] - [DAMINION] Starting authentication to http://researchserver.juicefilm.local/daminion...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:97] - [DAMINION] Login URL: http://researchserver.juicefilm.local/daminion/api/UserManager/Login
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:100] - [DAMINION] Sending POST request to login endpoint...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:102] - [DAMINION] Opening connection with 30s timeout...
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:104] - [DAMINION] Received response with status: 200
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:109] - [DAMINION] Extracting session cookies from response headers...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:115] - [DAMINION] Stored cookie: .ASPXANONYMOUS
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:115] - [DAMINION] Stored cookie: .AspNet.ApplicationCookie
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:121] - [DAMINION] [OK] Successfully authenticated to http://researchserver.juicefilm.local/daminion as admin
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:122] - [DAMINION] Session has 2 cookie(s)
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:627] - [DAMINION] Fetching tag schema (Layout) to map Tag Names to GUIDs...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/ItemData/GetDefaultLayout
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 15646 bytes
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:667] - [DAMINION] [OK] Mapped 80 tags to GUIDs.
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:668] - [DAMINION] Available Tags: ['General', 'general', 'Filename', 'filename', 'Folders', 'folders', 'File Size', 'file size', 'Media Format', 'media format', 'Number of Pages', 'number of pages', 'Software', 'software', 'Creation Datetime', 'creation datetime', 'Duration', 'duration', 'License Expiration Date', 'license expiration date', 'Imported', 'imported', 'Image', 'image', 'Orientation', 'orientation', 'Width', 'width', 'Height', 'height', 'Color Depth', 'color depth', 'DPI', 'dpi', 'Color Profile', 'color profile', 'Fonts', 'fonts', 'Vendor', 'vendor', 'Camera Model', 'camera model', 'Camera Lens', 'camera lens', 'ISO', 'iso', 'Aperture', 'aperture', 'Shutter Speed', 'shutter speed', 'Flash', 'flash', 'Latitude', 'latitude', 'Longitude', 'longitude', 'Direction', 'direction', 'Field of View', 'field of view', 'Altitude', 'altitude', 'Description', 'description', 'Rating', 'rating', 'Color Label', 'color label', 'Title', 'title', 'People', 'people', 'Place', 'place', 'Event', 'event', 'Categories', 'categories', 'AI Labels', 'ai labels', 'AI Objects', 'ai objects', 'Keywords', 'keywords', 'Project', 'project', 'Client', 'client', 'AI Description', 'ai description', 'AI models used', 'ai models used', 'AI Title', 'ai title', 'Authors', 'authors', 'Copyrights', 'copyrights', 'Rights Usage Terms', 'rights usage terms', 'Scene', 'scene', 'Subject Code', 'subject code', 'Intellectual Genre', 'intellectual genre', 'Comment', 'comment', 'Office Document Subject', 'office document subject', 'Office Document Manager', 'office document manager', 'Video', 'video', 'Video Codec', 'video codec', 'Bit Rate', 'bit rate', 'Frame Rate', 'frame rate', 'System', 'system', 'Item ID', 'item id', 'Collections', 'collections', 'Flag', 'flag', 'Shared Collections', 'shared collections', 'Audio', 'audio', 'Audio Bitrate', 'audio bitrate', 'Audio Sample Rate', 'audio sample rate', 'Channel Mode', 'channel mode', 'Audio Title', 'audio title', 'Album', 'album', 'Genres', 'genres', 'Artists', 'artists', 'Composers', 'composers', 'Conductor', 'conductor', 'Year', 'year', 'Track', 'track', 'Custom', 'custom', 'Pubishing Services', 'pubishing services', 'Notes', 'notes']
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/settings/getTags
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 23765 bytes
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:692] - [DAMINION] Mapped 82 tags to Integer IDs from /api/settings/getTags.
+2026-01-12 13:22:15 - src.core.session - INFO - [session.py:69] - Successfully authenticated with Daminion server
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:475] - [DAMINION] Fetching saved searches...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/MediaItems/GetSavedSearches
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:15 - root - ERROR - [daminion_client.py:202] - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://researchserver.juicefilm.local/daminion/api/MediaItems/GetSavedSearches'."}
+2026-01-12 13:22:15 - root - ERROR - [daminion_client.py:203] - [DAMINION] Failed endpoint: GET /api/MediaItems/GetSavedSearches
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:487] - [DAMINION] Specialized GetSavedSearches endpoint failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://researchserver.juicefilm.local/daminion/api/MediaItems/GetSavedSearches'."}
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:750] - [DAMINION] Trying endpoint: /api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:15 - root - ERROR - [daminion_client.py:202] - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://researchserver.juicefilm.local/daminion/api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000'."}
+2026-01-12 13:22:15 - root - ERROR - [daminion_client.py:203] - [DAMINION] Failed endpoint: GET /api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:770] - [DAMINION] Endpoint /api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000 failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://researchserver.juicefilm.local/daminion/api/indexedTagValues/getIndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000'."}
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:750] - [DAMINION] Trying endpoint: /api/IndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/IndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:15 - root - ERROR - [daminion_client.py:202] - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-12 13:22:15 - root - ERROR - [daminion_client.py:203] - [DAMINION] Failed endpoint: GET /api/IndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:770] - [DAMINION] Endpoint /api/IndexedTagValues?indexedTagId=39&pageIndex=0&pageSize=1000 failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-12 13:22:15 - root - WARNING - [daminion_client.py:773] - Failed to fetch values for tag Saved Searches using any known endpoint.
+2026-01-12 13:22:15 - root - INFO - [daminion_client.py:495] - [DAMINION] 'Saved Searches' name failed in schema. Trying hardcoded Tag ID 40...
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/indexedTagValues/getIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000
+2026-01-12 13:22:15 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:16 - root - ERROR - [daminion_client.py:202] - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://researchserver.juicefilm.local/daminion/api/indexedTagValues/getIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000'."}
+2026-01-12 13:22:16 - root - ERROR - [daminion_client.py:203] - [DAMINION] Failed endpoint: GET /api/indexedTagValues/getIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/IndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:16 - root - ERROR - [daminion_client.py:202] - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-12 13:22:16 - root - ERROR - [daminion_client.py:203] - [DAMINION] Failed endpoint: GET /api/IndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000
+2026-01-12 13:22:16 - root - INFO - [daminion_client.py:360] - [DEBUG] Fetching shared collections from /api/SharedCollection/GetCollections?index=0&pageSize=100
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetCollections?index=0&pageSize=100
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 452 bytes
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:16 - root - INFO - [daminion_client.py:363] - [DEBUG] Raw response type: <class 'dict'>
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:364] - [DEBUG] Raw response: {'collections': [{'id': 11, 'excludedIds': None, 'automaticSimple': False, 'ids': None, 'owner': None, 'title': 'to tag', 'accessCode': 'pjrzp5ny', 'expirationDate': None, 'description': None, 'query': None, 'unions': None, 'dataChangeTask': None, 'public': True, 'password': '', 'limitAccessByPassword': False, 'passwordChanged': False, 'requireTermsOfService': False, 'allowDownloadOriginals': True, 'customTermsOfService': None}], 'totalCount': 1, 'error': None, 'success': True, 'errorCode': 0}
+2026-01-12 13:22:16 - root - INFO - [daminion_client.py:373] - [DEBUG] Extracted 'collections': <class 'list'> (Keys found: ['collections', 'totalCount', 'error', 'success', 'errorCode'])
+2026-01-12 13:22:16 - root - INFO - [daminion_client.py:229] - [DAMINION] Fetching total item count...
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/MediaItems/GetCount
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 58 bytes
+2026-01-12 13:22:16 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:16 - root - INFO - [daminion_client.py:233] - [DAMINION] [OK] Total items in catalog: 1089359
+2026-01-12 13:22:18 - root - INFO - [daminion_client.py:912] - [DAMINION] Fetching items with scope=saved_search, status=all, untagged=[]
+2026-01-12 13:22:18 - root - WARNING - [daminion_client.py:920] - [DAMINION] Scope is 'saved_search' but no ID provided. Returning empty.
+2026-01-12 13:22:18 - root - INFO - [daminion_client.py:972] - [DAMINION] Filtering complete. Returning 0 items.
+2026-01-12 13:22:26 - root - INFO - [daminion_client.py:912] - [DAMINION] Fetching items with scope=collection, status=all, untagged=[]
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems?code=11&index=0&size=200&sortag=0&asc=true
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems/11/0/200/0/true
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?id=11&index=0&pageSize=200
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?collectionId=11&index=0&pageSize=200
+2026-01-12 13:22:26 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:27 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:27 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:22:27 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:27 - root - WARNING - [daminion_client.py:432] - Could not retrieve items for shared collection 11
+2026-01-12 13:22:27 - root - INFO - [daminion_client.py:972] - [DAMINION] Filtering complete. Returning 0 items.
+2026-01-12 13:22:34 - root - INFO - [daminion_client.py:912] - [DAMINION] Fetching items with scope=collection, status=all, untagged=[]
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems?code=11&index=0&size=200&sortag=0&asc=true
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems/11/0/200/0/true
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?id=11&index=0&pageSize=200
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?collectionId=11&index=0&pageSize=200
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:22:34 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:34 - root - WARNING - [daminion_client.py:432] - Could not retrieve items for shared collection 11
+2026-01-12 13:22:34 - root - INFO - [daminion_client.py:972] - [DAMINION] Filtering complete. Returning 0 items.
+2026-01-12 13:22:45 - root - INFO - [daminion_client.py:229] - [DAMINION] Fetching total item count...
+2026-01-12 13:22:45 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/MediaItems/GetCount
+2026-01-12 13:22:45 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:22:45 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:22:45 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 58 bytes
+2026-01-12 13:22:45 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:22:45 - root - INFO - [daminion_client.py:233] - [DAMINION] [OK] Total items in catalog: 1089359
+2026-01-12 13:23:44 - root - INFO - [daminion_client.py:912] - [DAMINION] Fetching items with scope=saved_search, status=all, untagged=[]
+2026-01-12 13:23:44 - root - WARNING - [daminion_client.py:920] - [DAMINION] Scope is 'saved_search' but no ID provided. Returning empty.
+2026-01-12 13:23:44 - root - INFO - [daminion_client.py:972] - [DAMINION] Filtering complete. Returning 0 items.
+2026-01-12 13:23:51 - root - INFO - [daminion_client.py:912] - [DAMINION] Fetching items with scope=collection, status=all, untagged=[]
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems?code=11&index=0&size=200&sortag=0&asc=true
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems/11/0/200/0/true
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?id=11&index=0&pageSize=200
+2026-01-12 13:23:51 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?collectionId=11&index=0&pageSize=200
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:23:52 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:52 - root - WARNING - [daminion_client.py:432] - Could not retrieve items for shared collection 11
+2026-01-12 13:23:52 - root - INFO - [daminion_client.py:972] - [DAMINION] Filtering complete. Returning 0 items.
+2026-01-12 13:23:58 - root - INFO - [daminion_client.py:912] - [DAMINION] Fetching items with scope=collection, status=all, untagged=[]
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems?code=11&index=0&size=200&sortag=0&asc=true
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/PublicItems/11/0/200/0/true
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 77 bytes
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?id=11&index=0&pageSize=200
+2026-01-12 13:23:58 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:178] - [DAMINION] API Request: GET /api/SharedCollection/GetItems?collectionId=11&index=0&pageSize=200
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:189] - [DAMINION] Opening request with 30s timeout...
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:192] - [DAMINION] Response status: 200
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:194] - [DAMINION] Response body size: 76 bytes
+2026-01-12 13:23:59 - root - DEBUG - [daminion_client.py:196] - [DAMINION] [OK] API request successful
+2026-01-12 13:23:59 - root - WARNING - [daminion_client.py:432] - Could not retrieve items for shared collection 11
+2026-01-12 13:23:59 - root - INFO - [daminion_client.py:972] - [DAMINION] Filtering complete. Returning 0 items.
+2026-01-12 13:24:05 - src.ui.app - INFO - [app.py:64] - Application close requested - saving configuration
+2026-01-12 13:24:05 - src.utils.config_manager - INFO - [logger.py:323] - Configuration: Saving Configuration
+2026-01-12 13:24:05 - src.utils.config_manager - DEBUG - [logger.py:324] - Saving Configuration details: {
+  "datasource": {
+    "type": "daminion",
+    "local_path": "",
+    "local_recursive": false,
+    "daminion_url": "http://researchserver.juicefilm.local/daminion",
+    "daminion_user": "admin",
+    "daminion_pass": "***",
+    "daminion_catalog_id": "",
+    "daminion_scope": "all",
+    "daminion_saved_search": "",
+    "daminion_untagged_keywords": false,
+    "daminion_untagged_categories": false,
+    "daminion_untagged_description": false,
+    "status_filter": "all"
+  },
+  "engine": {
+    "provider": "openrouter",
+    "model_id": "openai/gpt-4-vision-preview",
+    "api_key": "***d7de",
+    "system_prompt": "",
+    "task": "image-to-text"
+  }
+}
+2026-01-12 13:24:05 - src.utils.config_manager - INFO - [config_manager.py:27] - Configuration saved successfully to C:\Users\deank\.synapic_v2_config.json
+2026-01-12 13:24:05 - src.ui.app - INFO - [app.py:67] - Configuration saved, destroying window
+2026-01-12 13:24:05 - __main__ - INFO - [main.py:34] - Application shutdown
+2026-01-12 13:24:05 - root - INFO - [logger.py:290] - Shutting down logging system...
+2026-01-12 13:24:05 - root - INFO - [logger.py:302] - Logging system shutdown complete
+2026-01-12 13:24:05 - root - DEBUG - [daminion_client.py:1172] - Cleaned up temporary thumbnail files
