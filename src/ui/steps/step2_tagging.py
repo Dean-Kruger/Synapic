@@ -478,7 +478,7 @@ class ConfigDialog(ctk.CTkToplevel):
             return
 
         self.session.engine.provider = "huggingface"
-        self.session.engine.api_key = self.hf_key.get()
+        self.session.engine.api_key = self.hf_key.get().strip()
         self.session.engine.model_id = model_id
         
         # Try to infer task or default to image-to-text for multi-modal
@@ -496,7 +496,7 @@ class ConfigDialog(ctk.CTkToplevel):
             return
 
         self.session.engine.provider = "openrouter"
-        self.session.engine.api_key = self.or_key.get()
+        self.session.engine.api_key = self.or_key.get().strip()
         self.session.engine.model_id = model_id
         # OpenRouter is primarily chat/generation -> image-to-text task in our logical mapping
         # But could be zero-shot if we prompt it right. For now, default to image-to-text (captioning/describe)

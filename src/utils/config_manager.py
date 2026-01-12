@@ -58,6 +58,8 @@ def load_config(session: Session):
             eng_data = data["engine"]
             for k, v in eng_data.items():
                 if hasattr(session.engine, k):
+                    if k == "api_key" and isinstance(v, str):
+                        v = v.strip()
                     setattr(session.engine, k, v)
             logger.debug(f"Engine configuration updated: provider={session.engine.provider}, task={session.engine.task}")
                     

@@ -273,8 +273,19 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
         
         log_api_request(logger, "POST", chat_url, headers=headers_json, data=body)
         
+        # DEBUG: Check token
+        if token:
+            logger.debug(f"Using API key: {token[:8]}...{token[-4:]} (Length: {len(token)})")
+        else:
+            logger.warning("No API key provided!")
+
         resp = requests.post(chat_url, headers=headers_json, json=body, timeout=60)
         elapsed = time.time() - start_time
+        
+        # DEBUG: Check redirects
+        if resp.history:
+            logger.warning(f"Request was redirected. History: {[r.url for r in resp.history]}")
+            logger.warning(f"Final URL: {resp.url}")
         
         log_api_response(logger, resp.status_code, elapsed_time=elapsed)
         try:
