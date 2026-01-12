@@ -581,7 +581,8 @@ class DownloadManagerDialog(ctk.CTkToplevel):
 
             self.after(0, lambda: self.show_search_results(results_with_size))
         except Exception as e:
-            self.after(0, lambda: self.lbl_status.configure(text=f"Error: {e}", text_color="red"))
+            error_msg = str(e)
+            self.after(0, lambda: self.lbl_status.configure(text=f"Error: {error_msg}", text_color="red"))
 
     def show_search_results(self, results):
         self.lbl_status.configure(text=f"Found {len(results)} models.", text_color="gray")

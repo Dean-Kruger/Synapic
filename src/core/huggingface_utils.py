@@ -19,6 +19,7 @@ import json
 import sys
 import platform
 import torch
+from typing import Optional
 
 def get_device_info():
     """
