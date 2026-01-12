@@ -137,7 +137,8 @@ def get_remote_model_size(model_id: str, token: Optional[str] = None) -> int:
         api = HfApi(token=token)
         model_info = api.model_info(repo_id=model_id)
         return sum(s.size for s in (model_info.siblings or []) if s.size is not None)
-    except:
+    except Exception as e:
+        logging.warning(f"Failed to get size for {model_id}: {e}")
         return 0
 
 def is_model_downloaded(model_id, token=None):
@@ -418,8 +419,12 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
             logging.info(f"Model {model_id} already downloaded.")
             model_cache_dir = get_model_cache_dir(model_id)
             snapshot_dir = os.path.join(model_cache_dir, 'snapshots')
-            latest_snapshot = os.listdir(snapshot_dir)[-1]
-            local_model_path = os.path.join(snapshot_dir, latest_snapshot)
+            snapshots = os.listdir(snapshot_dir)
+            if snapshots:
+                latest_snapshot = sorted(snapshots)[-1]
+                local_model_path = os.path.join(snapshot_dir, latest_snapshot)
+            else:
+                local_model_path = snapshot_download(repo_id=model_id, tqdm_class=TqdmToQueue, token=token)
 
         q.put(("status_update", f"Initializing model {model_id}..."))
         
@@ -515,8 +520,20 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
             logging.info(f"Model {model_id} is already downloaded (sync).")
             model_cache_dir = get_model_cache_dir(model_id)
             snapshot_dir = os.path.join(model_cache_dir, 'snapshots')
-            latest_snapshot = os.listdir(snapshot_dir)[-1]
-            local_model_path = os.path.join(snapshot_dir, latest_snapshot)
+            snapshots = os.listdir(snapshot_dir)
+            if snapshots:
+                latest_snapshot = sorted(snapshots)[-1]
+                local_model_path = os.path.join(snapshot_dir, latest_snapshot)
+                logging.info(f"Using latest snapshot: {latest_snapshot}")
+            else:
+                # Should typically not happen if is_model_downloaded returned True, 
+                # but good for safety.
+                logging.warning(f"Snapshot directory exists but is empty for {model_id}. Re-downloading...")
+                local_model_path = snapshot_download(
+                    repo_id=model_id,
+                    tqdm_class=TqdmToQueue, 
+                    token=token
+                )
 
         if q:
             q.put(("status_update", f"Initializing model {model_id}..."))
