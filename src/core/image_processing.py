@@ -274,7 +274,7 @@ def extract_tags_from_result(
                 # Log usage
                 logging.info(f"Zero-Shot Category: '{category}' (Score: >={threshold})")
 
-        elif model_task == config.MODEL_TASK_IMAGE_TO_TEXT:
+        elif model_task in [config.MODEL_TASK_IMAGE_TO_TEXT, "image-text-to-text"]:
             # Result: [{'generated_text': '...'}] or chat-style structures
             text = ""
             raw_gen = None

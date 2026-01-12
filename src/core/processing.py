@@ -185,17 +185,27 @@ class ProcessingManager:
             if engine.provider == "local":
                 # Local Inference
                 # Simple dispatch for now
-                if engine.task == config.MODEL_TASK_IMAGE_TO_TEXT:
+                if engine.task in [config.MODEL_TASK_IMAGE_TO_TEXT, "image-text-to-text"]:
                     # Captioning
                     with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
                          
                          # Check if the pipeline is modern image-text-to-text (e.g. Qwen2-VL)
                          if hasattr(self.model, "task") and self.model.task == "image-text-to-text":
-                             prompt = "Describe the image."
+                             # Construct chat-style prompt as expected by modern VLMs (Qwen2-VL, etc.)
+                             messages = [
+                                 {
+                                     "role": "user", 
+                                     "content": [
+                                         {"type": "image", "image": img},
+                                         {"type": "text", "text": "Describe this image in detail."}
+                                     ]
+                                 }
+                             ]
                              try:
-                                 # For image-text-to-text pipelines, pass image and prompt explicitly
-                                 result = self.model(img, prompt=prompt, generate_kwargs={"max_new_tokens": 128})
+                                 # For image-text-to-text pipelines, pass the formatted messages
+                                 # Note: The pipeline will handle the image extraction from the messages
+                                 result = self.model(text=messages, generate_kwargs={"max_new_tokens": 128})
                              except Exception as e:
                                  self.logger.error(f"VLM inference failed: {e}")
                                  raise

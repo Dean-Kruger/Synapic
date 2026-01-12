@@ -561,7 +561,10 @@ def load_model(model_id, task, progress_queue=None, token=None, device=-1):
                 with open(cfg_path, "r", encoding="utf-8") as cf:
                     m_cfg = json.load(cf)
                 m_type = m_cfg.get("model_type", "").lower()
-                if m_type in ["qwen2_vl", "llava"]:
+                if "qwen2" in m_type and "vl" in m_type:
+                    pipeline_task = "image-text-to-text"
+                    logging.info(f"Using '{pipeline_task}' pipeline for model type '{m_type}'")
+                elif m_type in ["llava", "qwen2_vl", "qwen2_5_vl"]: # Explicit knowns
                     pipeline_task = "image-text-to-text"
                     logging.info(f"Using '{pipeline_task}' pipeline for model type '{m_type}'")
         except Exception: pass

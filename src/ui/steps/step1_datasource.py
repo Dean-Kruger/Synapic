@@ -158,9 +158,11 @@ class Step1Datasource(ctk.CTkFrame):
         if self.source_var.get() == "local":
             self.local_frame.pack(fill="both", expand=True)
             self.canvas.yview_moveto(0)
+            self.controller.session.datasource.type = "local"
         else:
             self.daminion_frame.pack(fill="both", expand=True)
             self.canvas.yview_moveto(0)
+            self.controller.session.datasource.type = "daminion"
 
     def browse_folder(self):
         directory = ctk.filedialog.askdirectory()
@@ -184,6 +186,7 @@ class Step1Datasource(ctk.CTkFrame):
         ds.daminion_url = host
         ds.daminion_user = user
         ds.daminion_pass = pwd
+        ds.type = "daminion" # Ensure type is set explicitly before connecting
         
         def _bg_connect():
             success = self.controller.session.connect_daminion()
