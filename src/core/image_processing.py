@@ -298,17 +298,50 @@ def extract_tags_from_result(
                 text = raw_gen
             
             if text:
-                # For Captioning, the text IS the description.
                 description = text.strip()
                 
-                # Cleanup: remove common prompt prefixes that VLMs might echo back
-                prefixes_to_strip = ["Describe the image.", "Describe this image.", "Caption:", "Description:"]
-                for prefix in prefixes_to_strip:
-                    if description.lower().startswith(prefix.lower()):
-                        description = description[len(prefix):].strip()
-                        # Handle potential colon or leading chars left over
-                        if description.startswith(":") or description.startswith("."):
-                            description = description[1:].strip()
+                # 1. Handle JSON-wrapped responses that sometimes slip through as text
+                if (description.startswith("{") and "generated_text" in description) or description.startswith("{\""):
+                    try:
+                        import json
+                        import re
+                        # Clean up potential markdown formatting around JSON
+                        clean_json = re.sub(r'^```json\s*|\s*```$', '', description).strip()
+                        data = json.loads(clean_json)
+                        if isinstance(data, dict):
+                            description = data.get("generated_text") or data.get("text") or description
+                    except:
+                        pass
+
+                # 2. Cleanup: remove common prompt prefixes and structural artifacts
+                prefixes_to_strip = [
+                    "Describe the image.", "Describe this image.", "Caption:", "Description:",
+                    "The image shows", "This image shows", "An image of", "A picture of",
+                    "generated_text:", "Output:", "Response:"
+                ]
+                
+                # Case-insensitive prefix stripping loop
+                still_stripping = True
+                while still_stripping:
+                    original = description
+                    for prefix in prefixes_to_strip:
+                        if description.lower().startswith(prefix.lower()):
+                            description = description[len(prefix):].strip()
+                    
+                    # Also strip rogue leading characters often seen in some model outputs (like 's, ')
+                    if description.startswith("s, ") or description.startswith("s "):
+                        description = description[2:].strip()
+                    
+                    # Strip leading punctuation/symbols often left by prefix removal
+                    description = description.lstrip(":.,- ")
+                    
+                    if description == original:
+                        still_stripping = False
+
+                # 3. Final polish
+                description = description.strip()
+                if description and not description[0].isupper():
+                    description = description[0].upper() + description[1:]
                 
                 # We do NOT extract keywords from caption anymore.
                 keywords = []

@@ -228,91 +228,46 @@ class Step1Datasource(ctk.CTkFrame):
         ctk.CTkLabel(status_frame, text=f"Connected to Daminion as {self.entry_user.get()}", font=("Roboto", 14, "bold"), text_color="green").pack(side="left", padx=20, pady=10)
         ctk.CTkButton(status_frame, text="Disconnect", fg_color="#990000", hover_color="#660000", width=100, command=self.disconnect_daminion).pack(side="right", padx=20, pady=10)
         
-        self.show_advanced_daminion_filters()
+        self.show_simplified_daminion_filters()
 
-    def show_advanced_daminion_filters(self):
-        # Clear container
-        for widget in self.filters_container.winfo_children():
-            widget.destroy()
-            
-        self.search_map = {}
-        self.col_map = {}
-        
+    def show_simplified_daminion_filters(self):
+        """Shows status-based filters for Daminion."""
+        self.clear_container(self.filters_container)
         ds = self.controller.session.datasource
-        client = self.controller.session.daminion_client
+
+        # Status Filter Label
+        ctk.CTkLabel(self.filters_container, text="Target Items by Status:", font=("Roboto", 18, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
         
-        # 1. Tabbed Target Scope
-        self.tabview = ctk.CTkTabview(self.filters_container, height=150, command=self.update_count)
-        self.tabview.pack(fill="x", padx=20, pady=10)
+        status_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
+        status_frame.pack(fill="x", padx=20, pady=5)
+
+        self.status_var = ctk.StringVar(value=ds.status_filter)
         
-        self.tabview.add("All Items")
-        self.tabview.add("Saved Searches")
-        self.tabview.add("Shared Collections")
-
-        # Map current scope to tab
-        scope_map = {"all": "All Items", "saved_search": "Saved Searches", "collection": "Shared Collections"}
-        current_tab = scope_map.get(ds.daminion_scope, "All Items")
-        self.tabview.set(current_tab)
-
-        # Content for All Items
-        ctk.CTkLabel(self.tabview.tab("All Items"), text="Processing all items in the catalog based on filters below.", text_color="gray").pack(pady=20)
-
-
-        # Content for Saved Searches
-        try:
-            searches = client.get_saved_searches()
-            search_names = [s.get('value') or s.get('name') for s in searches] if searches else []
-            self.search_map = {s.get('value') or s.get('name'): s.get('id') or s.get('value') for s in searches} if searches else {}
-            
-            ss_frame = self.tabview.tab("Saved Searches")
-            
-            if searches:
-                self.saved_search_var = ctk.StringVar(value=ds.daminion_saved_search or (search_names[0] if search_names else "None"))
-                ctk.CTkLabel(ss_frame, text="Select Saved Search:").pack(pady=(10, 5))
-                self.opt_search = ctk.CTkOptionMenu(ss_frame, variable=self.saved_search_var, values=search_names, width=300, command=self.update_count)
-                self.opt_search.pack(pady=10)
-            else:
-                ctk.CTkLabel(ss_frame, text="No Saved Searches returned by API.", text_color="orange").pack(pady=(10, 5))
-                ctk.CTkLabel(ss_frame, text="Enter Saved Search ID (e.g. 117):").pack(pady=5)
-                self.saved_search_var = ctk.StringVar(value=str(ds.daminion_saved_search) if ds.daminion_saved_search else "")
-                ctk.CTkEntry(ss_frame, textvariable=self.saved_search_var, width=200).pack(pady=5)
-                ctk.CTkButton(ss_frame, text="Update Count", command=self.update_count, width=100).pack(pady=5)
-
-        except Exception as e:
-            self.logger.error(f"Failed to fetch saved searches: {e}")
-            ctk.CTkLabel(self.tabview.tab("Saved Searches"), text="Failed to load saved searches").pack()
-
-        # Content for Shared Collections
-        try:
-            collections = client.get_shared_collections()
-            col_names = [c.get('name') or c.get('title') for c in collections] if collections else []
-            self.col_map = {c.get('name') or c.get('title'): c.get('code') or c.get('id') for c in collections} if collections else {}
-            
-            self.collection_var = ctk.StringVar(value=ds.daminion_catalog_id or (col_names[0] if col_names else "None"))
-            
-            sc_frame = self.tabview.tab("Shared Collections")
-            ctk.CTkLabel(sc_frame, text="Select Shared Collection:").pack(pady=(10, 5))
-            self.opt_col = ctk.CTkOptionMenu(sc_frame, variable=self.collection_var, values=col_names if col_names else ["No Collections Found"], width=300, command=self.update_count)
-            self.opt_col.pack(pady=10)
-        except Exception as e:
-            self.logger.error(f"Failed to fetch collections: {e}")
-            ctk.CTkLabel(self.tabview.tab("Shared Collections"), text="Failed to load shared collections").pack()
-
-
-        # 3. Untagged Filters
-        ctk.CTkLabel(self.filters_container, text="Target Only Untagged Fields:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
+        options = [
+            ("All Items", "all"),
+            ("Flagged/Approved Only", "approved"),
+            ("Rejected Only", "rejected"),
+            ("Unflagged Only", "unassigned")
+        ]
         
+        for text, val in options:
+            ctk.CTkRadioButton(status_frame, text=text, variable=self.status_var, value=val, 
+                               command=self.update_count).pack(side="left", padx=(0, 20))
+
+        # Metadata Condition (Untagged)
+        ctk.CTkLabel(self.filters_container, text="Metadata Conditions (Untagged):", font=("Roboto", 18, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
+
         untagged_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
         untagged_frame.pack(fill="x", padx=20)
-        
+
         self.chk_untagged_kws = ctk.CTkCheckBox(untagged_frame, text="Keywords", command=self.update_count)
         if ds.daminion_untagged_keywords: self.chk_untagged_kws.select()
         self.chk_untagged_kws.pack(side="left", padx=(0, 20))
-        
+
         self.chk_untagged_cats = ctk.CTkCheckBox(untagged_frame, text="Category", command=self.update_count)
         if ds.daminion_untagged_categories: self.chk_untagged_cats.select()
         self.chk_untagged_cats.pack(side="left", padx=20)
-        
+
         self.chk_untagged_desc = ctk.CTkCheckBox(untagged_frame, text="Description", command=self.update_count)
         if ds.daminion_untagged_description: self.chk_untagged_desc.select()
         self.chk_untagged_desc.pack(side="left", padx=20)
@@ -320,9 +275,9 @@ class Step1Datasource(ctk.CTkFrame):
         ctk.CTkButton(self.filters_container, text="Select All Untagged", width=150, height=28, 
                       command=self.select_all_untagged, fg_color="gray").pack(anchor="w", padx=20, pady=5)
 
-        # 4. Limit Control
+        # Limit Control
         limit_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        limit_frame.pack(fill="x", padx=20, pady=(20, 5))
+        limit_frame.pack(fill="x", padx=20, pady=(20, 20))
         
         ctk.CTkLabel(limit_frame, text="Max Items to Process:", font=("Roboto", 16, "bold")).pack(side="left")
         self.entry_max_items = ctk.CTkEntry(limit_frame, width=100)
@@ -330,20 +285,14 @@ class Step1Datasource(ctk.CTkFrame):
         self.entry_max_items.pack(side="left", padx=10)
         ctk.CTkLabel(limit_frame, text="(0 = Unlimited)", font=("Roboto", 12, "italic"), text_color="gray").pack(side="left")
 
-        # 5. Filter by Status
-        ctk.CTkLabel(self.filters_container, text="Filter by Status:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
-        
-        self.status_var = ctk.StringVar(value=ds.status_filter)
-        status_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        status_frame.pack(fill="x", padx=20, pady=(0, 20))
-        
-        ctk.CTkRadioButton(status_frame, text="Any", variable=self.status_var, value="all", command=self.update_count).pack(side="left", padx=(0, 20))
-        ctk.CTkRadioButton(status_frame, text="Flagged", variable=self.status_var, value="approved", command=self.update_count).pack(side="left", padx=20)
-        ctk.CTkRadioButton(status_frame, text="Rejected", variable=self.status_var, value="rejected", command=self.update_count).pack(side="left", padx=20)
-        ctk.CTkRadioButton(status_frame, text="Unflagged", variable=self.status_var, value="unassigned", command=self.update_count).pack(side="left", padx=20)
+        self.after(500, self.update_count)
 
         # Triger initial count
         self.after(500, self.update_count)
+
+    def clear_container(self, container):
+        for widget in container.winfo_children():
+            widget.destroy()
 
     def select_all_untagged(self):
         self.chk_untagged_kws.select()
@@ -363,27 +312,9 @@ class Step1Datasource(ctk.CTkFrame):
         def _bg_count():
             try:
                 # 1. Gather state
-                tab = self.tabview.get()
-                tab_map = {"All Items": "all", "Saved Searches": "saved_search", "Shared Collections": "collection"}
-                scope = tab_map[tab]
-                
+                # Simple scope for now
+                scope = "all"
                 status = self.status_var.get()
-                
-                untagged = []
-                if hasattr(self, 'chk_untagged_kws'):
-                    if self.chk_untagged_kws.get(): untagged.append("Keywords")
-                if hasattr(self, 'chk_untagged_cats'):
-                    if self.chk_untagged_cats.get(): untagged.append("Category")
-                if hasattr(self, 'chk_untagged_desc'):
-                    if self.chk_untagged_desc.get(): untagged.append("Description")
-                
-                ss_id = None
-                if scope == "saved_search" and hasattr(self, 'saved_search_var'):
-                    ss_id = self.search_map.get(self.saved_search_var.get())
-                
-                col_id = None
-                if scope == "collection" and hasattr(self, 'collection_var'):
-                    col_id = self.col_map.get(self.collection_var.get())
                 
                 try:
                     max_to_fetch = int(self.entry_max_items.get())
@@ -442,10 +373,21 @@ class Step1Datasource(ctk.CTkFrame):
                  messagebox.showwarning("Warning", "Please connect to Daminion first.")
                  return
                  
-            # Save Daminion Filters
-            tab = self.tabview.get()
-            tab_map = {"All Items": "all", "Saved Searches": "saved_search", "Shared Collections": "collection"}
-            ds.daminion_scope = tab_map[tab]
+            ds.daminion_scope = "all"
+            ds.daminion_saved_search = ""
+            ds.daminion_catalog_id = ""
+            
+            ds.status_filter = self.status_var.get()
+            ds.daminion_untagged_keywords = self.chk_untagged_kws.get()
+            ds.daminion_untagged_categories = self.chk_untagged_cats.get()
+            ds.daminion_untagged_description = self.chk_untagged_desc.get()
+            
+            try:
+                ds.max_items = int(self.entry_max_items.get())
+            except:
+                ds.max_items = 100
+        
+        self.controller.show_frame("Step2Tagging")
             
             ds.status_filter = self.status_var.get()
             ds.daminion_untagged_keywords = self.chk_untagged_kws.get()

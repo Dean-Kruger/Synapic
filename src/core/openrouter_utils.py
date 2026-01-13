@@ -263,7 +263,8 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
             "model": model_id,
             "messages": messages,
             # Non-streaming for simplicity
-            "stream": False
+            "stream": False,
+            "max_tokens": parameters.get("max_new_tokens") if parameters else None
         }
 
         headers_json = headers.copy()

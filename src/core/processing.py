@@ -204,7 +204,7 @@ class ProcessingManager:
                              try:
                                  # For image-text-to-text pipelines, pass the formatted messages
                                  # Note: The pipeline will handle the image extraction from the messages
-                                 result = self.model(text=messages, generate_kwargs={"max_new_tokens": 128})
+                                 result = self.model(text=messages, generate_kwargs={"max_new_tokens": 512})
                              except Exception as e:
                                  self.logger.error(f"VLM inference failed: {e}")
                                  raise
@@ -212,7 +212,7 @@ class ProcessingManager:
                              # Standard image-to-text (BLIP, GIT, etc.)
                              try:
                                  # Provide a default prompt and limit length
-                                 result = self.model(img, prompt="Describe the image.", generate_kwargs={"max_new_tokens": 128})
+                                 result = self.model(img, prompt="Describe the image.", generate_kwargs={"max_new_tokens": 512})
                              except Exception as e:
                                  self.logger.debug(f"Prompted inference failed ({e}), falling back to simple call.")
                                  result = self.model(img)
@@ -232,7 +232,7 @@ class ProcessingManager:
                 # API Inference
                 provider_module = huggingface_utils if engine.provider == "huggingface" else openrouter_utils
                 
-                params = {}
+                params = {"max_new_tokens": 512}
                 if engine.task == config.MODEL_TASK_ZERO_SHOT:
                     params["candidate_labels"] = config.DEFAULT_CANDIDATE_LABELS
                 
