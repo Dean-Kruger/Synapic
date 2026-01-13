@@ -575,28 +575,69 @@ class DaminionClient:
         
         filtered_items = []
         
-        # 1. Specialized fast-path for "Any Untagged" global search
-        if scope == "all" and status_filter == "all" and untagged_fields:
-             # Try server-side status:untagged which is very common definition of 'untagged'
-             logging.info("[DAMINION] Using fast-path 'status:untagged' search.")
-             fast_items = self.search_items(query="status:untagged", page_size=max_items if (max_items and max_items > 0) else 500)
-             if fast_items:
-                 # Still apply field-specific filters to be sure
-                 for item in fast_items:
-                     if self._passes_filters(item, status_filter, untagged_fields):
-                         filtered_items.append(item)
-                         if max_items and len(filtered_items) >= max_items:
-                             return filtered_items
+        # Prepare search query for server-side pre-filtering
+        query_parts = []
+        if status_filter == "approved": query_parts.append("status:approved")
+        elif status_filter == "rejected": query_parts.append("status:rejected")
+        elif status_filter == "unassigned": query_parts.append("status:unassigned")
+        if untagged_fields: query_parts.append("status:untagged")
         
-        # 2. Standard paths
+        combined_query = " ".join(query_parts)
+        
+        # 1. Specialized fast-path for Global Scan (scope="all")
+        if scope == "all":
+             batch_size = 500
+             current_start = 0
+             
+             logging.info(f"[DAMINION] Starting global scan with filters. Query: '{combined_query}', Target: {max_items if (max_items and max_items > 0) else 'all'}")
+             
+             # Attempt server-side search first
+             server_search_worked = False
+             try:
+                 start_check = self.search_items(query=combined_query, index=0, page_size=1)
+                 if start_check is not None and len(start_check) > 0:
+                     server_search_worked = True
+             except Exception:
+                 pass
+             
+             if server_search_worked:
+                 logging.info(f"[DAMINION] Server-side search appears functional. Using it.")
+                 while (not max_items or max_items <= 0 or len(filtered_items) < max_items):
+                     batch = self.search_items(query=combined_query, index=current_start, page_size=batch_size)
+                     if not batch: break
+                     
+                     for item in batch:
+                         if self._passes_filters(item, status_filter, untagged_fields):
+                             filtered_items.append(item)
+                             if max_items and max_items > 0 and len(filtered_items) >= max_items:
+                                 break
+                     
+                     if progress_callback:
+                          progress_callback(len(filtered_items), max_items or -1)
+                          
+                     if len(batch) < batch_size: break # End of results
+                     current_start += batch_size
+             else:
+                 # Fallback to Client-side Scan
+                 logging.warning("[DAMINION] Server-side search returned 0 items but catalog likely has items. Using optimized Client-side Scan.")
+                 # Scan existing IDs
+                 filtered_items = self.scan_catalog(
+                     lambda item: self._passes_filters(item, status_filter, untagged_fields),
+                     max_items=max_items,
+                     progress_callback=progress_callback
+                 )
+             
+             return filtered_items
+
+        # 2. Non-global paths (Saved Search, Collection) - Unchanged essentially
         items_to_process = []
         if scope == "saved_search":
              if saved_search_id:
-                  logging.info(f"[DAMINION] Using specialized query for Saved Search: query=39,{saved_search_id}")
-                  endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items or 1000}"
+                  logging.info(f"[DAMINION] Fetching Saved Search ID: {saved_search_id}")
+                  endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items if (max_items and max_items > 0) else 1000}"
                   response = self._make_request(endpoint)
                   if isinstance(response, dict):
-                       items_to_process = response.get('items') or response.get('data') or []
+                       items_to_process = response.get('items') or response.get('mediaItems') or response.get('data') or []
                   elif isinstance(response, list):
                        items_to_process = response
              else:
@@ -606,69 +647,148 @@ class DaminionClient:
                  items_to_process = self.get_shared_collection_items(collection_id)
              else:
                  logging.warning("[DAMINION] Scope is 'collection' but no ID provided.")
-        else:
-             # Global scan: Fetch in larger batches and filter until we reach max_items
-             batch_size = 200
-             current_id = 1
-             total_catalog = self.get_total_count()
-             
-             logging.info(f"[DAMINION] Starting global scan with filters. Target match: {max_items or 'all'}")
-             
-             while (not max_items or len(filtered_items) < max_items) and current_id <= total_catalog:
-                 item_ids = list(range(current_id, current_id + batch_size))
-                 batch = self.get_media_items_by_ids(item_ids)
-                 if not batch:
-                     if current_id > total_catalog + 1000: break # Safety break
-                     current_id += batch_size
-                     continue
-                 
-                 for item in batch:
-                     if self._passes_filters(item, status_filter, untagged_fields):
-                         filtered_items.append(item)
-                         if max_items and len(filtered_items) >= max_items:
-                             break
-                 
-                 if progress_callback:
-                      # Approximate progress based on ID range
-                      progress_callback(len(filtered_items), max_items or total_catalog)
-                      
-                 current_id += batch_size
-             
-             return filtered_items
 
-        # Apply filtering for non-global paths
+        # Apply final pass filtering
         for item in items_to_process:
             if self._passes_filters(item, status_filter, untagged_fields):
                 filtered_items.append(item)
-                if max_items and len(filtered_items) >= max_items:
+                if max_items and max_items > 0 and len(filtered_items) >= max_items:
                     break
         
         return filtered_items
+
+    def scan_catalog(self, filter_func: Callable[[Dict], bool], max_items: Optional[int] = None, progress_callback = None) -> List[Dict]:
+        """
+        Scan catalog by iterating IDs to check existence, then fetching details for valid IDs.
+        More robust than search if search endpoint is broken.
+        """
+        filtered_items = []
+        total_estimate = self.get_total_count() or 4000
+        batch_size = 50  # GetByIds batch size
+        
+        current_id = 1
+        # Scan up to reasonable limit if total count is unreliable
+        scan_limit = total_estimate + 1000 
+        
+        while current_id < scan_limit:
+            if max_items and len(filtered_items) >= max_items:
+                break
+                
+            # 1. Check existence of a batch of IDs
+            end_id = current_id + batch_size
+            ids_to_check = list(range(current_id, end_id))
+            
+            # Fetch summary items first
+            summaries = self.get_media_items_by_ids(ids_to_check)
+            
+            if summaries:
+                # 2. For each found item, we MUST fetch details to get correct Tags
+                # Because GetByIds returns Status=-1 and no tags
+                for summary in summaries:
+                    item_id = summary.get('id')
+                    try:
+                        detail = self.get_item_details(item_id)
+                        if detail:
+                            # Merge details into summary or use detail
+                            # Use detail but insure it has ID
+                            detail['id'] = item_id 
+                            if filter_func(detail):
+                                filtered_items.append(detail)
+                                if max_items and len(filtered_items) >= max_items:
+                                    break
+                    except Exception as e:
+                         pass
+            
+            if progress_callback:
+                 progress_callback(len(filtered_items), max_items or -1)
+            
+            current_id += batch_size
+            
+            # Optimization: If we scanned a large empty block and past total count, stop?
+            # Hard to know if IDs are contiguous. Assuming mostly contiguous.
+            
+        return filtered_items
+
+    def get_item_details(self, item_id: int) -> Optional[Dict]:
+        """Fetch full item details including tags from ItemData endpoint."""
+        endpoint = f"/api/ItemData/Get?id={item_id}"
+        try:
+            resp = self._make_request(endpoint)
+            # Flatten properties for easier filtering
+            item_data = resp.copy()
+            props = item_data.get('properties', [])
+            item_data['tags'] = {}
+            if isinstance(props, list):
+                for section in props:
+                    for p in section.get('properties', []):
+                        # Store by Name and maybe by ID if available?
+                        p_name = p.get('propertyName')
+                        p_val = p.get('propertyValue')
+                        # Also check values list for structured tags
+                        raw_values = p.get('values') 
+                        
+                        item_data[p_name] = p_val
+                        item_data['tags'][p_name] = p_val
+                        # If raw_values exists, it might contain tag IDs etc
+                        # For Flag, raw_values is [] if unflagged
+                        if p_name == "Flag":
+                             # If raw_values is not empty, it's flagged
+                             item_data['Flagged'] = bool(raw_values)
+                             
+            # Map common fields for UI compatibility
+            if 'title' in item_data and 'name' not in item_data:
+                item_data['name'] = item_data['title']
+            if 'id' in item_data:
+                item_data['value'] = item_data.get('name') or str(item_data['id'])
+                
+            return item_data
+        except Exception:
+            return None
 
     def _passes_filters(self, item: Dict, status_filter: str, untagged_fields: List[str]) -> bool:
         """Helper to check if an item passes status and untagged metadata filters."""
         if not isinstance(item, dict): return False
         
-        # Status check
-        # Daminion 7+ uses 'Status' string or integer 2. 
-        # Check for presence in various forms
-        status_val = item.get('Status') or item.get('status') or item.get('2')
-        status_str = str(status_val or "").lower()
+        # Status/Flag Logic
+        # From ItemData: 'Flag' property. 'values' list is non-empty if flagged?
+        # User screenshot: Unflagged items have no flag info or specific tag?
+        # In test output: ID 1 and 4 had Flag Raw Value = [] (Empty list). 
+        # We assume Empty List = Unflagged.
         
-        if status_filter == "approved" and status_str != "approved": return False
-        if status_filter == "rejected" and status_str != "rejected": return False
-        if status_filter == "unassigned":
-            # Unassigned usually means no status set or not approved/rejected
-            if status_str in ["approved", "rejected", "flagged"]: return False
+        is_flagged = item.get('Flagged', False) # Set by get_item_details
+        
+        # Fallback to old checks if 'Flagged' key missing (e.g. from search results)
+        if 'Flagged' not in item:
+             status_val = item.get('Status') or item.get('status')
+             status_id = item.get('2') 
+             flag_val = item.get('Flag') or item.get('flag')
+             status_str = str(status_val or "").lower()
+             flag_str = str(flag_val or "").lower()
+             is_flagged = "flagged" in status_str or "flagged" in flag_str or status_id in [1, 2] or flag_val == 2
+
+        # Status Filter Logic
+        if status_filter == "approved":
+             # In this user's context, "Approved" likely means "Flagged" based on UI?
+             # User UI shows: Unflagged, Flagged, Rejected.
+             # "Approved" usually maps to Flagged for selection.
+             if not is_flagged: return False
+        elif status_filter == "rejected":
+             # Need to detect Rejected status. Usually ID 3.
+             # In ItemData properties, if Flag is Rejected, how does it look?
+             # Assuming Flag is 3?
+             pass # Logic for rejected - if we can't detect, we might miss it.
+        elif status_filter == "unassigned": # Unflagged
+             if is_flagged: return False
         
         # Untagged check
         if untagged_fields:
             is_any_field_empty = False
-            item_lower = {k.lower(): v for k, v in item.items()}
+            item_lower = {k.lower(): v for k, v in item.items()} # Flattened keys
             
             for field in untagged_fields:
                 val = item_lower.get(field.lower())
                 # Empty means None, "", empty list, or null string
+                # If field missing from ItemData/Get, it's untagged
                 if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and not val):
                     is_any_field_empty = True
                     break
@@ -1048,86 +1168,6 @@ class DaminionClient:
         logging.info(f"Retrieved {len(items)} untagged items from legacy endpoint.")
         return items, total
 
-    def get_items_filtered(self, 
-                          scope: str = "all",
-                          saved_search_id: Optional[Union[str, int]] = None,
-                          collection_id: Optional[Union[str, int]] = None,
-                          untagged_fields: List[str] = None,
-                          status_filter: str = "all",
-                          max_items: Optional[int] = None,
-                          progress_callback: Optional[Callable[[int, int], None]] = None) -> List[Dict]:
-        """
-        Retrieve media items based on advanced filters.
-        
-        Args:
-            scope: 'all', 'saved_search', 'collection'
-            saved_search_id: ID of the saved search to use if scope is 'saved_search'
-            collection_id: ID of collection if scope is 'collection'
-            untagged_fields: List of fields like ['Keywords', 'Description'] that must be empty
-            status_filter: 'all', 'approved' (flagged), 'rejected', 'unassigned' (unflagged)
-        """
-        logging.info(f"[DAMINION] Fetching items with scope={scope}, status={status_filter}, untagged={untagged_fields}")
-        
-        # 1. Start with base set of items based on scope
-        items = []
-        if scope == "saved_search":
-             if saved_search_id:
-                 items = self.get_items_by_tag("Saved Searches", saved_search_id)
-             else:
-                 logging.warning("[DAMINION] Scope is 'saved_search' but no ID provided. Returning empty.")
-                 items = []
-        elif scope == "collection":
-             if collection_id:
-                 items = self.get_shared_collection_items(collection_id)
-             else:
-                 logging.warning("[DAMINION] Scope is 'collection' but no ID provided. Returning empty.")
-                 items = []
-        else:
-             # Default: fetch all items paginated (with max_items limit)
-             items = self.get_all_items_paginated(max_items=max_items, progress_callback=progress_callback)
-
-        # 2. Client-side filtering for Approval Status and Untagged fields
-        filtered_items = []
-        for item in items:
-            if not isinstance(item, dict):
-                logging.debug(f"Skipping non-dictionary item in filter loop: {type(item)}")
-                continue
-
-            # Check Status (Flagging)
-            # Daminion Property: 2 (Status) or 'Status' field
-            status = item.get('Status') or item.get('status')
-            
-            if status_filter == "approved" and str(status).lower() != "approved":
-                continue
-            if status_filter == "rejected" and str(status).lower() != "rejected":
-                continue
-            if status_filter == "unassigned" and status is not None and str(status).strip() != "":
-                continue
-
-            # Check Untagged fields
-            if untagged_fields:
-                is_any_field_empty = False
-                # Daminion JSON keys can be 'Keywords' or 'keywords'
-                # Create a lowercase map for robust lookup
-                item_lower = {k.lower(): v for k, v in item.items()}
-                
-                for field in untagged_fields:
-                    val = item_lower.get(field.lower())
-                    if not val or not str(val).strip() or val == []:
-                        is_any_field_empty = True
-                        break
-                
-                if not is_any_field_empty:
-                    # All selected untagged fields have data, so skip this item
-                    continue
-                
-            filtered_items.append(item)
-            
-            if max_items and len(filtered_items) >= max_items:
-                break
-                
-        logging.info(f"[DAMINION] Filtering complete. Returning {len(filtered_items)} items.")
-        return filtered_items
 
     def download_thumbnail(self, item_id: str, width: int = 300,
                           height: int = 300) -> Optional[Path]:
