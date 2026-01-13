@@ -573,69 +573,109 @@ class DaminionClient:
         """
         logging.info(f"[DAMINION] Fetching items with scope={scope}, status={status_filter}")
         
-        items = []
+        filtered_items = []
+        
+        # 1. Specialized fast-path for "Any Untagged" global search
+        if scope == "all" and status_filter == "all" and untagged_fields:
+             # Try server-side status:untagged which is very common definition of 'untagged'
+             logging.info("[DAMINION] Using fast-path 'status:untagged' search.")
+             fast_items = self.search_items(query="status:untagged", page_size=max_items or 500)
+             if fast_items:
+                 # Still apply field-specific filters to be sure
+                 for item in fast_items:
+                     if self._passes_filters(item, status_filter, untagged_fields):
+                         filtered_items.append(item)
+                         if max_items and len(filtered_items) >= max_items:
+                             return filtered_items
+        
+        # 2. Standard paths
+        items_to_process = []
         if scope == "saved_search":
              if saved_search_id:
-                  # Use user hint: query=39,{id}
-                  # This implies we can search with this query string
                   logging.info(f"[DAMINION] Using specialized query for Saved Search: query=39,{saved_search_id}")
-                  # Use the search endpoint with manual query param
-                  try:
-                      # api/MediaItems/Get?query=39,{id}
-                      # We need to construct this call using _make_request directly or search_items
-                      # search_items usually uses 'q' or 'query'. 
-                      endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items or 200}"
-                      response = self._make_request(endpoint)
-                      items = []
-                      if isinstance(response, dict):
-                           items = response.get('items') or response.get('data') or []
-                      elif isinstance(response, list):
-                           items = response
-                           
-                      if not items:
-                           # Try 100% manual query param injection into search
-                           items = self.search_items(query=f"39,{saved_search_id}")
-                  except Exception as e:
-                      logging.error(f"Failed to fetch saved search items: {e}")
-                      items = []
+                  endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items or 1000}"
+                  response = self._make_request(endpoint)
+                  if isinstance(response, dict):
+                       items_to_process = response.get('items') or response.get('data') or []
+                  elif isinstance(response, list):
+                       items_to_process = response
              else:
                   logging.warning("[DAMINION] Scope is 'saved_search' but no ID provided.")
-                  items = []
         elif scope == "collection":
              if collection_id:
-                 items = self.get_shared_collection_items(collection_id)
+                 items_to_process = self.get_shared_collection_items(collection_id)
              else:
-                 items = []
+                 logging.warning("[DAMINION] Scope is 'collection' but no ID provided.")
         else:
-             items = self.get_all_items_paginated(max_items=max_items, progress_callback=progress_callback)
+             # Global scan: Fetch in larger batches and filter until we reach max_items
+             batch_size = 200
+             current_id = 1
+             total_catalog = self.get_total_count()
+             
+             logging.info(f"[DAMINION] Starting global scan with filters. Target match: {max_items or 'all'}")
+             
+             while (not max_items or len(filtered_items) < max_items) and current_id <= total_catalog:
+                 item_ids = list(range(current_id, current_id + batch_size))
+                 batch = self.get_media_items_by_ids(item_ids)
+                 if not batch:
+                     if current_id > total_catalog + 1000: break # Safety break
+                     current_id += batch_size
+                     continue
+                 
+                 for item in batch:
+                     if self._passes_filters(item, status_filter, untagged_fields):
+                         filtered_items.append(item)
+                         if max_items and len(filtered_items) >= max_items:
+                             break
+                 
+                 if progress_callback:
+                      # Approximate progress based on ID range
+                      progress_callback(len(filtered_items), max_items or total_catalog)
+                      
+                 current_id += batch_size
+             
+             return filtered_items
 
-        # Client-side filtering (Status, Untagged)
-        filtered_items = []
-        for item in items:
-            # ... (filtering logic is fine, keeping it minimal in this replacement)
-            # Re-implementing logic for integrity
-            if not isinstance(item, dict): continue
-            
-            # Status check
-            status = str(item.get('Status') or item.get('status') or "").lower()
-            if status_filter == "approved" and status != "approved": continue
-            if status_filter == "rejected" and status != "rejected": continue
-            if status_filter == "unassigned" and status: continue
-            
-            # Untagged check
-            if untagged_fields:
-                is_any_field_empty = False
-                item_lower = {k.lower(): v for k, v in item.items()}
-                for field in untagged_fields:
-                    val = item_lower.get(field.lower())
-                    if not val or not str(val).strip() or val == []:
-                        is_any_field_empty = True
-                        break
-                if not is_any_field_empty: continue
-                
-            filtered_items.append(item)
-            
+        # Apply filtering for non-global paths
+        for item in items_to_process:
+            if self._passes_filters(item, status_filter, untagged_fields):
+                filtered_items.append(item)
+                if max_items and len(filtered_items) >= max_items:
+                    break
+        
         return filtered_items
+
+    def _passes_filters(self, item: Dict, status_filter: str, untagged_fields: List[str]) -> bool:
+        """Helper to check if an item passes status and untagged metadata filters."""
+        if not isinstance(item, dict): return False
+        
+        # Status check
+        # Daminion 7+ uses 'Status' string or integer 2. 
+        # Check for presence in various forms
+        status_val = item.get('Status') or item.get('status') or item.get('2')
+        status_str = str(status_val or "").lower()
+        
+        if status_filter == "approved" and status_str != "approved": return False
+        if status_filter == "rejected" and status_str != "rejected": return False
+        if status_filter == "unassigned":
+            # Unassigned usually means no status set or not approved/rejected
+            if status_str in ["approved", "rejected", "flagged"]: return False
+        
+        # Untagged check
+        if untagged_fields:
+            is_any_field_empty = False
+            item_lower = {k.lower(): v for k, v in item.items()}
+            
+            for field in untagged_fields:
+                val = item_lower.get(field.lower())
+                # Empty means None, "", empty list, or null string
+                if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and not val):
+                    is_any_field_empty = True
+                    break
+            
+            if not is_any_field_empty: return False
+            
+        return True
 
 
     def search_items(self, query: str, index: int = 0, page_size: int = 200) -> Optional[List[Dict]]:

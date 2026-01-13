@@ -18,6 +18,7 @@ class DatasourceConfig:
     daminion_untagged_categories: bool = False
     daminion_untagged_description: bool = False
     status_filter: str = "all" # 'all', 'approved', 'rejected', 'unassigned'
+    max_items: int = 100
 
 @dataclass
 class EngineConfig:

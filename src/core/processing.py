@@ -108,12 +108,11 @@ class ProcessingManager:
             # Build untagged fields list
             untagged_fields = []
             if ds.daminion_untagged_keywords: untagged_fields.append("Keywords")
-            if ds.daminion_untagged_categories: untagged_fields.append("Categories")
+            if ds.daminion_untagged_categories: untagged_fields.append("Category")
             if ds.daminion_untagged_description: untagged_fields.append("Description")
             
-            # Determine max items based on scope
-            # For testing/demo, we might want to cap 'all' but allow 'saved_search' or 'collection' to be larger
-            max_to_fetch = None if ds.daminion_scope != "all" else 100
+            # Determine max items from config
+            max_to_fetch = ds.max_items if ds.max_items > 0 else None
             
             items = self.session.daminion_client.get_items_filtered(
                 scope=ds.daminion_scope,

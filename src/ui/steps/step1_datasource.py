@@ -255,7 +255,7 @@ class Step1Datasource(ctk.CTkFrame):
         self.tabview.set(current_tab)
 
         # Content for All Items
-        ctk.CTkLabel(self.tabview.tab("All Items"), text="Processing all items (limited to 100 for safety during full scan).", text_color="gray").pack(pady=20)
+        ctk.CTkLabel(self.tabview.tab("All Items"), text="Processing all items in the catalog based on filters below.", text_color="gray").pack(pady=20)
 
 
         # Content for Saved Searches
@@ -309,7 +309,7 @@ class Step1Datasource(ctk.CTkFrame):
         if ds.daminion_untagged_keywords: self.chk_untagged_kws.select()
         self.chk_untagged_kws.pack(side="left", padx=(0, 20))
         
-        self.chk_untagged_cats = ctk.CTkCheckBox(untagged_frame, text="Categories", command=self.update_count)
+        self.chk_untagged_cats = ctk.CTkCheckBox(untagged_frame, text="Category", command=self.update_count)
         if ds.daminion_untagged_categories: self.chk_untagged_cats.select()
         self.chk_untagged_cats.pack(side="left", padx=20)
         
@@ -317,7 +317,20 @@ class Step1Datasource(ctk.CTkFrame):
         if ds.daminion_untagged_description: self.chk_untagged_desc.select()
         self.chk_untagged_desc.pack(side="left", padx=20)
 
-        # 4. Filter by Status
+        ctk.CTkButton(self.filters_container, text="Select All Untagged", width=150, height=28, 
+                      command=self.select_all_untagged, fg_color="gray").pack(anchor="w", padx=20, pady=5)
+
+        # 4. Limit Control
+        limit_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
+        limit_frame.pack(fill="x", padx=20, pady=(20, 5))
+        
+        ctk.CTkLabel(limit_frame, text="Max Items to Process:", font=("Roboto", 16, "bold")).pack(side="left")
+        self.entry_max_items = ctk.CTkEntry(limit_frame, width=100)
+        self.entry_max_items.insert(0, str(ds.max_items))
+        self.entry_max_items.pack(side="left", padx=10)
+        ctk.CTkLabel(limit_frame, text="(0 = Unlimited)", font=("Roboto", 12, "italic"), text_color="gray").pack(side="left")
+
+        # 5. Filter by Status
         ctk.CTkLabel(self.filters_container, text="Filter by Status:", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
         
         self.status_var = ctk.StringVar(value=ds.status_filter)
@@ -330,6 +343,12 @@ class Step1Datasource(ctk.CTkFrame):
         ctk.CTkRadioButton(status_frame, text="Unflagged", variable=self.status_var, value="unassigned", command=self.update_count).pack(side="left", padx=20)
 
         # Triger initial count
+        self.after(500, self.update_count)
+
+    def select_all_untagged(self):
+        self.chk_untagged_kws.select()
+        self.chk_untagged_cats.select()
+        self.chk_untagged_desc.select()
         self.update_count()
 
 
@@ -354,7 +373,7 @@ class Step1Datasource(ctk.CTkFrame):
                 if hasattr(self, 'chk_untagged_kws'):
                     if self.chk_untagged_kws.get(): untagged.append("Keywords")
                 if hasattr(self, 'chk_untagged_cats'):
-                    if self.chk_untagged_cats.get(): untagged.append("Categories")
+                    if self.chk_untagged_cats.get(): untagged.append("Category")
                 if hasattr(self, 'chk_untagged_desc'):
                     if self.chk_untagged_desc.get(): untagged.append("Description")
                 
@@ -366,7 +385,12 @@ class Step1Datasource(ctk.CTkFrame):
                 if scope == "collection" and hasattr(self, 'collection_var'):
                     col_id = self.col_map.get(self.collection_var.get())
                 
-                max_to_fetch = 100 if scope == "all" else None
+                try:
+                    max_to_fetch = int(self.entry_max_items.get())
+                except:
+                    max_to_fetch = 100
+                
+                if max_to_fetch == 0: max_to_fetch = None
                 
                 # Try efficient counting first
                 count = self.controller.session.daminion_client.get_filtered_item_count(
@@ -427,6 +451,11 @@ class Step1Datasource(ctk.CTkFrame):
             ds.daminion_untagged_keywords = self.chk_untagged_kws.get()
             ds.daminion_untagged_categories = self.chk_untagged_cats.get()
             ds.daminion_untagged_description = self.chk_untagged_desc.get()
+            
+            try:
+                ds.max_items = int(self.entry_max_items.get())
+            except:
+                ds.max_items = 100
             
             # Map names back to IDs
             if ds.daminion_scope == "saved_search":
