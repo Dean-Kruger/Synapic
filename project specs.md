@@ -1,198 +1,97 @@
-The following project specification details the requirements for **Hugging Juice Face v2**, a desktop application for automated image tagging using various AI backends. This specification is designed to be a "blueprint" for a developer to build the application from scratch, utilizing the logic from the existing `deanable/hugging-juice-face` repository as a boilerplate for the backend functionality.
-
----
-
-# Project Specification: Hugging Juice Face v2
+# Project Specification: Synapic (v2)
 
 ## 1. Project Overview
 
-**Goal:** Create a v2 iteration of the Hugging Juice Face application, rewriting the codebase from scratch to ensure modularity and maintainability. The core business logic (Daminion integration, AI tagging pipelines) remains consistent with the v1 repository, but the User Interface (UI) will be completely redesigned into a linear, 4-step workflow.
+**Goal:** Synapic is a high-performance desktop application for automated image tagging and metadata enrichment. It provides a bridge between Digital Asset Management (DAM) systems (specifically Daminion) and state-of-the-art AI models (Local VLMs, Hugging Face, OpenRouter).
 
 **Core Philosophy:**
+*   **Linear Workflow:** A 4-step "Wizard" interface that guides users from source selection to execution and result review.
+*   **Deep Daminion Integration:** Beyond simple fetching, Synapic utilizes Daminion's internal schema for advanced filtering (flags, status) and provides high-speed metadata write-back via the Web API.
+*   **Engine Versatility:** Supports local inference for privacy/speed and cloud inference for cutting-edge model access (GPT-4o, Gemini, Qwen2-VL).
 
-* **Backend:** Reuse logic from `daminion_client.py`, `huggingface_utils.py`, `openrouter_utils.py`, and `image_processing.py`.
-* **Frontend:** A clean, modern UI separated into 4 distinct, self-contained steps.
-* **User Experience:** "Wizard" style or Tab-based navigation where the user configures the job sequentially before execution.
+---
 
 ## 2. Technical Architecture
 
 ### 2.1 Tech Stack
+*   **Language:** Python 3.10+
+*   **GUI Framework:** `CustomTkinter` for a modern, responsive, dark-mode first aesthetic.
+*   **Concurrency:** Multi-threaded backend using `threading` and `queue`. A dedicated `ProcessingManager` handles the execution loop while keeping the UI responsive.
+*   **API Interactions:** Native `urllib` and `requests` for robust network operations with custom retry logic and rate limiting.
 
-* **Language:** Python 3.10+
-* **GUI Framework:** `CustomTkinter` (recommended) or `PyQt6` for a modern, dark-mode friendly aesthetic, replacing the standard `tkinter` look.
-* **Concurrency:** `asyncio` and `threading` for non-blocking UI during the "Process" step (referencing `daminion_async.py` and `gui_workers.py`).
-* **Data Management:** `dataclasses` or `pydantic` for strict typing of configuration objects.
-
-### 2.2 Application Structure
-
-The code should follow a Model-View-Controller (MVC) or robust modular pattern:
-
-* `/core`: Backend logic (API clients, image processing).
-* `/ui`: UI components (Main window, Step frames, Dialogs).
-* `/utils`: Helpers (Logging, Config management).
+### 2.2 Core Modules
+*   `src/core/daminion_client.py`: Advanced Daminion Web API client with tag mapping (GUID/ID) and batch update capabilities.
+*   `src/core/processing.py`: Orchestrates the movement of data from source to engine and back to destination.
+*   `src/core/huggingface_utils.py`: Manages local model lifecycle (download, cache scanning, inference pipelines).
+*   `src/core/session.py`: Persistent session state and configuration using `dataclasses`.
+*   `src/ui/steps/`: Self-contained UI frames for each stage of the workflow.
 
 ---
 
 ## 3. UI/UX Workflow: The 4 Steps
 
-The main application window will host a navigation bar (top or side) indicating the 4 steps. Users proceed linearly.
-
 ### Step 1: Datasource
-
-**Objective:** Define *where* the images are coming from.
-**UI Elements:**
-
-* **Source Selector:** A Radio Button or Dropdown to choose between:
-* **Daminion Server**
-* **Local Folder**
-
-
-
-**Logic & Interaction:**
-
-1. **Local Folder Mode:**
-* **Input:** File path selector (Button: "Browse Folder").
-* **Display:** Text field showing selected path.
-* **Filter:** Checkboxes for file types (JPG, PNG, TIFF) - defaults inferred from `image_processing.py`.
-
-
-2. **Daminion Server Mode:**
-* **Connection Config:** Inputs for `Host`, `Username`, `Password`. (Load default from `config.py` if available).
-* **Action:** "Connect" button.
-* **Scope Selection (Post-Connect):**
-* Dropdown: Select Catalog.
-* Radio Buttons: `All Files`, `Current Selection`, `Specific Collection/Tag`.
-* *Implementation Note:* Use `daminion_client.py` to authenticate and fetch available scopes.
-
-
-
-
+**Objective:** Define the scope of assets to be processed.
+*   **Source Types:**
+    *   **Local Folder:** Recursive or shallow scans of image directories.
+    *   **Daminion Server:** Interactive connection manager with credential persistence.
+*   **Advanced Daminion Filters:**
+    *   **Tabbed Scopes:** "All Items", "Saved Searches" (Dynamic ID/Name mapping), "Shared Collections".
+    *   **Status Filtering:** Filter by Daminion flags (Flagged, Rejected, Unflagged).
+    *   **Metadata Check (Untagged):** Precision targets for files missing specific fields (**Category**, **Keywords**, or **Description**).
+    *   **Record Limits:** Configurable "Max Items to Process" (0 for unlimited catalog scan).
 
 ### Step 2: Tagging Engine
-
-**Objective:** Select and configure the AI model used for analysis.
-**UI Elements:**
-
-* **Engine Selector:** Large "Card" or Radio selection for:
-* **Local Model**
-* **Hugging Face**
-* **OpenRouter**
-
-
-* **Configuration Button:** A distinct "Configure [Selected Engine]" button.
-
-**The "Configuration" Dialog (Modal Window):**
-
-* **Layout:** A Tabbed Interface with 3 Tabs (one for each service).
-* **Tab 1: Local Model**
-* **Model Manager:** List of available models (e.g., facial recognition, object detection).
-* **Actions:** "Download", "Load", "Clear Cache".
-* **Status:** Indicators showing if the model is downloaded/ready (Reference `huggingface_utils.py` for local cache handling).
-
-
-* **Tab 2: Hugging Face**
-* **Input:** API Key field (masked).
-* **Model ID:** Text field to specify the HF model string (e.g., `google/vit-base-patch16-224`).
-* **Test:** "Verify Key" button.
-
-
-* **Tab 3: OpenRouter**
-* **Input:** API Key field (masked).
-* **Model ID:** Dropdown or text field for OpenRouter model selection.
-* **Prompt:** (Optional) Text area for custom system prompts if using LLMs for tagging.
-
-
-
-
+**Objective:** Configure the AI analysis pipeline.
+*   **Engine Options:**
+    *   **Local Inference:** Uses Hugging Face `transformers` pipelines. Supports standard classifiers and modern Vision-Language Models (VLMs).
+    *   **Hugging Face API:** Cloud inference for lighter hardware.
+    *   **OpenRouter API:** Access to diverse LLM/VLM backends with custom system prompts.
+*   **Specialized Handling:**
+    *   **VLM Mode:** Automatic detection of `image-text-to-text` capabilities (e.g., Qwen2-VL) for descriptive captioning.
+    *   **Zero-Shot Classification:** Custom candidate labels for broad categorization.
 
 ### Step 3: Process (Execution)
-
-**Objective:** Execute the tagging task and provide real-time feedback.
-**UI Elements:**
-
-* **Start/Stop Controls:** Big "Start Processing" button (Green) and "Abort" button (Red).
-* **Progress Indicators:**
-* **Granular Progress Bar:** Represents the batch (e.g., "Processing image 15 of 50").
-* **Current Operation Label:** Dynamic text field updating rapidly (e.g., *"Uploading to API..."*, *"Parsing response..."*, *"Writing tags to Daminion..."*).
-* **Console/Log View:** A scrolling text box showing detailed logs (Info/Error levels).
-
-
-* **Logic:**
-* Initialize the `ProgressTracker` (from `progress_tracker.py`).
-* Run the processing loop in a separate thread to keep the UI responsive.
-* Use `enhanced_progress.py` logic to calculate ETA and percentage.
-
-
+**Objective:** Real-time visibility into the tagging job.
+*   **Controls:** Start/Start and Abort buttons with immediate state locking of previous steps to prevent configuration drift during runs.
+*   **Feedback Loop:**
+    *   **Live Console:** Detailed operation log showing API responses and file paths.
+    *   **Progress Dashboard:** Cumulative counters (Success/Fail/Total) and a dynamic progress bar fueled by `EnhancedProgress` calculations.
 
 ### Step 4: Results & Review
-
-**Objective:** Review the outcome and manage the session data. (This is the implied 4th self-contained step).
-**UI Elements:**
-
-* **Summary Dashboard:**
-* **Metrics:** Total Processed, Successful, Failed, Skipped.
-
-
-* **Review Grid:** A simple table listing:
-* Filename
-* Generated Tags
-* Status (Success/Error)
-
-
-* **Actions:**
-* **"Export Report":** Save the session log/results to CSV/JSON (Reference `report_generator.py`).
-* **"Open Log File":** Direct link to the `logs/` folder.
-* **"New Session":** Button to reset the UI and return to Step 1.
-
-
+**Objective:** Post-job analysis and reporting.
+*   **Outcome Dashboard:** Final tally of successful tagging operations vs. failures.
+*   **Result Table:** Persistent view of generated tags (Category, Keywords, Description) for the current session.
+*   **System Integration:** "Open Log Folder" for deep-dive debugging.
 
 ---
 
-## 4. Functional Requirements (Backend Mapping)
+## 4. Functional Requirements
 
-### A. Configuration Management
+### A. Daminion Sync Logic
+*   **Tag Mapping:** The client MUST fetch the Daminion Layout at session start to map human-readable tags to internal GUIDs/Integer IDs.
+*   **Persistent Fetching:** The system scans the catalog in batches, filtering locally until the user-defined `max_items` quota is met.
+*   **Write-back:** Tags are committed back to Daminion via specialized batch update endpoints to minimize network overhead.
 
-* **File:** `config_manager.py` / `config_schema.py`
-* **Requirement:** The app must persist user settings (API keys, last used folder, Daminion credentials) to a local JSON/YAML file.
-* **Security:** API keys must not be logged in plain text.
+### B. Metadata Standards
+*   **Local Files:** Supports writing IPTC (Object Name, Keywords, Caption) and EXIF (XPSubject, XPKeywords, ImageDescription/XPTitle) to ensure compatibility across Windows and DAM software.
+*   **Format Support:** Optimized for JPG, PNG, and TIFF.
 
-### B. Daminion Integration
-
-* **Files:** `daminion_client.py`, `daminion_pool.py`
-* **Requirement:**
-* Implement connection pooling if processing >100 images.
-* Implement a "Dry Run" mode where tags are fetched but not written back (optional toggle in Step 3).
-* Ensure tag writing handles duplicates correctly.
-
-
-
-### C. Image Processing Pipeline
-
-* **File:** `image_processing.py`
-* **Requirement:**
-* Load image -> Resize/Format (if API requires) -> Send to Engine -> Parse Response -> Format Tags -> Return.
-* Must handle timeouts (for API calls) and corrupt images gracefully without crashing the batch.
-
-
-
-### D. Reporting
-
-* **File:** `report_generator.py`
-* **Requirement:** Automatically generate a timestamped report at the end of every Process run.
+### C. Resource Management
+*   **Memory Safety:** Thumbnails are downloaded to a temporary cache and cleaned up immediately after processing.
+*   **Model Caching:** Local models are stored in a central cache; the app calculates model sizes and provides management tools (Clear Cache).
 
 ---
 
-## 5. Development Phases
-
-1. **Skeleton & UI:** Build the main window, the 4-step navigation, and the tabbed Configuration dialog using the chosen GUI framework.
-2. **Core Logic Migration:** Port the Daminion and API client logic from the v1 repo into the new `core/` structure.
-3. **Wiring:** Connect Step 1 inputs to the Daminion client. Connect Step 2 inputs to the AI Service factories.
-4. **Process Loop:** Implement the async worker in Step 3 that orchestrates the flow.
-5. **Testing:** Verify "Local" vs "API" modes independently.
-
-## 6. Deliverables
-
-* `main.py`: Entry point.
-* `requirements.txt`: Updated dependencies.
-* `/src`: Complete source code organized by module.
-* `project specs.md`: This document.
+## 5. Directory Structure
+```
+/
+├── main.py                 # Application launcher
+├── project specs.md        # This document
+├── requirements.txt        # Runtime dependencies
+├── schema.sql              # Daminion DB reference
+└── src/
+    ├── core/               # Business logic & clients
+    ├── ui/                 # View components
+    └── utils/              # Config, Logging, UI Helpers
+```
