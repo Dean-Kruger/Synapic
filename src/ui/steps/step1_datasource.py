@@ -36,7 +36,7 @@ class Step1Datasource(ctk.CTkFrame):
 
         # Count Label (global for datasource)
         self.lbl_total_count = ctk.CTkLabel(self.container, text="", font=("Roboto", 14, "italic"), text_color="gray")
-        self.lbl_total_count.grid(row=1, column=0, sticky="e", padx=40)
+        self.lbl_total_count.grid(row=1, column=0, sticky="e", padx=60)
 
         # Content Area (Dynamic)
         self.canvas = ctk.CTkCanvas(self.container, bg="#2b2b2b", highlightthickness=0)
@@ -275,15 +275,19 @@ class Step1Datasource(ctk.CTkFrame):
         ctk.CTkButton(self.filters_container, text="Select All Untagged", width=150, height=28, 
                       command=self.select_all_untagged, fg_color="gray").pack(anchor="w", padx=20, pady=5)
 
-        # Limit Control
+        # Limit Control (Slider)
         limit_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
         limit_frame.pack(fill="x", padx=20, pady=(20, 20))
         
         ctk.CTkLabel(limit_frame, text="Max Items to Process:", font=("Roboto", 16, "bold")).pack(side="left")
-        self.entry_max_items = ctk.CTkEntry(limit_frame, width=100)
-        self.entry_max_items.insert(0, str(ds.max_items))
-        self.entry_max_items.pack(side="left", padx=10)
-        ctk.CTkLabel(limit_frame, text="(0 = Unlimited)", font=("Roboto", 12, "italic"), text_color="gray").pack(side="left")
+        
+        self.slider_val_label = ctk.CTkLabel(limit_frame, text=str(ds.max_items if ds.max_items > 0 else "Unlimited"), 
+                                             font=("Roboto", 14, "bold"), text_color="#3a7ebf", width=80)
+        self.slider_val_label.pack(side="right", padx=10)
+
+        self.max_items_slider = ctk.CTkSlider(limit_frame, from_=0, to=1000, number_of_steps=10, command=self.update_slider_label)
+        self.max_items_slider.set(ds.max_items if ds.max_items <= 1000 else 1000)
+        self.max_items_slider.pack(side="left", fill="x", expand=True, padx=20)
 
         self.after(500, self.update_count)
 
@@ -301,6 +305,11 @@ class Step1Datasource(ctk.CTkFrame):
         self.update_count()
 
 
+    def update_slider_label(self, val):
+        val = int(val)
+        self.slider_val_label.configure(text=str(val) if val > 0 else "Unlimited")
+        self.update_count()
+
     def update_count(self, *args):
         if not self.controller.session.daminion_client or not self.controller.session.daminion_client.authenticated:
             self.lbl_total_count.configure(text="")
@@ -312,16 +321,26 @@ class Step1Datasource(ctk.CTkFrame):
         def _bg_count():
             try:
                 # 1. Gather state
-                # Simple scope for now
                 scope = "all"
                 status = self.status_var.get()
                 
+                untagged = []
+                if hasattr(self, 'chk_untagged_kws') and self.chk_untagged_kws.get(): 
+                    untagged.append("Keywords")
+                if hasattr(self, 'chk_untagged_cats') and self.chk_untagged_cats.get(): 
+                    untagged.append("Category")
+                if hasattr(self, 'chk_untagged_desc') and self.chk_untagged_desc.get(): 
+                    untagged.append("Description")
+                
+                ss_id = None
+                col_id = None
+
                 try:
-                    max_to_fetch = int(self.entry_max_items.get())
+                    max_to_fetch = int(self.max_items_slider.get())
                 except:
                     max_to_fetch = 100
                 
-                if max_to_fetch == 0: max_to_fetch = None
+                if max_to_fetch <= 0: max_to_fetch = None
                 
                 # Try efficient counting first
                 count = self.controller.session.daminion_client.get_filtered_item_count(
@@ -335,7 +354,7 @@ class Step1Datasource(ctk.CTkFrame):
                 suffix = ""
                 if count == -1:
                     # Fallback to fetching items with a cap to Estimate
-                    limit_fallback = 100
+                    limit_fallback = 500 # Increased for better estimation
                     items = self.controller.session.daminion_client.get_items_filtered(
                         scope=scope,
                         saved_search_id=ss_id,
@@ -383,36 +402,8 @@ class Step1Datasource(ctk.CTkFrame):
             ds.daminion_untagged_description = self.chk_untagged_desc.get()
             
             try:
-                ds.max_items = int(self.entry_max_items.get())
+                ds.max_items = int(self.max_items_slider.get())
             except:
                 ds.max_items = 100
         
-        self.controller.show_frame("Step2Tagging")
-            
-            ds.status_filter = self.status_var.get()
-            ds.daminion_untagged_keywords = self.chk_untagged_kws.get()
-            ds.daminion_untagged_categories = self.chk_untagged_cats.get()
-            ds.daminion_untagged_description = self.chk_untagged_desc.get()
-            
-            try:
-                ds.max_items = int(self.entry_max_items.get())
-            except:
-                ds.max_items = 100
-            
-            # Map names back to IDs
-            if ds.daminion_scope == "saved_search":
-                 val = self.saved_search_var.get()
-                 if self.search_map and val in self.search_map:
-                     ds.daminion_saved_search = self.search_map.get(val)
-                 else:
-                     # Manual ID mode or map failure
-                     if not val:
-                         messagebox.showwarning("Warning", "Please enter a Saved Search ID.")
-                         return
-                     ds.daminion_saved_search = val
-                     
-            elif ds.daminion_scope == "collection":
-                 ds.daminion_catalog_id = self.col_map.get(self.collection_var.get())
-
-        # Proceed
         self.controller.show_step("Step2Tagging")

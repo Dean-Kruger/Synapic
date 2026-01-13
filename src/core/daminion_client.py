@@ -579,7 +579,7 @@ class DaminionClient:
         if scope == "all" and status_filter == "all" and untagged_fields:
              # Try server-side status:untagged which is very common definition of 'untagged'
              logging.info("[DAMINION] Using fast-path 'status:untagged' search.")
-             fast_items = self.search_items(query="status:untagged", page_size=max_items or 500)
+             fast_items = self.search_items(query="status:untagged", page_size=max_items if (max_items and max_items > 0) else 500)
              if fast_items:
                  # Still apply field-specific filters to be sure
                  for item in fast_items:
@@ -993,37 +993,24 @@ class DaminionClient:
         if scope == "all" and status_filter == "all" and not untagged_fields:
             return self.get_total_count()
 
-        # 2. Status Only (Global)
-        if scope == "all" and not untagged_fields:
-            if status_filter == "approved":
-                return self._count_query("status:approved")
-            elif status_filter == "rejected":
-                # 'Flagged' often means rejected or flagged in Daminion depending on usage,
-                # here we mean specifically Rejected status
-                return self._count_query("status:rejected")
-            elif status_filter == "unassigned":
-                return self._count_query("status:untagged") # Or status:unassigned? defaulting to untagged logic
+        # 2. Combined Query Construction
+        query_parts = []
         
-        # 3. Untagged Fields (Text Search)
-        # If we have complex logic, we might need client-side, but let's try server search
+        # Status
+        if status_filter == "approved": query_parts.append("status:approved")
+        elif status_filter == "rejected": query_parts.append("status:rejected")
+        elif status_filter == "unassigned": query_parts.append("status:unassigned")
+        
+        # Untagged (approximate with status:untagged if any field selected)
         if untagged_fields:
-             # Construct query like "Keywords:null" or "status:untagged"
-             # Since Daminion search syntax varies, "status:untagged" covers most "untagged" cases globally.
-             # If specific fields: "Keywords:(empty)" might work but is risky.
-             # We stick to status:untagged if simple
-             if "Keywords" in untagged_fields:
-                 return self._count_query("status:untagged")
-
-        # 4. Fallback: If we can't count efficiently, return -1 or estimation?
-        # Better to return -1 to indicate "Calculation required" or just 0 if unknown
-        # But UI expects a number.
-        # Let's try to fetch a small batch to check if empty? No, we need count.
+            query_parts.append("status:untagged")
+            
+        if scope == "all" and query_parts:
+            # Combine multiple parts into a space-separated search query
+            combined_query = " ".join(query_parts)
+            return self._count_query(combined_query)
         
-        # If scope is Saved Search, we really want to query it.
-        # But Daminion ID-based queries are hard without GetByQuery.
-        # If we strictly can't count, we return 0 or maybe fetch headers?
-        
-        # For now, return -1 to signal UI to maybe show "Many" or "..."
+        # 3. Fallback: If we can't count efficiently, return -1 or estimation?
         return -1
 
     def _count_query(self, query: str) -> int:
