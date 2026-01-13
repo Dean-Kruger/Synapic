@@ -262,18 +262,25 @@ class Step1Datasource(ctk.CTkFrame):
         try:
             searches = client.get_saved_searches()
             search_names = [s.get('value') or s.get('name') for s in searches] if searches else []
-            self.search_map = {s.get('value') or s.get('name'): s.get('id') for s in searches} if searches else {}
-            
-            self.saved_search_var = ctk.StringVar(value=ds.daminion_saved_search or (search_names[0] if search_names else "None"))
+            self.search_map = {s.get('value') or s.get('name'): s.get('id') or s.get('value') for s in searches} if searches else {}
             
             ss_frame = self.tabview.tab("Saved Searches")
-            ctk.CTkLabel(ss_frame, text="Select Saved Search:").pack(pady=(10, 5))
-            self.opt_search = ctk.CTkOptionMenu(ss_frame, variable=self.saved_search_var, values=search_names if search_names else ["No Saved Searches Found"], width=300, command=self.update_count)
-            self.opt_search.pack(pady=10)
+            
+            if searches:
+                self.saved_search_var = ctk.StringVar(value=ds.daminion_saved_search or (search_names[0] if search_names else "None"))
+                ctk.CTkLabel(ss_frame, text="Select Saved Search:").pack(pady=(10, 5))
+                self.opt_search = ctk.CTkOptionMenu(ss_frame, variable=self.saved_search_var, values=search_names, width=300, command=self.update_count)
+                self.opt_search.pack(pady=10)
+            else:
+                ctk.CTkLabel(ss_frame, text="No Saved Searches returned by API.", text_color="orange").pack(pady=(10, 5))
+                ctk.CTkLabel(ss_frame, text="Enter Saved Search ID (e.g. 117):").pack(pady=5)
+                self.saved_search_var = ctk.StringVar(value=str(ds.daminion_saved_search) if ds.daminion_saved_search else "")
+                ctk.CTkEntry(ss_frame, textvariable=self.saved_search_var, width=200).pack(pady=5)
+                ctk.CTkButton(ss_frame, text="Update Count", command=self.update_count, width=100).pack(pady=5)
+
         except Exception as e:
             self.logger.error(f"Failed to fetch saved searches: {e}")
             ctk.CTkLabel(self.tabview.tab("Saved Searches"), text="Failed to load saved searches").pack()
-
 
         # Content for Shared Collections
         try:
@@ -423,7 +430,16 @@ class Step1Datasource(ctk.CTkFrame):
             
             # Map names back to IDs
             if ds.daminion_scope == "saved_search":
-                 ds.daminion_saved_search = self.search_map.get(self.saved_search_var.get())
+                 val = self.saved_search_var.get()
+                 if self.search_map and val in self.search_map:
+                     ds.daminion_saved_search = self.search_map.get(val)
+                 else:
+                     # Manual ID mode or map failure
+                     if not val:
+                         messagebox.showwarning("Warning", "Please enter a Saved Search ID.")
+                         return
+                     ds.daminion_saved_search = val
+                     
             elif ds.daminion_scope == "collection":
                  ds.daminion_catalog_id = self.col_map.get(self.collection_var.get())
 

@@ -16,6 +16,21 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
         self.logger.debug("UI theme configured: Dark mode with blue color theme")
 
+        # Set Icon
+        import os
+        icon_path = os.path.join(os.getcwd(), "Icon.png")
+        if os.path.exists(icon_path):
+             try:
+                 from PIL import Image, ImageTk
+                 # Method 1: For title bar (Windows only usually calls .iconbitmap, but .iconphoto is cross-platform)
+                 # self.iconbitmap(icon_path) # Needs .ico
+                 img = Image.open(icon_path)
+                 self.iconphoto(False, ImageTk.PhotoImage(img))
+                 self.logger.info(f"Loaded application icon from {icon_path}")
+             except Exception as e:
+                 self.logger.warning(f"Failed to set application icon: {e}")
+
+
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
