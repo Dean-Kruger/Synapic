@@ -275,76 +275,97 @@ def extract_tags_from_result(
                 logging.info(f"Zero-Shot Category: '{category}' (Score: >={threshold})")
 
         elif model_task in [config.MODEL_TASK_IMAGE_TO_TEXT, "image-text-to-text"]:
-            # Result: [{'generated_text': '...'}] or chat-style structures
-            text = ""
+            # Result: [{'generated_text': '...'}] or [{'generated_text': {'description': '...', ...}}]
+            
             raw_gen = None
             if isinstance(result, list) and len(result) > 0:
                 raw_gen = result[0].get('generated_text', '')
             elif isinstance(result, dict):
                 raw_gen = result.get('generated_text', '')
             
-            # If raw_gen is a list of messages (chat format), extract assistant text
-            if isinstance(raw_gen, list):
-                for msg in raw_gen:
-                    if isinstance(msg, dict) and msg.get('role') == 'assistant':
-                        content = msg.get('content', '')
-                        if isinstance(content, list):
-                            for item in content:
-                                if isinstance(item, dict) and item.get('type') == 'text':
-                                    text += item.get('text', '')
-                        elif isinstance(content, str):
-                            text += content
-            elif isinstance(raw_gen, str):
-                text = raw_gen
+            # CASE 1: Structured Dictionary (From Smart VLM)
+            if isinstance(raw_gen, dict):
+                description = raw_gen.get('description', '')
+                category = raw_gen.get('category', '')
+                keywords = raw_gen.get('keywords', [])
+                if isinstance(keywords, str):
+                     # Handle if model returns keywords as a single string
+                     keywords = [k.strip() for k in keywords.split(',')]
             
-            if text:
-                description = text.strip()
+            # CASE 2: String (Plain Caption) or Chat Format
+            else:
+                text = ""
+                # If raw_gen is a list of messages (chat format), extract assistant text
+                if isinstance(raw_gen, list):
+                    for msg in raw_gen:
+                        if isinstance(msg, dict) and msg.get('role') == 'assistant':
+                            content = msg.get('content', '')
+                            if isinstance(content, list):
+                                for item in content:
+                                    if isinstance(item, dict) and item.get('type') == 'text':
+                                        text += item.get('text', '')
+                            elif isinstance(content, str):
+                                text += content
+                elif isinstance(raw_gen, str):
+                    text = raw_gen
                 
-                # 1. Handle JSON-wrapped responses that sometimes slip through as text
-                if (description.startswith("{") and "generated_text" in description) or description.startswith("{\""):
+                if text:
+                    # Check if the text itself is a JSON string (VLM outputting raw JSON string)
+                    import json
                     try:
-                        import json
+                        # Attempt to strip markdown code blocks if present
                         import re
-                        # Clean up potential markdown formatting around JSON
-                        clean_json = re.sub(r'^```json\s*|\s*```$', '', description).strip()
-                        data = json.loads(clean_json)
+                        clean_text = re.sub(r'^```json\s*|\s*```$', '', text).strip()
+                        data = json.loads(clean_text)
                         if isinstance(data, dict):
-                            description = data.get("generated_text") or data.get("text") or description
-                    except:
+                            description = data.get('description') or data.get('generated_text') or data.get('text') or description
+                            category = data.get('category', category)
+                            keywords = data.get('keywords', keywords)
+                            if isinstance(keywords, str):
+                                keywords = [k.strip() for k in keywords.split(',')]
+                            # If we successfully parsed JSON, don't fallback to treating whole text as description
+                            text = "" 
+                    except (json.JSONDecodeError, TypeError):
                         pass
 
-                # 2. Cleanup: remove common prompt prefixes and structural artifacts
-                prefixes_to_strip = [
-                    "Describe the image.", "Describe this image.", "Caption:", "Description:",
-                    "The image shows", "This image shows", "An image of", "A picture of",
-                    "generated_text:", "Output:", "Response:"
-                ]
-                
-                # Case-insensitive prefix stripping loop
-                still_stripping = True
-                while still_stripping:
-                    original = description
-                    for prefix in prefixes_to_strip:
-                        if description.lower().startswith(prefix.lower()):
-                            description = description[len(prefix):].strip()
+                if text:
+                    # Fallback: The text IS the description.
+                    description = text.strip()
                     
-                    # Also strip rogue leading characters often seen in some model outputs (like 's, ')
-                    if description.startswith("s, ") or description.startswith("s "):
-                        description = description[2:].strip()
+                    # Cleanup: remove common prompt prefixes and structural artifacts
+                    prefixes_to_strip = [
+                        "Describe the image.", "Describe this image.", "Caption:", "Description:",
+                        "The image shows", "This image shows", "An image of", "A picture of",
+                        "generated_text:", "Output:", "Response:"
+                    ]
                     
-                    # Strip leading punctuation/symbols often left by prefix removal
-                    description = description.lstrip(":.,- ")
-                    
-                    if description == original:
-                        still_stripping = False
+                    # Case-insensitive prefix stripping loop
+                    still_stripping = True
+                    while still_stripping:
+                        original = description
+                        for prefix in prefixes_to_strip:
+                            if description.lower().startswith(prefix.lower()):
+                                description = description[len(prefix):].strip()
+                        
+                        # Also strip rogue leading characters often seen in some model outputs (like 's, ')
+                        if description.startswith("s, ") or description.startswith("s "):
+                            description = description[2:].strip()
+                        
+                        # Strip leading punctuation/symbols often left by prefix removal
+                        description = description.lstrip(":.,- ")
+                        
+                        if description == original:
+                            still_stripping = False
 
-                # 3. Final polish
-                description = description.strip()
-                if description and not description[0].isupper():
-                    description = description[0].upper() + description[1:]
-                
-                # We do NOT extract keywords from caption anymore.
-                keywords = []
+                    # Final polish
+                    description = description.strip()
+                    if description and not description[0].isupper():
+                        description = description[0].upper() + description[1:]
+                    
+                    # We do NOT extract keywords from caption anymore.
+                    # Unless they were extracted via JSON above.
+                    if not keywords:
+                        keywords = []
 
     except Exception as e:
         logging.error(f"Error extracting tags from result: {e}")

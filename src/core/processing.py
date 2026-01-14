@@ -197,7 +197,7 @@ class ProcessingManager:
                                      "role": "user", 
                                      "content": [
                                          {"type": "image", "image": img},
-                                         {"type": "text", "text": "Describe this image in detail."}
+                                         {"type": "text", "text": "Analyze the image and return a JSON object with keys: 'description' (detailed caption), 'category' (single broad category), and 'keywords' (list of 5-10 tags). Return ONLY the raw JSON string."}
                                      ]
                                  }
                              ]

@@ -231,8 +231,17 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
         messages = []
         system_msg = None
         if task == config.MODEL_TASK_IMAGE_TO_TEXT:
-            # Ask for a short JSON object with generated_text
-            system_msg = {"role": "system", "content": "Return JSON with key 'generated_text' and the description string as its value."}
+            # Ask for a structured JSON object with description, category, and keywords
+            system_msg = {
+                "role": "system", 
+                "content": (
+                    "You are an expert media archivist. Analyze the image and return a JSON object with these keys:\n"
+                    "- 'description': A detailed caption of the image.\n"
+                    "- 'category': A single broad category (e.g., 'Landscape', 'Portrait', 'Event').\n"
+                    "- 'keywords': A list of 5-10 descriptive tags.\n"
+                    "Do NOT include markdown formatting (like ```json). Return ONLY the raw JSON string."
+                )
+            }
             user_msg = {"role": "user", "content": [image_part]}
             messages = [system_msg, user_msg]
 
@@ -309,7 +318,9 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
             if isinstance(content, str):
                 # Try to parse JSON out of the string if present
                 try:
-                    outputs = json.loads(content)
+                    # Clean potential markdown
+                    cleaned_content = content.replace("```json", "").replace("```", "").strip()
+                    outputs = json.loads(cleaned_content)
                 except Exception:
                     # Treat as plain text
                     if task == config.MODEL_TASK_IMAGE_TO_TEXT:
@@ -345,6 +356,20 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
             return outputs
 
         if task == config.MODEL_TASK_IMAGE_TO_TEXT:
+            # If we received the structured JSON we asked for (dict with desc/cat/kw)
+            if isinstance(outputs, dict):
+                # Check if it has our keys
+                if any(k in outputs for k in ['description', 'category', 'keywords']):
+                    # Wrap in a list to match expected "generated_text" wrapper structure 
+                    # but pass the whole dict as the value so image_processing can parse it
+                    return [{'generated_text': outputs}]
+                
+                # Check for standard generated_text/text keys
+                if 'generated_text' in outputs:
+                    return [{'generated_text': outputs['generated_text']}]
+                if 'text' in outputs:
+                    return [{'generated_text': outputs['text']}]
+
             if isinstance(outputs, list):
                 # convert string list or dicts into normalized generated_text list
                 normalized = []
@@ -352,19 +377,18 @@ def run_inference_api(model_id: str, image_path: str, task: str, token: Optional
                     if isinstance(o, str):
                         normalized.append({'generated_text': o})
                     elif isinstance(o, dict):
-                        gen = o.get('generated_text') or o.get('text') or o.get('output')
-                        if isinstance(gen, str):
-                            normalized.append({'generated_text': gen})
+                        # It might be a list of structured dicts?
+                        if any(k in o for k in ['description', 'category', 'keywords']):
+                             normalized.append({'generated_text': o})
                         else:
-                            normalized.append({'generated_text': str(o)})
+                            gen = o.get('generated_text') or o.get('text') or o.get('output')
+                            if isinstance(gen, str):
+                                normalized.append({'generated_text': gen})
+                            else:
+                                normalized.append({'generated_text': str(o)})
                     else:
                         normalized.append({'generated_text': str(o)})
                 return normalized
-            if isinstance(outputs, dict):
-                if 'generated_text' in outputs:
-                    return [{'generated_text': outputs['generated_text']}]
-                if 'text' in outputs:
-                    return [{'generated_text': outputs['text']}]
             return outputs
 
         logger.info(f"[OpenRouter API] Inference successful - Duration: {elapsed:.3f}s")
