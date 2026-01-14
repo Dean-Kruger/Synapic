@@ -1,3 +1,4 @@
 src/core/V1/hugging-juice-face/
 __pycache__/
 *.py[cod]
+.env
