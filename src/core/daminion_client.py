@@ -594,14 +594,23 @@ class DaminionClient:
              # Attempt server-side search first
              server_search_worked = False
              try:
-                 start_check = self.search_items(query=combined_query, index=0, page_size=1)
-                 if start_check is not None and len(start_check) > 0:
-                     server_search_worked = True
+                 # Try several variations of status search
+                 search_variants = [combined_query]
+                 if "status:approved" in combined_query: search_variants.append("flag:flagged")
+                 if "status:unassigned" in combined_query: search_variants.append("flag:unflagged")
+                 
+                 for variant in search_variants:
+                     if not variant: continue
+                     start_check = self.search_items(query=variant, index=0, page_size=1)
+                     if start_check and len(start_check) > 0:
+                         combined_query = variant
+                         server_search_worked = True
+                         break
              except Exception:
                  pass
              
              if server_search_worked:
-                 logging.info(f"[DAMINION] Server-side search appears functional. Using it.")
+                 logging.info(f"[DAMINION] Server-side search functional for query '{combined_query}'. Using it.")
                  while (not max_items or max_items <= 0 or len(filtered_items) < max_items):
                      batch = self.search_items(query=combined_query, index=current_start, page_size=batch_size)
                      if not batch: break
@@ -615,12 +624,16 @@ class DaminionClient:
                      if progress_callback:
                           progress_callback(len(filtered_items), max_items or -1)
                           
-                     if len(batch) < batch_size: break # End of results
+                     if len(batch) < batch_size: break
                      current_start += batch_size
              else:
                  # Fallback to Client-side Scan
-                 logging.warning("[DAMINION] Server-side search returned 0 items but catalog likely has items. Using optimized Client-side Scan.")
-                 # Scan existing IDs
+                 total_count = self.get_total_count()
+                 if total_count > 50000 and not max_items:
+                      logging.error(f"[DAMINION] Catalog is too large ({total_count}) for full scan without 'max_items'. Aborting to prevent hang.")
+                      return []
+
+                 logging.warning(f"[DAMINION] Server-side search failed. Using Optimized Client-side Scan (Backwards).")
                  filtered_items = self.scan_catalog(
                      lambda item: self._passes_filters(item, status_filter, untagged_fields),
                      max_items=max_items,
@@ -629,17 +642,21 @@ class DaminionClient:
              
              return filtered_items
 
-        # 2. Non-global paths (Saved Search, Collection) - Unchanged essentially
+        # 2. Non-global paths (Saved Search, Collection)
         items_to_process = []
         if scope == "saved_search":
              if saved_search_id:
                   logging.info(f"[DAMINION] Fetching Saved Search ID: {saved_search_id}")
-                  endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items if (max_items and max_items > 0) else 1000}"
-                  response = self._make_request(endpoint)
-                  if isinstance(response, dict):
-                       items_to_process = response.get('items') or response.get('mediaItems') or response.get('data') or []
-                  elif isinstance(response, list):
-                       items_to_process = response
+                  # Try structured query first
+                  items_to_process = self.get_items_by_query(f"39,{saved_search_id}", f"39,any", page_size=max_items or 1000)
+                  if items_to_process is None:
+                      # Fallback
+                      endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items if (max_items and max_items > 0) else 1000}"
+                      response = self._make_request(endpoint)
+                      if isinstance(response, dict):
+                           items_to_process = response.get('items') or response.get('mediaItems') or response.get('data') or []
+                      elif isinstance(response, list):
+                           items_to_process = response
              else:
                   logging.warning("[DAMINION] Scope is 'saved_search' but no ID provided.")
         elif scope == "collection":
@@ -649,64 +666,81 @@ class DaminionClient:
                  logging.warning("[DAMINION] Scope is 'collection' but no ID provided.")
 
         # Apply final pass filtering
-        for item in items_to_process:
-            if self._passes_filters(item, status_filter, untagged_fields):
-                filtered_items.append(item)
-                if max_items and max_items > 0 and len(filtered_items) >= max_items:
-                    break
+        if items_to_process:
+            for item in items_to_process:
+                if self._passes_filters(item, status_filter, untagged_fields):
+                    filtered_items.append(item)
+                    if max_items and max_items > 0 and len(filtered_items) >= max_items:
+                        break
         
         return filtered_items
 
     def scan_catalog(self, filter_func: Callable[[Dict], bool], max_items: Optional[int] = None, progress_callback = None) -> List[Dict]:
         """
-        Scan catalog by iterating IDs to check existence, then fetching details for valid IDs.
-        More robust than search if search endpoint is broken.
+        Scan catalog by iterating IDs backwards (newest first).
+        Includes safety logic to skip empty ID gaps in large catalogs.
         """
         filtered_items = []
-        total_estimate = self.get_total_count() or 4000
-        batch_size = 50  # GetByIds batch size
+        total_estimate = self.get_total_count()
+        if not total_estimate:
+             # Try a probe search to find latest ID
+             probe = self.search_items(query="*", index=0, page_size=1)
+             if probe:
+                  total_estimate = probe[0].get('id', 4000)
+             else:
+                  total_estimate = 4000
+
+        batch_size = 100
+        # Start scanning from the estimated total ID upwards slightly (to catch newest)
+        current_max_id = total_estimate + 100
+        current_id = current_max_id
         
-        current_id = 1
-        # Scan up to reasonable limit if total count is unreliable
-        scan_limit = total_estimate + 1000 
+        empty_batches_count = 0
+        max_empty_batches = 10 # Stop if we hit 1000 sequential empty IDs at the start or in a gap
+
+        logging.info(f"[DAMINION] Starting backwards scan from ID {current_id}...")
         
-        while current_id < scan_limit:
+        while current_id > 0:
             if max_items and len(filtered_items) >= max_items:
                 break
                 
             # 1. Check existence of a batch of IDs
-            end_id = current_id + batch_size
-            ids_to_check = list(range(current_id, end_id))
+            start_id = max(1, current_id - batch_size)
+            ids_to_check = list(range(start_id, current_id + 1))
             
-            # Fetch summary items first
+            # Fetch summary items (fast)
             summaries = self.get_media_items_by_ids(ids_to_check)
             
             if summaries:
-                # 2. For each found item, we MUST fetch details to get correct Tags
-                # Because GetByIds returns Status=-1 and no tags
-                for summary in summaries:
+                empty_batches_count = 0
+                # Process items (usually newest first in Daminion's response, but we ensure order)
+                sorted_summaries = sorted(summaries, key=lambda x: x.get('id', 0), reverse=True)
+                
+                for summary in sorted_summaries:
                     item_id = summary.get('id')
                     try:
+                        # Full details fetch (slow, but only for existing items)
                         detail = self.get_item_details(item_id)
                         if detail:
-                            # Merge details into summary or use detail
-                            # Use detail but insure it has ID
                             detail['id'] = item_id 
                             if filter_func(detail):
                                 filtered_items.append(detail)
                                 if max_items and len(filtered_items) >= max_items:
                                     break
-                    except Exception as e:
+                    except Exception:
                          pass
+            else:
+                empty_batches_count += 1
+                if empty_batches_count > max_empty_batches:
+                    logging.info(f"[DAMINION] Hit {empty_batches_count} consecutive empty batches. Stopping scan.")
+                    break
             
             if progress_callback:
                  progress_callback(len(filtered_items), max_items or -1)
             
-            current_id += batch_size
+            current_id -= batch_size
             
-            # Optimization: If we scanned a large empty block and past total count, stop?
-            # Hard to know if IDs are contiguous. Assuming mostly contiguous.
-            
+        logging.info(f"[DAMINION] Backwards scan complete. Found {len(filtered_items)} items.")
         return filtered_items
 
     def get_item_details(self, item_id: int) -> Optional[Dict]:
@@ -1113,24 +1147,49 @@ class DaminionClient:
         if scope == "all" and status_filter == "all" and not untagged_fields:
             return self.get_total_count()
 
-        # 2. Combined Query Construction
-        query_parts = []
-        
-        # Status
-        if status_filter == "approved": query_parts.append("status:approved")
-        elif status_filter == "rejected": query_parts.append("status:rejected")
-        elif status_filter == "unassigned": query_parts.append("status:unassigned")
-        
-        # Untagged (approximate with status:untagged if any field selected)
-        if untagged_fields:
-            query_parts.append("status:untagged")
+        # 2. Scope-based counting
+        if scope == "saved_search" and saved_search_id:
+             # Most Saved Searches return totalCount in the MediaItems/Get response
+             try:
+                 endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&start=0&length=1"
+                 resp = self._make_request(endpoint)
+                 if isinstance(resp, dict): return resp.get('totalCount', 0)
+             except: pass
+
+        if scope == "collection" and collection_id:
+             # Collections are usually small enough to just fetch and count if needed, 
+             # but let's try to get count if available.
+             items = self.get_shared_collection_items(collection_id, page_size=1)
+             # Note: get_shared_collection_items doesn't always return totalCount in wrapper.
+             # If it returns a list, we only know what we got.
+             return len(items) if items else 0
+
+        # 3. All Items with Filters: Try search variants
+        if scope == "all":
+            query_parts = []
+            if status_filter == "approved": query_parts.append("status:approved")
+            elif status_filter == "rejected": query_parts.append("status:rejected")
+            elif status_filter == "unassigned": query_parts.append("status:unassigned")
             
-        if scope == "all" and query_parts:
-            # Combine multiple parts into a space-separated search query
-            combined_query = " ".join(query_parts)
-            return self._count_query(combined_query)
+            # Untagged (approximate with status:untagged)
+            if untagged_fields:
+                query_parts.append("status:untagged")
+                
+            if query_parts:
+                combined_query = " ".join(query_parts)
+                count = self._count_query(combined_query)
+                if count > 0: return count
+                
+                # Try variants if 0 (0 might mean "no results" OR "query not understood")
+                # If total_count is 1M, 0 is suspicious for status:unassigned.
+                if "status:approved" in combined_query:
+                     count = self._count_query("flag:flagged")
+                     if count > 0: return count
+                if "status:unassigned" in combined_query:
+                     count = self._count_query("flag:unflagged")
+                     if count > 0: return count
         
-        # 3. Fallback: If we can't count efficiently, return -1 or estimation?
+        # 4. Final Fallback: If we can't count efficiently, return -1 to signal UI
         return -1
 
     def _count_query(self, query: str) -> int:

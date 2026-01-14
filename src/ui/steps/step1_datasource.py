@@ -230,22 +230,53 @@ class Step1Datasource(ctk.CTkFrame):
         
         self.show_simplified_daminion_filters()
 
-    def show_simplified_daminion_filters(self):
-        """Shows status-based filters for Daminion."""
+    def show_connected_view(self):
+        # Hide config
+        self.config_container.grid_forget()
+        
+        # Show status/disconnect
+        for widget in self.status_container.winfo_children():
+            widget.destroy()
+            
+        self.status_container.grid(row=0, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
+        
+        status_frame = ctk.CTkFrame(self.status_container, fg_color="#1a1a1a")
+        status_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(status_frame, text=f"Connected to Daminion as {self.entry_user.get()}", font=("Roboto", 14, "bold"), text_color="green").pack(side="left", padx=20, pady=10)
+        ctk.CTkButton(status_frame, text="Disconnect", fg_color="#990000", hover_color="#660000", width=100, command=self.disconnect_daminion).pack(side="right", padx=20, pady=10)
+        
+        self.show_daminion_scope_selector()
+
+    def show_daminion_scope_selector(self):
+        """Shows scope selection (Tabs) and detailed filters for Daminion."""
         self.clear_container(self.filters_container)
         ds = self.controller.session.datasource
 
-        # Status Filter Label
-        ctk.CTkLabel(self.filters_container, text="Target Items by Status:", font=("Roboto", 18, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
+        ctk.CTkLabel(self.filters_container, text="Select Target Scope:", font=("Roboto", 18, "bold")).pack(anchor="w", padx=20, pady=(10, 0))
         
-        status_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        status_frame.pack(fill="x", padx=20, pady=5)
+        self.tabs = ctk.CTkTabview(self.filters_container, height=150)
+        self.tabs.pack(fill="x", padx=20, pady=(0, 10))
+        
+        self.tabs.add("Global Scan")
+        self.tabs.add("Saved Searches")
+        self.tabs.add("Shared Collections")
+        
+        # Set default tab from session
+        scope_map = {"all": "Global Scan", "saved_search": "Saved Searches", "collection": "Shared Collections"}
+        self.tabs.set(scope_map.get(ds.daminion_scope, "Global Scan"))
 
-        self.status_var = ctk.StringVar(value=ds.status_filter)
+        # --- Tab 1: Global Scan (Status Filters) ---
+        global_tab = self.tabs.tab("Global Scan")
+        
+        status_frame = ctk.CTkFrame(global_tab, fg_color="transparent")
+        status_frame.pack(fill="x", padx=10, pady=10)
+
+        self.status_var = ctk.StringVar(value=ds.status_filter or "all")
         
         options = [
             ("All Items", "all"),
-            ("Flagged/Approved Only", "approved"),
+            ("Flagged Only", "approved"),
             ("Rejected Only", "rejected"),
             ("Unflagged Only", "unassigned")
         ]
@@ -254,11 +285,28 @@ class Step1Datasource(ctk.CTkFrame):
             ctk.CTkRadioButton(status_frame, text=text, variable=self.status_var, value=val, 
                                command=self.update_count).pack(side="left", padx=(0, 20))
 
-        # Metadata Condition (Untagged)
-        ctk.CTkLabel(self.filters_container, text="Metadata Conditions (Untagged):", font=("Roboto", 18, "bold")).pack(anchor="w", padx=20, pady=(20, 5))
+        # --- Tab 2: Saved Searches ---
+        ss_tab = self.tabs.tab("Saved Searches")
+        
+        self.ss_var = ctk.StringVar(value="Select a saved search...")
+        self.ss_dropdown = ctk.CTkOptionMenu(ss_tab, variable=self.ss_var, values=["Loading..."], command=self.update_count, width=400)
+        self.ss_dropdown.pack(pady=20, padx=20)
+        
+        # --- Tab 3: Shared Collections ---
+        col_tab = self.tabs.tab("Shared Collections")
+        
+        self.col_var = ctk.StringVar(value="Select a collection...")
+        self.col_dropdown = ctk.CTkOptionMenu(col_tab, variable=self.col_var, values=["Loading..."], command=self.update_count, width=400)
+        self.col_dropdown.pack(pady=20, padx=20)
 
-        untagged_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        untagged_frame.pack(fill="x", padx=20)
+        # Metadata Condition (Untagged)
+        metadata_frame = ctk.CTkFrame(self.filters_container)
+        metadata_frame.pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkLabel(metadata_frame, text="Identify Untagged Items (Optional):", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
+
+        untagged_frame = ctk.CTkFrame(metadata_frame, fg_color="transparent")
+        untagged_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         self.chk_untagged_kws = ctk.CTkCheckBox(untagged_frame, text="Keywords", command=self.update_count)
         if ds.daminion_untagged_keywords: self.chk_untagged_kws.select()
@@ -272,27 +320,77 @@ class Step1Datasource(ctk.CTkFrame):
         if ds.daminion_untagged_description: self.chk_untagged_desc.select()
         self.chk_untagged_desc.pack(side="left", padx=20)
 
-        ctk.CTkButton(self.filters_container, text="Select All Untagged", width=150, height=28, 
-                      command=self.select_all_untagged, fg_color="gray").pack(anchor="w", padx=20, pady=5)
-
         # Limit Control (Slider)
-        limit_frame = ctk.CTkFrame(self.filters_container, fg_color="transparent")
-        limit_frame.pack(fill="x", padx=20, pady=(20, 20))
+        limit_frame = ctk.CTkFrame(self.filters_container)
+        limit_frame.pack(fill="x", padx=20, pady=10)
         
-        ctk.CTkLabel(limit_frame, text="Max Items to Process:", font=("Roboto", 16, "bold")).pack(side="left")
+        ctk.CTkLabel(limit_frame, text="Max Items to Process:", font=("Roboto", 16, "bold")).pack(side="left", padx=20, pady=10)
         
         self.slider_val_label = ctk.CTkLabel(limit_frame, text=str(ds.max_items if ds.max_items > 0 else "Unlimited"), 
                                              font=("Roboto", 14, "bold"), text_color="#3a7ebf", width=80)
-        self.slider_val_label.pack(side="right", padx=10)
+        self.slider_val_label.pack(side="right", padx=20)
 
-        self.max_items_slider = ctk.CTkSlider(limit_frame, from_=0, to=1000, number_of_steps=10, command=self.update_slider_label)
-        self.max_items_slider.set(ds.max_items if ds.max_items <= 1000 else 1000)
-        self.max_items_slider.pack(side="left", fill="x", expand=True, padx=20)
+        self.max_items_slider = ctk.CTkSlider(limit_frame, from_=0, to=2000, number_of_steps=20, command=self.update_slider_label)
+        self.max_items_slider.set(ds.max_items if ds.max_items <= 2000 else 2000)
+        self.max_items_slider.pack(side="left", fill="x", expand=True, padx=10)
 
+        # Background Fetching for dropdowns
+        self._load_daminion_data()
+        
+        # Initial count
         self.after(500, self.update_count)
 
-        # Triger initial count
-        self.after(500, self.update_count)
+    def _load_daminion_data(self):
+        """Fetch Saved Searches and Collections in background."""
+        import threading
+        def _bg_load():
+            client = self.controller.session.daminion_client
+            if not client: return
+            
+            # 1. Saved Searches
+            searches = client.get_saved_searches()
+            self._ss_map = {s.get('name'): s.get('id') for s in searches if s.get('name')}
+            ss_names = sorted(list(self._ss_map.keys())) if self._ss_map else []
+            
+            # 2. Shared Collections
+            cols = client.get_shared_collections()
+            # Shared collection objects might have 'name' or 'title' or 'code'
+            self._col_map = {}
+            for c in cols:
+                name = c.get('name') or c.get('title') or c.get('accessCode')
+                cid = c.get('id') or c.get('accessCode')
+                if name: self._col_map[name] = cid
+            col_names = sorted(list(self._col_map.keys())) if self._col_map else []
+            
+            def _update_ui():
+                if hasattr(self, 'ss_dropdown'):
+                    self.ss_dropdown.configure(values=ss_names if ss_names else ["No Saved Searches found"])
+                    if ss_names: 
+                        # Try to restore previous selection
+                        prev = self.controller.session.datasource.daminion_saved_search
+                        if prev in self._ss_map: self.ss_var.set(prev)
+                        else: self.ss_var.set(ss_names[0])
+                
+                if hasattr(self, 'col_dropdown'):
+                    self.col_dropdown.configure(values=col_names if col_names else ["No Collections found"])
+                    if col_names:
+                        prev = self.controller.session.datasource.daminion_catalog_id
+                        if prev in self._col_map: self.col_var.set(prev)
+                        else: self.col_var.set(col_names[0])
+            
+            self.after(0, _update_ui)
+
+        threading.Thread(target=_bg_load, daemon=True).start()
+
+    def clear_container(self, container):
+        for widget in container.winfo_children():
+            widget.destroy()
+
+    def select_all_untagged(self):
+        self.chk_untagged_kws.select()
+        self.chk_untagged_cats.select()
+        self.chk_untagged_desc.select()
+        self.update_count()
 
     def clear_container(self, container):
         for widget in container.winfo_children():
@@ -320,8 +418,27 @@ class Step1Datasource(ctk.CTkFrame):
         import threading
         def _bg_count():
             try:
-                # 1. Gather state
+                # 1. Determine Scope from Tabs
+                tab = self.tabs.get()
                 scope = "all"
+                ss_id = None
+                col_id = None
+                
+                if tab == "Saved Searches":
+                    scope = "saved_search"
+                    ss_name = self.ss_var.get()
+                    ss_id = getattr(self, '_ss_map', {}).get(ss_name)
+                    if not ss_id: 
+                         self.after(0, lambda: self.lbl_total_count.configure(text="Select Search"))
+                         return
+                elif tab == "Shared Collections":
+                    scope = "collection"
+                    col_name = self.col_var.get()
+                    col_id = getattr(self, '_col_map', {}).get(col_name)
+                    if not col_id:
+                         self.after(0, lambda: self.lbl_total_count.configure(text="Select Collection"))
+                         return
+
                 status = self.status_var.get()
                 
                 untagged = []
@@ -332,17 +449,14 @@ class Step1Datasource(ctk.CTkFrame):
                 if hasattr(self, 'chk_untagged_desc') and self.chk_untagged_desc.get(): 
                     untagged.append("Description")
                 
-                ss_id = None
-                col_id = None
-
+                # Check slider
                 try:
                     max_to_fetch = int(self.max_items_slider.get())
                 except:
                     max_to_fetch = 100
-                
                 if max_to_fetch <= 0: max_to_fetch = None
                 
-                # Try efficient counting first
+                # Efficient count
                 count = self.controller.session.daminion_client.get_filtered_item_count(
                     scope=scope,
                     saved_search_id=ss_id,
@@ -354,7 +468,7 @@ class Step1Datasource(ctk.CTkFrame):
                 suffix = ""
                 if count == -1:
                     # Fallback to fetching items with a cap to Estimate
-                    limit_fallback = 500 # Increased for better estimation
+                    limit_fallback = 200 # Lowered for faster UI response
                     items = self.controller.session.daminion_client.get_items_filtered(
                         scope=scope,
                         saved_search_id=ss_id,
@@ -391,10 +505,19 @@ class Step1Datasource(ctk.CTkFrame):
             if not self.controller.session.daminion_client or not self.controller.session.daminion_client.authenticated:
                  messagebox.showwarning("Warning", "Please connect to Daminion first.")
                  return
-                 
-            ds.daminion_scope = "all"
-            ds.daminion_saved_search = ""
-            ds.daminion_catalog_id = ""
+            
+            # Save Scope
+            tab = self.tabs.get()
+            if tab == "Global Scan":
+                ds.daminion_scope = "all"
+            elif tab == "Saved Searches":
+                ds.daminion_scope = "saved_search"
+                ds.daminion_saved_search = self.ss_var.get()
+                ds.daminion_saved_search_id = getattr(self, '_ss_map', {}).get(ds.daminion_saved_search)
+            else:
+                ds.daminion_scope = "collection"
+                ds.daminion_catalog_id = self.col_var.get() # This is the display name
+                ds.daminion_collection_id = getattr(self, '_col_map', {}).get(ds.daminion_catalog_id)
             
             ds.status_filter = self.status_var.get()
             ds.daminion_untagged_keywords = self.chk_untagged_kws.get()

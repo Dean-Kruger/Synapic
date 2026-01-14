@@ -11,9 +11,12 @@ class DatasourceConfig:
     daminion_url: str = ""
     daminion_user: str = ""
     daminion_pass: str = ""
-    daminion_catalog_id: str = ""
+    daminion_catalog_id: str = "" # Display name for collection
+    current_collection_id: str = "" # Internal ID/Code for collection
     daminion_scope: str = "all" # 'all', 'selection', 'collection', 'saved_search'
-    daminion_saved_search: str = ""
+    daminion_saved_search: str = "" # Display name
+    daminion_saved_search_id: str = "" # Internal ID
+    daminion_collection_id: str = "" # Internal ID / Access Code
     daminion_untagged_keywords: bool = False
     daminion_untagged_categories: bool = False
     daminion_untagged_description: bool = False
