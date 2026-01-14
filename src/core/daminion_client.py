@@ -63,7 +63,11 @@ class DaminionClient:
         self._search_endpoint_unavailable = False
         self._structured_query_unavailable = False
         self._tag_map = {}  # Cache for Tag Name -> GUID mapping
-        self._tag_id_map = {} # Cache for Tag Name -> Integer ID mapping (for indexedTagValues)
+        self._tag_id_map = {} # Cache for Tag Name -> Integer ID mapping
+        
+        # Hardcoded IDs observed in many Daminion versions
+        self.SAVED_SEARCH_TAG_ID = 39 
+        self.SHARED_COLLECTIONS_TAG_ID = 45 
 
         DaminionClient._instances.add(self)
         atexit.register(self.cleanup_temp_files)
@@ -123,6 +127,32 @@ class DaminionClient:
                 
                 # Fetch tag schema to populate GUID map
                 self.get_tag_schema()
+                
+                # Attempt to get Integer IDs for tags (used in some endpoints)
+                try:
+                    tag_settings = self._make_request("/api/settings/getTags")
+                    data_list = []
+                    if isinstance(tag_settings, dict):
+                         data_list = tag_settings.get('data') or tag_settings.get('items') or []
+                         # If success: true but data empty, maybe tag_settings IS the list?
+                         if not data_list and isinstance(tag_settings.get('tags'), list):
+                              data_list = tag_settings['tags']
+                    elif isinstance(tag_settings, list):
+                         data_list = tag_settings
+                         
+                    if data_list:
+                         for t in data_list:
+                              if isinstance(t, dict):
+                                   t_id = t.get('id')
+                                   t_name = t.get('name')
+                                   if t_id and t_name:
+                                        self._tag_id_map[t_name] = t_id
+                                        # Update internal constants if found
+                                        if t_name == "Saved Searches": self.SAVED_SEARCH_TAG_ID = t_id
+                                        if t_name == "Shared Collections": self.SHARED_COLLECTIONS_TAG_ID = t_id
+                         logging.info(f"[DAMINION] Mapped {len(self._tag_id_map)} tags to Integer IDs.")
+                except Exception as e:
+                    logging.debug(f"[DAMINION] Failed to fetch tag integer IDs: {e}")
                 
                 return True
 
@@ -421,23 +451,45 @@ class DaminionClient:
                 try:
                     response = self._make_request(endpoint)
                     if not response: continue
+                    
+                    # Log total count observed even if items empty
+                    t_count = -1
+                    if isinstance(response, dict):
+                        t_count = response.get('totalCount', -1)
+                        if t_count > 0:
+                             logging.info(f"[DAMINION] Endpoint {endpoint.split('?')[0]} reports {t_count} items available.")
+
                     if isinstance(response, list): return response
                     if isinstance(response, dict):
                          # Look for common wrapper names
                          for k in ['mediaItems', 'items', 'data', 'collections']:
                              if k in response:
                                  val = response[k]
-                                 if isinstance(val, list): return val
+                                 if isinstance(val, list) and val: # prioritize non-empty lists
+                                      return val
                                  if isinstance(val, dict) and val: # check for {id:item} map
                                       vlist = list(val.values())
                                       if vlist and isinstance(vlist[0], dict): return vlist
+                                      
+                         # If we found a totalCount but mediaItems is empty, return an empty list 
+                         # BUT signal it by returning an empty list instead of None
+                         if t_count > 0 and response.get('mediaItems') == []:
+                              return [] 
                 except Exception:
                     pass
             return None
 
         # Attempt 1: Use passed ID directly
         items = try_fetch(tried_endpoints)
-        if items is not None: return items
+        if items is not None and len(items) > 0: return items
+
+        # Fallback: If we got a count but no items (common in some API versions), 
+        # we try to use MediaItems/Get?query=45,id
+        if items == []: # Server returned empty list but indicated items exist via totalCount
+             logging.info(f"[DAMINION] Items list was empty but count > 0. Trying query fallback...")
+             q_ep = f"/api/MediaItems/Get?query={self.SHARED_COLLECTIONS_TAG_ID},{collection_id}&start=0&length={page_size}"
+             items = try_fetch([q_ep])
+             if items: return items
 
         # Attempt 2: If passed arg was integer-like ID, fetch Details to get 'accessCode'
         # The 'PublicItems' endpoint typically needs the alphanumeric accessCode (e.g. 'pjrzp5ny')
@@ -523,15 +575,26 @@ class DaminionClient:
         
         # Try GetStructure/GetNodes for ID 39 which usually returns the tree
         candidates = [
-            "/api/Tag/GetStructure?tagId=39",
-            "/api/Tag/GetNodes?tagId=39", 
-            "/api/ItemData/GetTagValues?tagId=39",
-            # Try GUID just in case
-            "/api/Tag/GetStructure?tagId=09bba98e-7112-42fe-9ed1-3624a881d160",
-             # Try plural
-            "/api/SavedSearches/Get"
+            f"/api/TagValue/GetValues?tagId={self.SAVED_SEARCH_TAG_ID}",
+            f"/api/Tag/GetStructure?tagId={self.SAVED_SEARCH_TAG_ID}",
+            f"/api/Tag/GetNodes?tagId={self.SAVED_SEARCH_TAG_ID}", 
+            f"/api/ItemData/GetTagValues?tagId={self.SAVED_SEARCH_TAG_ID}",
+            f"/api/SavedSearches/Get",
+            f"/api/MediaItems/GetSavedSearches"
         ]
         
+        # Fallback to get_tag_values which is more comprehensive
+        results = self.get_tag_values("Saved Searches")
+        if results:
+             # Transform to standard format if needed
+             transformed = []
+             for item in results:
+                  transformed.append({
+                       "id": item.get('id') or item.get('valueId'),
+                       "name": item.get('name') or item.get('title') or item.get('stringValue')
+                  })
+             return transformed
+
         for endpoint in candidates:
              try:
                  logging.debug(f"[DAMINION] Trying saved search endpoint: {endpoint}")
@@ -545,6 +608,7 @@ class DaminionClient:
                      
                  if items:
                      logging.info(f"[DAMINION] Found {len(items)} saved searches via {endpoint}")
+                     return items
                      # Ensure items have 'name' or 'title' mapping
                      for item in items:
                           if 'title' in item and 'name' not in item:
@@ -648,26 +712,61 @@ class DaminionClient:
              if saved_search_id:
                   logging.info(f"[DAMINION] Fetching Saved Search ID: {saved_search_id}")
                   # Try structured query first
-                  items_to_process = self.get_items_by_query(f"39,{saved_search_id}", f"39,any", page_size=max_items or 1000)
+                  items_to_process = self.get_items_by_query(f"{self.SAVED_SEARCH_TAG_ID},{saved_search_id}", f"{self.SAVED_SEARCH_TAG_ID},any", page_size=max_items or 1000)
                   if items_to_process is None:
-                      # Fallback
-                      endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&page=0&pageSize={max_items if (max_items and max_items > 0) else 1000}"
-                      response = self._make_request(endpoint)
-                      if isinstance(response, dict):
-                           items_to_process = response.get('items') or response.get('mediaItems') or response.get('data') or []
-                      elif isinstance(response, list):
-                           items_to_process = response
+                       # Fallback
+                       eps = [
+                            f"/api/MediaItems/Get?query={self.SAVED_SEARCH_TAG_ID}:{saved_search_id}&start=0&length={max_items or 1000}",
+                            f"/api/MediaItems/Get?query={self.SAVED_SEARCH_TAG_ID},{saved_search_id}&start=0&length={max_items or 1000}"
+                       ]
+                       for ep in eps:
+                            try:
+                                resp = self._make_request(ep)
+                                items = []
+                                if isinstance(resp, dict):
+                                     items = resp.get('mediaItems') or resp.get('items') or resp.get('data') or []
+                                elif isinstance(resp, list):
+                                     items = resp
+                                if items:
+                                     items_to_process = items
+                                     break
+                                if isinstance(resp, dict) and resp.get('totalCount', 0) > 0 and items == []:
+                                     # Signal that items exist but list is empty (indicates scan fallback might be needed)
+                                     items_to_process = []
+                                     break
+                            except Exception:
+                                continue
              else:
                   logging.warning("[DAMINION] Scope is 'saved_search' but no ID provided.")
         elif scope == "collection":
              if collection_id:
-                 items_to_process = self.get_shared_collection_items(collection_id)
+                  items_to_process = self.get_shared_collection_items(collection_id)
              else:
-                 logging.warning("[DAMINION] Scope is 'collection' but no ID provided.")
+                  logging.warning("[DAMINION] Scope is 'collection' but no ID provided.")
+
+        # If we got NO items but the count indicated items exist, use a brute-force scan if small
+        if not items_to_process and scope != "all" and (scope == "collection" or scope == "saved_search"):
+             # Check if we have a way to get the count
+             count = 0
+             if scope == "collection" and collection_id:
+                  # Use the totalCount from a probe if we had it? No, simpler to just check catalog size.
+                  pass
+             
+             total_catalog = self.get_total_count()
+             if total_catalog > 0 and total_catalog <= 1000:
+                  logging.info(f"[DAMINION] Retreival returned 0 items but catalog is small ({total_catalog}). Using brute-force scan for {scope}...")
+                  # Fetch all items and filter them in memory
+                  all_items = self.get_media_items_by_ids(list(range(1, total_catalog + 100)))
+                  # The caller will filter them using _passes_filters below.
+                  items_to_process = all_items
 
         # Apply final pass filtering
         if items_to_process:
-            for item in items_to_process:
+             for item in items_to_process:
+                # Add ID normalization
+                if 'id' not in item and 'uniqueId' in item:
+                     item['id'] = item['uniqueId']
+                     
                 if self._passes_filters(item, status_filter, untagged_fields):
                     filtered_items.append(item)
                     if max_items and max_items > 0 and len(filtered_items) >= max_items:
@@ -1151,7 +1250,7 @@ class DaminionClient:
         if scope == "saved_search" and saved_search_id:
              # Most Saved Searches return totalCount in the MediaItems/Get response
              try:
-                 endpoint = f"/api/MediaItems/Get?query=39,{saved_search_id}&start=0&length=1"
+                 endpoint = f"/api/MediaItems/Get?query={self.SAVED_SEARCH_TAG_ID}:{saved_search_id}&start=0&length=1"
                  resp = self._make_request(endpoint)
                  if isinstance(resp, dict): return resp.get('totalCount', 0)
              except: pass
