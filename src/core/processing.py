@@ -118,6 +118,7 @@ class ProcessingManager:
                 scope=ds.daminion_scope,
                 saved_search_id=ds.daminion_saved_search_id or ds.daminion_saved_search,
                 collection_id=ds.daminion_collection_id or ds.daminion_catalog_id,
+                search_term=ds.daminion_search_term,
                 untagged_fields=untagged_fields,
                 status_filter=ds.status_filter,
                 max_items=max_to_fetch

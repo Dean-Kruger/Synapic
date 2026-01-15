@@ -261,9 +261,10 @@ class Step1Datasource(ctk.CTkFrame):
         self.tabs.add("Global Scan")
         self.tabs.add("Saved Searches")
         self.tabs.add("Shared Collections")
+        self.tabs.add("Keyword Search")
         
         # Set default tab from session
-        scope_map = {"all": "Global Scan", "saved_search": "Saved Searches", "collection": "Shared Collections"}
+        scope_map = {"all": "Global Scan", "saved_search": "Saved Searches", "collection": "Shared Collections", "search": "Keyword Search"}
         self.tabs.set(scope_map.get(ds.daminion_scope, "Global Scan"))
 
         # --- Tab 1: Global Scan (Status Filters) ---
@@ -298,6 +299,17 @@ class Step1Datasource(ctk.CTkFrame):
         self.col_var = ctk.StringVar(value="Select a collection...")
         self.col_dropdown = ctk.CTkOptionMenu(col_tab, variable=self.col_var, values=["Loading..."], command=self.update_count, width=400)
         self.col_dropdown.pack(pady=20, padx=20)
+
+        # --- Tab 4: Keyword Search ---
+        search_tab = self.tabs.tab("Keyword Search")
+        search_instr = ctk.CTkLabel(search_tab, text="Enter search term (searches across all fields):", font=("Roboto", 12))
+        search_instr.pack(anchor="w", padx=20, pady=(10, 0))
+        
+        self.search_entry = ctk.CTkEntry(search_tab, placeholder_text="e.g. CTICC", width=400)
+        if ds.daminion_search_term:
+             self.search_entry.insert(0, ds.daminion_search_term)
+        self.search_entry.pack(pady=10, padx=20)
+        self.search_entry.bind("<KeyRelease>", self.update_count)
 
         # Metadata Condition (Untagged)
         metadata_frame = ctk.CTkFrame(self.filters_container)
@@ -438,6 +450,12 @@ class Step1Datasource(ctk.CTkFrame):
                     if not col_id:
                          self.after(0, lambda: self.lbl_total_count.configure(text="Select Collection"))
                          return
+                elif tab == "Keyword Search":
+                    scope = "search"
+                    search_term = self.search_entry.get()
+                    if not search_term:
+                         self.after(0, lambda: self.lbl_total_count.configure(text="Enter Search Term"))
+                         return
 
                 status = self.status_var.get()
                 
@@ -461,6 +479,7 @@ class Step1Datasource(ctk.CTkFrame):
                     scope=scope,
                     saved_search_id=ss_id,
                     collection_id=col_id,
+                    search_term=search_term if scope == "search" else None,
                     untagged_fields=untagged,
                     status_filter=status
                 )
@@ -473,6 +492,7 @@ class Step1Datasource(ctk.CTkFrame):
                         scope=scope,
                         saved_search_id=ss_id,
                         collection_id=col_id,
+                        search_term=search_term if scope == "search" else None,
                         untagged_fields=untagged,
                         status_filter=status,
                         max_items=limit_fallback
@@ -514,10 +534,13 @@ class Step1Datasource(ctk.CTkFrame):
                 ds.daminion_scope = "saved_search"
                 ds.daminion_saved_search = self.ss_var.get()
                 ds.daminion_saved_search_id = getattr(self, '_ss_map', {}).get(ds.daminion_saved_search)
-            else:
+            elif tab == "Shared Collections":
                 ds.daminion_scope = "collection"
                 ds.daminion_catalog_id = self.col_var.get() # This is the display name
                 ds.daminion_collection_id = getattr(self, '_col_map', {}).get(ds.daminion_catalog_id)
+            else: # Keyword Search
+                ds.daminion_scope = "search"
+                ds.daminion_search_term = self.search_entry.get()
             
             ds.status_filter = self.status_var.get()
             ds.daminion_untagged_keywords = self.chk_untagged_kws.get()

@@ -628,6 +628,7 @@ class DaminionClient:
                           scope: str = "all",
                           saved_search_id: Optional[Union[str, int]] = None,
                           collection_id: Optional[Union[str, int]] = None,
+                          search_term: Optional[str] = None,
                           untagged_fields: List[str] = None,
                           status_filter: str = "all",
                           max_items: Optional[int] = None,
@@ -743,6 +744,23 @@ class DaminionClient:
                   items_to_process = self.get_shared_collection_items(collection_id)
              else:
                   logging.warning("[DAMINION] Scope is 'collection' but no ID provided.")
+        elif scope == "search":
+             if search_term:
+                  logging.info(f"[DAMINION] Fetching Keyword Search: {search_term}")
+                  # Use Tag 5000 (All Fields) as suggested by user with pagination support
+                  current_start = 0
+                  batch_size = 500
+                  while (not max_items or max_items <= 0 or len(items_to_process) < max_items):
+                       batch = self.get_items_by_query(f"5000,{search_term}", "5000,all", index=current_start, page_size=batch_size)
+                       if not batch: break
+                       items_to_process.extend(batch)
+                       if len(batch) < batch_size: break
+                       current_start += batch_size
+                       if max_items and max_items > 0 and len(items_to_process) >= max_items:
+                            items_to_process = items_to_process[:max_items]
+                            break
+             else:
+                  logging.warning("[DAMINION] Scope is 'search' but no search term provided.")
 
         # If we got NO items but the count indicated items exist, use a brute-force scan if small
         if not items_to_process and scope != "all" and (scope == "collection" or scope == "saved_search"):
@@ -1237,6 +1255,7 @@ class DaminionClient:
     def get_filtered_item_count(self, scope: str = "all",
                                saved_search_id: Optional[Union[str, int]] = None,
                                collection_id: Optional[Union[str, int]] = None,
+                               search_term: Optional[str] = None,
                                untagged_fields: List[str] = None,
                                status_filter: str = "all") -> int:
         """
@@ -1262,6 +1281,14 @@ class DaminionClient:
              # Note: get_shared_collection_items doesn't always return totalCount in wrapper.
              # If it returns a list, we only know what we got.
              return len(items) if items else 0
+
+        if scope == "search" and search_term:
+             try:
+                 # Try using the search syntax in GetByQuery to get total count
+                 endpoint = f"/api/MediaItems/GetByQuery?query=5000,{search_term}&operators=5000,all&start=0&length=1"
+                 resp = self._make_request(endpoint)
+                 if isinstance(resp, dict): return resp.get('totalCount', 0)
+             except: pass
 
         # 3. All Items with Filters: Try search variants
         if scope == "all":
