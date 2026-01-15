@@ -461,8 +461,8 @@ class DaminionClient:
 
                     if isinstance(response, list): return response
                     if isinstance(response, dict):
-                         # Look for common wrapper names
-                         for k in ['mediaItems', 'items', 'data', 'collections']:
+                         # Look for common wrapper names, handle case-insensitivity
+                         for k in ['mediaItems', 'MediaItems', 'items', 'Items', 'data', 'collections', 'Collections']:
                              if k in response:
                                  val = response[k]
                                  if isinstance(val, list) and val: # prioritize non-empty lists
@@ -473,8 +473,11 @@ class DaminionClient:
                                       
                          # If we found a totalCount but mediaItems is empty, return an empty list 
                          # BUT signal it by returning an empty list instead of None
-                         if t_count > 0 and response.get('mediaItems') == []:
-                              return [] 
+                         if t_count > 0:
+                              # Check all possible empty list keys
+                              for k in ['mediaItems', 'MediaItems', 'items', 'Items']:
+                                  if response.get(k) == []:
+                                      return []
                 except Exception:
                     pass
             return None
@@ -513,43 +516,50 @@ class DaminionClient:
         logging.warning(f"Could not retrieve items for shared collection {collection_id}")
         return []
 
-    def get_items_by_query(self, query: str, operators: str, index: int = 0, page_size: int = 500) -> Optional[List[Dict]]:
+    def get_items_by_query(self, query: str, operators: str, index: int = 0, page_size: int = 500) -> List[Dict]:
         """
-        Search for items using a structured query string, common in some Daminion API versions.
-
-        Args:
-            query: The query string (e.g., '42,2,3' for Flag=Flagged or Rejected).
-            operators: The operators for the query (e.g., '42,any').
-            index: The starting index for pagination.
-            page_size: The number of items to return per page.
-
-        Returns:
-            A list of media items, or None if the endpoint is not supported.
+        Search for items using a structured query string.
         """
         if self._structured_query_unavailable:
-            logging.warning("[DAMINION] Structured query endpoint is unavailable.")
-            return None
+            return []
 
-        logging.info(f"[DAMINION] Searching items with structured query: '{query}'")
-        # User confirmed /api/MediaItems/Get works with query/operators parameters
-        endpoint = f"/api/MediaItems/Get?query={query}&operators={operators}&start={index}&length={page_size}"
+        # Properly encode parameters to handle spaces and special chars
+        # Daminion API uses 'start' and 'length' for pagination in MediaItems/Get
+        params = urllib.parse.urlencode({
+            "query": query,
+            "operators": operators,
+            "start": index,
+            "length": page_size
+        })
+        endpoint = f"/api/MediaItems/Get?{params}"
+        
+        logging.info(f"[DAMINION] Querying: {endpoint}")
 
         try:
             response = self._make_request(endpoint, method='GET')
-            # Handle different response shapes
-            items = []
-            if isinstance(response, list):
-                items = response
-            elif isinstance(response, dict):
-                items = response.get('mediaItems') or response.get('items') or response.get('data') or []
             
-            logging.info(f"[DAMINION] [OK] Structured query returned {len(items)} items")
-            return items
+            items = []
+            if isinstance(response, dict):
+                # Check for various list keys, handle case variations
+                items = (response.get('mediaItems') or 
+                         response.get('MediaItems') or 
+                         response.get('items') or 
+                         response.get('Items') or
+                         response.get('data') or [])
+                
+                total_count = response.get('totalCount', 0)
+                if total_count > 0 and not items:
+                    logging.warning(f"[DAMINION] Get returned totalCount={total_count} but 0 results in list. Keys found: {list(response.keys())}")
+            elif isinstance(response, list):
+                items = response
+            
+            return items if items else []
+            
         except DaminionAPIError as e:
             if "404" in str(e):
-                logging.warning("[DAMINION] Structured query via '/api/MediaItems/Get' not found (404).")
+                logging.warning(f"[DAMINION] Endpoint /api/MediaItems/Get not supported? {e}")
                 self._structured_query_unavailable = True
-                return None
+                return []
             raise
 
     def get_saved_searches(self) -> List[Dict]:
@@ -781,6 +791,8 @@ class DaminionClient:
 
         # Apply final pass filtering
         if items_to_process:
+             processed_count = 0
+             dropped_count = 0
              for item in items_to_process:
                 # Add ID normalization
                 if 'id' not in item and 'uniqueId' in item:
@@ -788,8 +800,13 @@ class DaminionClient:
                      
                 if self._passes_filters(item, status_filter, untagged_fields):
                     filtered_items.append(item)
+                    processed_count += 1
                     if max_items and max_items > 0 and len(filtered_items) >= max_items:
                         break
+                else:
+                    dropped_count += 1
+             
+             logging.info(f"[DAMINION] Filter summary: {processed_count} passed, {dropped_count} dropped by status '{status_filter}' and untagged check.")
         
         return filtered_items
 
@@ -952,16 +969,7 @@ class DaminionClient:
 
     def search_items(self, query: str, index: int = 0, page_size: int = 200) -> Optional[List[Dict]]:
         """
-        Search for items on the server using a query string.
-        Uses GET /api/MediaItems/Get (POST /Search is deprecated/unavailable).
-
-        Args:
-            query: The search query (e.g., 'status:untagged', 'flag:rejected').
-            index: The starting index.
-            page_size: The number of items to return.
-
-        Returns:
-            A list of media items matching the search query.
+        Search for items using a simple query string.
         """
         if self._search_endpoint_unavailable:
             logging.warning("[DAMINION] Search endpoint is unavailable, cannot perform server-side search.")
@@ -969,7 +977,12 @@ class DaminionClient:
 
         logging.info(f"[DAMINION] Searching items with query: '{query}'")
         # Use GET /api/MediaItems/Get which returns totalCount and mediaItems
-        endpoint = f"/api/MediaItems/Get?search={urllib.parse.quote(query)}&start={index}&length={page_size}"
+        params = urllib.parse.urlencode({
+            "search": query,
+            "start": index,
+            "length": page_size
+        })
+        endpoint = f"/api/MediaItems/Get?{params}"
         
         try:
             response = self._make_request(endpoint, method='GET')
@@ -1286,7 +1299,13 @@ class DaminionClient:
         if scope == "search" and search_term:
              try:
                  # Use /api/MediaItems/Get as confirmed by user
-                 endpoint = f"/api/MediaItems/Get?query=5000,{search_term}&operators=5000,all&start=0&length=1"
+                 params = urllib.parse.urlencode({
+                     "query": f"5000,{search_term}",
+                     "operators": "5000,all",
+                     "start": 0,
+                     "length": 1
+                 })
+                 endpoint = f"/api/MediaItems/Get?{params}"
                  resp = self._make_request(endpoint)
                  if isinstance(resp, dict): return resp.get('totalCount', 0)
              except: pass
