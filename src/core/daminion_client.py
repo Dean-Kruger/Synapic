@@ -531,7 +531,8 @@ class DaminionClient:
             return None
 
         logging.info(f"[DAMINION] Searching items with structured query: '{query}'")
-        endpoint = f"/api/MediaItems/GetByQuery?query={query}&operators={operators}&start={index}&length={page_size}"
+        # User confirmed /api/MediaItems/Get works with query/operators parameters
+        endpoint = f"/api/MediaItems/Get?query={query}&operators={operators}&start={index}&length={page_size}"
 
         try:
             response = self._make_request(endpoint, method='GET')
@@ -546,7 +547,7 @@ class DaminionClient:
             return items
         except DaminionAPIError as e:
             if "404" in str(e):
-                logging.warning("[DAMINION] Structured query endpoint '/api/MediaItems/GetByQuery' not found (404).")
+                logging.warning("[DAMINION] Structured query via '/api/MediaItems/Get' not found (404).")
                 self._structured_query_unavailable = True
                 return None
             raise
@@ -1284,8 +1285,8 @@ class DaminionClient:
 
         if scope == "search" and search_term:
              try:
-                 # Try using the search syntax in GetByQuery to get total count
-                 endpoint = f"/api/MediaItems/GetByQuery?query=5000,{search_term}&operators=5000,all&start=0&length=1"
+                 # Use /api/MediaItems/Get as confirmed by user
+                 endpoint = f"/api/MediaItems/Get?query=5000,{search_term}&operators=5000,all&start=0&length=1"
                  resp = self._make_request(endpoint)
                  if isinstance(resp, dict): return resp.get('totalCount', 0)
              except: pass
