@@ -145,14 +145,15 @@ def write_metadata(image_path: Path, category: str, keywords: List[str], descrip
         exif_dict = piexif.load(str(image_path))
 
         if category:
+            # Map Category/Label to Windows 'Subject' and 'Title'
             exif_dict['0th'][piexif.ImageIFD.XPSubject] = category.encode('utf-16le')
+            exif_dict['0th'][piexif.ImageIFD.XPTitle] = category.encode('utf-16le')
 
         if description:
-             # EXIF ImageDescription - standard ascii
+             # EXIF ImageDescription - standard ascii for cross-platform compatibility
             exif_dict['0th'][piexif.ImageIFD.ImageDescription] = description.encode('utf-8')
-            # XPTitle/XPComment are sometimes used by Windows, but ImageDescription is standard.
-            # Windows 'Title' maps to ImageDescription or XPTitle. 'Subject' maps to XPSubject.
-            exif_dict['0th'][piexif.ImageIFD.XPTitle] = description.encode('utf-16le')
+            # Map long AI Caption/Description to Windows 'Comments'
+            exif_dict['0th'][piexif.ImageIFD.XPComment] = description.encode('utf-16le')
 
         if keywords:
             existing_keywords_bytes = exif_dict['0th'].get(piexif.ImageIFD.XPKeywords, b'')

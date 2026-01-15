@@ -128,31 +128,35 @@ class DaminionClient:
                 # Fetch tag schema to populate GUID map
                 self.get_tag_schema()
                 
-                # Attempt to get Integer IDs for tags (used in some endpoints)
+                # Additional step: Fetch Integer IDs for endpoints like IndexedTagValues
                 try:
-                    tag_settings = self._make_request("/api/settings/getTags")
-                    data_list = []
-                    if isinstance(tag_settings, dict):
-                         data_list = tag_settings.get('data') or tag_settings.get('items') or []
-                         # If success: true but data empty, maybe tag_settings IS the list?
-                         if not data_list and isinstance(tag_settings.get('tags'), list):
-                              data_list = tag_settings['tags']
-                    elif isinstance(tag_settings, list):
-                         data_list = tag_settings
-                         
-                    if data_list:
-                         for t in data_list:
-                              if isinstance(t, dict):
-                                   t_id = t.get('id')
-                                   t_name = t.get('name')
-                                   if t_id and t_name:
-                                        self._tag_id_map[t_name] = t_id
-                                        # Update internal constants if found
-                                        if t_name == "Saved Searches": self.SAVED_SEARCH_TAG_ID = t_id
-                                        if t_name == "Shared Collections": self.SHARED_COLLECTIONS_TAG_ID = t_id
-                         logging.info(f"[DAMINION] Mapped {len(self._tag_id_map)} tags to Integer IDs.")
+                    # Based on C# SDK, GetTags endpoint is api/settings/getTags
+                    endpoint_tags = "/api/settings/getTags"
+                    response_tags = self._make_request(endpoint_tags)
+                    
+                    tags_list = []
+                    if isinstance(response_tags, list):
+                        tags_list = response_tags
+                    elif isinstance(response_tags, dict):
+                        tags_list = response_tags.get('tags') or response_tags.get('data') or response_tags.get('items') or []
+                    
+                    count_ids = 0
+                    for tag in tags_list:
+                        if isinstance(tag, dict):
+                             t_name = tag.get('name') or tag.get('tagName') or tag.get('Title')
+                             t_id = tag.get('id') # Integer ID
+                             if t_name and t_id is not None:
+                                 self._tag_id_map[t_name] = t_id
+                                 self._tag_id_map[t_name.lower()] = t_id
+                                 
+                                 # Update internal constants if found
+                                 if t_name == "Saved Searches": self.SAVED_SEARCH_TAG_ID = t_id
+                                 if t_name == "Shared Collections": self.SHARED_COLLECTIONS_TAG_ID = t_id
+                                 count_ids += 1
+                    
+                    logging.info(f"[DAMINION] Mapped {count_ids} tags to Integer IDs from /api/settings/getTags.")
                 except Exception as e:
-                    logging.debug(f"[DAMINION] Failed to fetch tag integer IDs: {e}")
+                    logging.warning(f"[DAMINION] Failed to fetch tag integer IDs via /api/settings/getTags: {e}")
                 
                 return True
 
@@ -1112,40 +1116,13 @@ class DaminionClient:
             extract_properties(response)
             
             logging.info(f"[DAMINION] [OK] Mapped {len(self._tag_map) // 2} tags to GUIDs.")
-            logging.info(f"[DAMINION] Available Tags: {list(self._tag_map.keys())}")
+            logging.debug(f"[DAMINION] Available Tags: {list(self._tag_map.keys())}")
             
-            # Additional step: Fetch Integer IDs for endpoints like IndexedTagValues
-            try:
-                # Based on C# SDK, GetTags endpoint is api/settings/getTags
-                endpoint_tags = "/api/settings/getTags"
-                response_tags = self._make_request(endpoint_tags)
-                
-                tags_list = []
-                if isinstance(response_tags, list):
-                    tags_list = response_tags
-                elif isinstance(response_tags, dict):
-                    tags_list = response_tags.get('tags') or response_tags.get('data') or []
-                
-                count_ids = 0
-                for tag in tags_list:
-                    if isinstance(tag, dict):
-                         t_name = tag.get('name') or tag.get('tagName') or tag.get('Title')
-                         t_id = tag.get('id') # Integer ID
-                         if t_name and t_id is not None:
-                             self._tag_id_map[t_name] = t_id
-                             self._tag_id_map[t_name.lower()] = t_id
-                             count_ids += 1
-                
-                logging.info(f"[DAMINION] Mapped {count_ids} tags to Integer IDs from /api/settings/getTags.")
-                
-                # Force map Saved Searches ID 39 if not found, based on probe
-                if 'saved searches' not in self._tag_id_map:
-                     self._tag_id_map['saved searches'] = 39
-                     logging.info(f"[DAMINION] 'Saved Searches' manually mapped to ID 39.")
+            # Force map Saved Searches ID 39 if not found, based on common Daminion structure
+            if 'saved searches' not in self._tag_id_map:
+                 self._tag_id_map['saved searches'] = 39
+                 logging.debug(f"[DAMINION] 'Saved Searches' manually mapped to default ID 39.")
                      
-            except Exception as e:
-                logging.warning(f"[DAMINION] Failed to fetch tag integer IDs via /api/settings/getTags: {e}")
-
             return self._tag_map
             
         except Exception as e:
@@ -1341,7 +1318,13 @@ class DaminionClient:
     def _count_query(self, query: str) -> int:
         """Helper to count via Search endpoint."""
         try:
-            endpoint = f"/api/MediaItems/Get?search={urllib.parse.quote(query)}&start=0&length=1"
+            # Use /api/MediaItems/Get with search param to get totalCount
+            params = urllib.parse.urlencode({
+                "search": query,
+                "start": 0,
+                "length": 1
+            })
+            endpoint = f"/api/MediaItems/Get?{params}"
             response = self._make_request(endpoint, method='GET')
             if isinstance(response, dict):
                 return response.get('totalCount', 0)
@@ -1475,21 +1458,35 @@ class DaminionClient:
                 
                 # Special handling for 'Category' which is not a standard Daminion tag
                 if not guid and raw_key == 'Category':
-                    # Try common synonyms
-                    guid = self._tag_map.get('Categories') or self._tag_map.get('Subject') or self._tag_map.get('Classification')
+                    # Try common synonyms for Classification/Category
+                    guid = (self._tag_map.get('Categories') or 
+                            self._tag_map.get('Subject') or 
+                            self._tag_map.get('Classification') or
+                            self._tag_map.get('Project'))
                     if not guid:
-                        # Fallback to Keywords so we at least save the data
+                        # Fallback to Keywords so we at least save the data, but log as warning
                         guid = self._tag_map.get('Keywords')
                         if guid:
-                            logging.warning(f"[DAMINION] 'Category' tag not found. Remapped to 'Keywords'.")
+                            logging.warning(f"[DAMINION] 'Category' tag not found. Remapped to 'Keywords' for persistence.")
+
+                # Special handling for 'Description' synonyms
+                if not guid and (raw_key == 'Description' or raw_key == 'Caption'):
+                    # Try common Daminion names for the description/caption field
+                    guid = (self._tag_map.get('Description') or 
+                            self._tag_map.get('Caption') or 
+                            self._tag_map.get('Headline') or 
+                            self._tag_map.get('Annotation') or
+                            self._tag_map.get('Notes'))
 
                 if guid:
                     logging.debug(f"[DAMINION] Mapped tag '{raw_key}' -> {guid}")
                     item['guid'] = guid
-                    final_data_items.append(item)
                 else:
-                    logging.warning(f"[DAMINION] Warning: Could not find GUID for tag '{raw_key}'. Sending as-is (might fail).")
+                    logging.warning(f"[DAMINION] Warning: Could not find GUID for tag '{raw_key}'. Sending as-is (might fail if server is strict).")
                     final_data_items.append(item)
+                    continue # Skip the direct append below as we handled it here
+
+                final_data_items.append(item)
 
             payload = {
                 "ids": [int(x) if str(x).isdigit() else x for x in batch], 

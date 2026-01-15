@@ -1,0 +1,24 @@
+ Volume in drive C has no label.
+ Volume Serial Number is 8E82-D7C9
+
+ Directory of c:\Users\deank\sourcecode\Synapic
+
+2026/01/15  12:18    <DIR>          .
+2026/01/13  11:15    <DIR>          ..
+2026/01/15  10:57                64 .gitignore
+2026/01/12  10:04    <DIR>          .venv
+2026/01/13  16:16            38ÿ274 check.log
+2026/01/15  11:05               355 check_conn.py
+2026/01/15  12:16             2ÿ063 check_metadata.py
+2026/01/14  17:54             3ÿ921 DAMINION_API_DEBUGGING.md
+2026/01/15  12:18                 0 dir_output.txt
+2026/01/12  10:57         5ÿ642ÿ882 Icon.png
+2026/01/12  10:03             1ÿ113 main.py
+2026/01/14  13:14             5ÿ690 project specs.md
+2026/01/12  13:25               419 read_log.py
+2026/01/12  12:33    <DIR>          release
+2026/01/14  17:56               217 requirements.txt
+2026/01/14  13:14         3ÿ886ÿ135 schema.sql
+2026/01/09  14:22    <DIR>          src
+              12 File(s)      9ÿ581ÿ133 bytes
+               5 Dir(s)  120ÿ460ÿ865ÿ536 bytes free
