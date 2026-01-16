@@ -66,8 +66,9 @@ class DaminionClient:
         self._tag_id_map = {} # Cache for Tag Name -> Integer ID mapping
         
         # Hardcoded IDs observed in many Daminion versions
-        self.SAVED_SEARCH_TAG_ID = 39 
-        self.SHARED_COLLECTIONS_TAG_ID = 45 
+        # Updated via probe: Saved Searches=40, Shared Collections=46
+        self.SAVED_SEARCH_TAG_ID = 40 
+        self.SHARED_COLLECTIONS_TAG_ID = 46 
 
         DaminionClient._instances.add(self)
         atexit.register(self.cleanup_temp_files)
@@ -150,17 +151,25 @@ class DaminionClient:
                                  self._tag_id_map[t_name.lower()] = t_id
                                  
                                  # Update internal constants if found
-                                 if t_name == "Saved Searches": self.SAVED_SEARCH_TAG_ID = t_id
-                                 if t_name == "Shared Collections": self.SHARED_COLLECTIONS_TAG_ID = t_id
                                  if t_name == "Keywords": 
                                       self.KEYWORDS_TAG_ID = t_id
                                       logging.info(f"[DAMINION] Tag Tree: Keywords = {t_id}")
                                  count_ids += 1
                     
-                    logging.info(f"[DAMINION] Tag Map Keys: {list(self._tag_id_map.keys())}")
-                    logging.info(f"[DAMINION] Mapped {count_ids} tags to Integer IDs from /api/settings/getTags.")
+                    # Explicitly check/set critical IDs if found
+                    if 'Saved Searches' in self._tag_id_map:
+                        self.SAVED_SEARCH_TAG_ID = self._tag_id_map['Saved Searches']
+                    if 'saved searches' in self._tag_id_map:
+                         self.SAVED_SEARCH_TAG_ID = self._tag_id_map['saved searches']
+                         
+                    if 'Shared Collections' in self._tag_id_map:
+                        self.SHARED_COLLECTIONS_TAG_ID = self._tag_id_map['Shared Collections']
+                    if 'shared collections' in self._tag_id_map:
+                         self.SHARED_COLLECTIONS_TAG_ID = self._tag_id_map['shared collections']
+
+                    logging.info(f"[DAMINION] Mapped {len(self._tag_id_map)} tags to Integer IDs from /api/settings/getTags.")
                 except Exception as e:
-                    logging.warning(f"[DAMINION] Failed to fetch tag integer IDs via /api/settings/getTags: {e}")
+                    logging.warning(f"[DAMINION] Failed to fetch integer tag IDs: {e}")
                 
                 return True
 
@@ -170,10 +179,10 @@ class DaminionClient:
             raise DaminionAuthenticationError(f"Authentication failed: {error_msg}")
         except urllib.error.URLError as e:
             logging.error(f"[DAMINION] [ERROR] Network error during authentication: {e}")
-            raise DaminionNetworkError(f"Network error: {e}")
+            raise DaminionNetworkError(f"Connection failed: {e}")
         except Exception as e:
-            logging.exception(f"[DAMINION] [ERROR] Unexpected authentication error")
-            raise DaminionAuthenticationError(f"Authentication error: {e}")
+            logging.error(f"[DAMINION] [ERROR] Unexpected authentication error: {e}")
+            raise DaminionAPIError(f"Authentication failed: {e}")
 
     def _get_cookie_header(self) -> str:
         """Generate cookie header string from stored cookies."""
@@ -181,15 +190,14 @@ class DaminionClient:
 
     def _rate_limit(self):
         """Enforce rate limiting between API calls."""
-        if self.rate_limit > 0:
-            elapsed = time.time() - self._last_request_time
-            if elapsed < self.rate_limit:
-                sleep_time = self.rate_limit - elapsed
-                time.sleep(sleep_time)
+        current_time = time.time()
+        elapsed = current_time - self._last_request_time
+        if elapsed < self.rate_limit:
+            time.sleep(self.rate_limit - elapsed)
         self._last_request_time = time.time()
 
     def _make_request(self, endpoint: str, method: str = 'GET',
-                     data: Optional[Dict] = None, timeout: int = 30) -> Dict:
+                    data: Optional[Dict] = None, timeout: int = 30) -> Any:
         """
         Make authenticated API request with rate limiting.
 
@@ -202,71 +210,63 @@ class DaminionClient:
         Returns:
             Response data as dictionary
         """
-        if not self.authenticated and "Login" not in endpoint:
-            # Auto-authenticate if needed? No, simpler to raise
-            pass
+        if not self.authenticated and "/UserManager/Login" not in endpoint:
+             # Auto-reauthenticate if needed? For now just warn or error.
+             # Ideally we should try to authenticate.
+             if self.username and self.password:
+                 self.authenticate()
 
         self._rate_limit()
 
         url = f"{self.base_url}{endpoint}"
-        logging.debug(f"[DAMINION] API Request: {method} {endpoint}")
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            # Mimic browser headers to avoid 500s or 403s on strict servers
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+
+        if self.cookies:
+            headers["Cookie"] = self._get_cookie_header()
+
+        body = None
+        if data:
+            body = json.dumps(data).encode('utf-8')
+
+        req = urllib.request.Request(url, method=method, headers=headers, data=body)
 
         try:
-            request_data = None
-            if data and method == 'POST':
-                request_data = json.dumps(data).encode('utf-8')
-                logging.debug(f"[DAMINION] Request body size: {len(request_data)} bytes")
-
-            request = urllib.request.Request(url, data=request_data, method=method)
-            request.add_header('Cookie', self._get_cookie_header())
-            request.add_header('Content-Type', 'application/json')
-            # Mimic browser headers to avoid 500s or 403s on strict servers
-            request.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-            request.add_header('Accept', 'application/json, text/javascript, */*; q=0.01')
-            request.add_header('X-Requested-With', 'XMLHttpRequest')
-            
-            logging.debug(f"[DAMINION] Opening request with {timeout}s timeout...")
-
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                logging.debug(f"[DAMINION] Response status: {response.status}")
-                body = response.read().decode('utf-8')
-                logging.debug(f"[DAMINION] Response body size: {len(body)} bytes")
-                
-                if not body:
-                    return {}
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                if response.status == 204:  # No Content
+                    return None
                     
-                result = json.loads(body)
-                logging.debug(f"[DAMINION] Response Sample: {str(result)[:500]}")
-                return result
+                response_data = response.read().decode('utf-8')
+                
+                # Check for redirects or login pages (session expired)
+                if "<!DOCTYPE html>" in response_data or "<html" in response_data:
+                     # If we got HTML, it likely means we were redirected to login page
+                     # or error page.
+                     if "/UserManager/Login" not in endpoint:
+                         logging.warning("[DAMINION] Received HTML response (likely login page). Converting to error.")
+                         raise DaminionAuthenticationError("Session expired or invalid.")
 
+                try:
+                    return json.loads(response_data)
+                except json.JSONDecodeError:
+                    return response_data  # Return raw text if not JSON
         except urllib.error.HTTPError as e:
-            error_body = e.read().decode('utf-8') if e.fp else ''
-            # Clean up error body for logging
-            error_body = error_body[:500].replace('\n', ' ') if error_body else ''
-            
-            error_msg = f"HTTP {e.code}: {e.reason} - {error_body}"
-            logging.error(f"[DAMINION] [ERROR] API request failed: {error_msg}")
-            
-            if e.code == 429:
-                raise DaminionRateLimitError(f"Rate limit exceeded: {error_msg}")
-            elif e.code in (401, 403):
-                raise DaminionAuthenticationError(f"Authentication error: {error_msg}")
-            raise DaminionAPIError(error_msg)
-            
+            if e.code == 401 or e.code == 403:
+                raise DaminionAuthenticationError(f"Authentication failed: {e}")
+            elif e.code == 429:
+                raise DaminionRateLimitError(f"Rate limit exceeded: {e}")
+            else:
+                # Try to read error message
+                error_body = e.read().decode('utf-8') if e.fp else ''
+                logging.error(f"[DAMINION] [ERROR] API request failed: HTTP {e.code}: {e.reason} - {error_body}")
+                raise DaminionAPIError(f"API request failed: {e.code} {e.reason}")
         except urllib.error.URLError as e:
-            logging.error(f"[DAMINION] [ERROR] Network error: {e}")
             raise DaminionNetworkError(f"Network error: {e}")
-            
-        except json.JSONDecodeError as e:
-            logging.error(f"[DAMINION] [ERROR] Invalid JSON response: {e}")
-            raise DaminionAPIError(f"Invalid JSON response: {e}")
-            
-        except (DaminionAPIError, DaminionAuthenticationError, DaminionNetworkError, DaminionRateLimitError):
-            raise
-            
-        except Exception as e:
-            logging.exception(f"[DAMINION] [ERROR] Unexpected API request error: {url}")
-            raise DaminionAPIError(f"Request error: {e}")
 
     def get_total_count(self) -> int:
         """
@@ -399,51 +399,57 @@ class DaminionClient:
         return all_items
 
     def get_shared_collections(self, index: int = 0, page_size: int = 100) -> List[Dict]:
-        """Retrieve list of shared collections available on the server.
+        """Retrieve list of shared collections available on the server."""
+        logging.info("[DAMINION] Fetching shared collections...")
+        
+        # Proven to be ID 46 via probe (previously thought 45).
+        results = self.get_tag_values("Shared Collections")
+        if not results:
+             results = self.get_tag_values("shared collections")
 
-        Returns a list of collection metadata dictionaries. Uses the
-        /api/SharedCollection/GetCollections endpoint.
-        """
-        endpoint = f"/api/SharedCollection/GetCollections?index={index}&pageSize={page_size}"
-        try:
-            logging.info(f"[DEBUG] Fetching shared collections from {endpoint}")
-            response = self._make_request(endpoint)
-            # response shape may vary; handle both dict and list responses
-            logging.info(f"[DEBUG] Raw response type: {type(response)}")
-            logging.debug(f"[DEBUG] Raw response: {response}")
+        # Also try "Collections" (ID 41) just in case
+        if not results:
+             logging.info("[DAMINION] No Shared Collections found, trying 'Collections'...")
+             results = self.get_tag_values("Collections")
 
-            if isinstance(response, list):
-                # response is already a list
-                logging.info(f"[DEBUG] Response is list with {len(response)} items")
-                return response
-            elif isinstance(response, dict):
-                # response is a dict, try common keys
-                collections = response.get('collections') or response.get('items') or response.get('data')
-                logging.info(f"[DEBUG] Extracted 'collections': {type(collections)} (Keys found: {[k for k in response.keys()]})")
-                
-                if isinstance(collections, dict):
-                    # sometimes API wraps in data/results
-                    return list(collections.values())
-                return collections if isinstance(collections, list) else []
-            else:
-                # unexpected response type
-                logging.warning(f"[DEBUG] Unexpected response type: {type(response)}")
-                return []
-        except Exception as e:
-            logging.exception("Failed to fetch shared collections")
-            return []
+        if results:
+             transformed = []
+             for item in results:
+                  transformed.append({
+                       "id": item.get('id') or item.get('valueId'),
+                       "name": item.get('name') or item.get('title') or item.get('stringValue') or item.get('value'),
+                       "count": item.get('count', 0)
+                  })
+             return transformed
+
+        # Legacy endpoint fallback? (The probe showed 404 for this, but maybe keep as last resort)
+        # endpoint = f"/api/SharedCollection/GetCollections?index={index}&pageSize={page_size}"
+        # ... skipped as it failed in probe ...
+        
+        return []
 
     def get_shared_collection_items(self, collection_id: str | int, index: int = 0, page_size: int = 200) -> List[Dict]:
-        """Retrieve items for a shared collection.
-
-        Calls /api/SharedCollection/GetItems and expects a collection identifier value
-        to be passed as a parameter. The exact server-side parameters may vary by
-        Daminion version; we attempt common query names.
-        """
-        # try multiple endpoint formats based on Daminion API documentation
-        # code is preferred for PublicItems
-        # 1. Try with ID first (as passed)
-        # 2. If ID fails, fetch collection details to get the "accessCode" and try that.
+        """Retrieve items for a shared collection."""
+        # Update this to use queryLine logic with SHARED_COLLECTIONS_TAG_ID
+        
+        # 1. Try standard query approach first as it's most robust
+        # "collection_id" here is likely the Value ID of the tag.
+        
+        logging.info(f"[DAMINION] Fetching items for Shared Collection ID {collection_id}")
+        
+        # We need to constructing a query.
+        # TagID for Shared Collections is self.SHARED_COLLECTIONS_TAG_ID (e.g. 46)
+        # ValueID is collection_id
+        
+        query = f"{self.SHARED_COLLECTIONS_TAG_ID},{collection_id}"
+        operators = f"{self.SHARED_COLLECTIONS_TAG_ID},any" # Or 'all'? Collections usually imply membership, so 'any' in the collection.
+        
+        items = self.get_items_by_query(query, operators, index=index, page_size=page_size)
+        if items:
+             return items
+             
+        # Fallback to the old endpoint approach if the query fails
+        # (Rest of original code...)
         
         # Candidate endpoints
         tried_endpoints = [
@@ -451,7 +457,6 @@ class DaminionClient:
             f"/api/SharedCollection/GetItems?collectionId={collection_id}&index={index}&pageSize={page_size}",
              # PublicItems requires 'code' (accessCode), not internal ID often.
             f"/api/SharedCollection/PublicItems?code={collection_id}&index={index}&size={page_size}&sortag=0&asc=true",
-            f"/api/SharedCollection/PublicItems/{collection_id}/{index}/{page_size}/0/true",
         ]
 
         # Helper to try a list of endpoints
@@ -461,13 +466,6 @@ class DaminionClient:
                     response = self._make_request(endpoint)
                     if not response: continue
                     
-                    # Log total count observed even if items empty
-                    t_count = -1
-                    if isinstance(response, dict):
-                        t_count = response.get('totalCount', -1)
-                        if t_count > 0:
-                             logging.info(f"[DAMINION] Endpoint {endpoint.split('?')[0]} reports {t_count} items available.")
-
                     if isinstance(response, list): return response
                     if isinstance(response, dict):
                          # Look for common wrapper names, handle case-insensitivity
@@ -476,75 +474,37 @@ class DaminionClient:
                                  val = response[k]
                                  if isinstance(val, list) and val: # prioritize non-empty lists
                                       return val
-                                 if isinstance(val, dict) and val: # check for {id:item} map
-                                      vlist = list(val.values())
-                                      if vlist and isinstance(vlist[0], dict): return vlist
-                                      
-                         # If we found a totalCount but mediaItems is empty, return an empty list 
-                         # BUT signal it by returning an empty list instead of None
-                         if t_count > 0:
-                              # Check all possible empty list keys
-                              for k in ['mediaItems', 'MediaItems', 'items', 'Items']:
-                                  if response.get(k) == []:
-                                      return []
                 except Exception:
                     pass
             return None
 
-        # Attempt 1: Use passed ID directly
         items = try_fetch(tried_endpoints)
-        if items is not None and len(items) > 0: return items
-
-        # Fallback: If we got a count but no items (common in some API versions), 
-        # we try to use MediaItems/Get?query=45,id
-        if items == []: # Server returned empty list but indicated items exist via totalCount
-             logging.info(f"[DAMINION] Items list was empty but count > 0. Trying query fallback...")
-             q_ep = f"/api/MediaItems/Get?query={self.SHARED_COLLECTIONS_TAG_ID},{collection_id}&start=0&length={page_size}"
-             items = try_fetch([q_ep])
-             if items: return items
-
-        # Attempt 2: If passed arg was integer-like ID, fetch Details to get 'accessCode'
-        # The 'PublicItems' endpoint typically needs the alphanumeric accessCode (e.g. 'pjrzp5ny')
-        try:
-            details_ep = f"/api/SharedCollection/GetDetails/{collection_id}"
-            details = self._make_request(details_ep)
-            if isinstance(details, dict):
-                 access_code = details.get('accessCode')
-                 if access_code and access_code != str(collection_id):
-                     logging.info(f"[DAMINION] Retrying shared collection fetch with accessCode: {access_code}")
-                     code_endpoints = [
-                        f"/api/SharedCollection/PublicItems?code={access_code}&index={index}&size={page_size}&sortag=0&asc=true",
-                        f"/api/SharedCollection/PublicItems/{access_code}/{index}/{page_size}/0/true"
-                     ]
-                     items = try_fetch(code_endpoints)
-                     if items is not None: return items
-        except Exception as e:
-            logging.debug(f"[DAMINION] Failed to fetch collection details for ID {collection_id}: {e}")
-
-        # If we reach here, we failed
-        logging.warning(f"Could not retrieve items for shared collection {collection_id}")
+        if items: return items
+        
         return []
 
     def get_items_by_query(self, query: str, operators: str, index: int = 0, page_size: int = 500) -> List[Dict]:
         """
         Search for items using a structured query string.
+        Supports cumulative filters using semicolon separation.
         """
         if self._structured_query_unavailable:
             return []
 
-        # Use discovered parameter names (queryLine, f, index, size)
-        params = {
+        # Properly encode parameters to handle spaces and special chars
+        # Daminion API uses 'index' and 'size' for pagination in MediaItems/Get
+        params = urllib.parse.urlencode({
             "queryLine": query,
             "f": operators,
             "index": index,
             "size": page_size,
-            # Fallbacks for older servers
+            # Fallbacks for legacy/other versions
             "query": query,
             "operators": operators,
             "start": index,
             "length": page_size
-        }
-        endpoint = f"/api/MediaItems/Get?{urllib.parse.urlencode(params)}"
+        })
+        endpoint = f"/api/MediaItems/Get?{params}"
         
         logging.info(f"[DAMINION] Querying: {endpoint}")
 
@@ -1174,13 +1134,14 @@ class DaminionClient:
             logging.debug(f"Tag '{tag_name}' has no integer ID mapped. IndexedTagValues might fail.")
 
         # Candidate endpoints:
-        # 1. api/indexedTagValues/getIndexedTagValues (Verified from C# SDK) - EXPECTS INTEGER ID
+        # 1. api/IndexedTagValues/GetIndexedTagValues (Verified from C# SDK) - EXPECTS INTEGER ID
         # 2. api/Tag/GetStructure (Tree) - Usually takes GUID or ID? C# SDK uses GetTagValuesAsync with long.
         # 3. api/IndexedTagValues (Flat list)
         
         candidates = []
         if int_id is not None:
-             candidates.append(f"/api/indexedTagValues/getIndexedTagValues?indexedTagId={int_id}&pageIndex=0&pageSize=1000")
+             # Case sensitive on some servers: IndexedTagValues vs indexedTagValues
+             candidates.append(f"/api/IndexedTagValues/GetIndexedTagValues?indexedTagId={int_id}&pageIndex=0&pageSize=1000")
              candidates.append(f"/api/IndexedTagValues?indexedTagId={int_id}&pageIndex=0&pageSize=1000")
         
         # Fallbacks using GUID if ID failed or not found (some endpoints might support GUID)
@@ -1545,10 +1506,126 @@ class DaminionClient:
                 logging.error(f"[DAMINION] Batch update failed: {e}")
                 all_successful = False
 
-        if all_successful:
             logging.info(f"[DAMINION] Successfully updated tags for all {len(item_ids)} items")
 
         return all_successful
+
+    def get_items_by_saved_search(self, search_name_or_id: Union[str, int], page: int = 1, page_size: int = 50) -> Dict:
+        """
+        Retrieve items belonging to a specific Saved Search.
+
+        Args:
+            search_name_or_id: The Name or ID of the saved search. 
+                               Note: Using Name might require the saved search to be retrievable via get_saved_searches,
+                               which is currently limited. Integers are treated as Value IDs for Tag 40.
+            page: Page number (1-based).
+            page_size: Number of items per page.
+
+        Returns:
+            Dict containing 'items' list and 'total_count'.
+        """
+        # If it's a string, we might want to try to resolve it to an ID if possible, 
+        # but since listing fails, we might just pass it as a value and hope the query engine handles it.
+        # Ideally, we pass the ID.
+        
+        # We use the Tag ID 40 for Saved Searches.
+        query = {
+             "Saved Searches": [search_name_or_id]
+        }
+        return self.get_items_by_query(query, page=page, page_size=page_size)
+
+    def get_items_by_shared_collection(self, collection_name_or_id: Union[str, int], page: int = 1, page_size: int = 50) -> Dict:
+        """
+        Retrieve items belonging to a specific Shared Collection.
+
+        Args:
+            collection_name_or_id: The Name or ID of the shared collection.
+            page: Page number (1-based).
+            page_size: Number of items per page.
+
+        Returns:
+             Dict containing 'items' list and 'total_count'.
+        """
+        # We use Tag ID 46 for Shared Collections.
+        query = {
+             "Shared Collections": [collection_name_or_id]
+        }
+        return self.get_items_by_query(query, page=page, page_size=page_size)
+
+    def get_items_by_query(self, query: Dict[str, Union[str, int, List[Union[str, int]]]], 
+                          operators: Dict[str, str] = None,
+                          page: int = 1, 
+                          page_size: int = 50) -> Dict:
+        """
+        Search for media items using a specialized query dictionary.
+        
+        Args:
+            query: Dictionary where key is Tag Name (e.g. 'Keywords', 'Saved Searches') 
+                   and value is the value(s) to search for.
+            operators: Optional dict mapping Tag Name to operator ('AND', 'OR', 'IS'). Defaults to OR.
+            page: Page number (1-based).
+            page_size: Number of items per page.
+            
+        Returns:
+            Dict with 'items' (List[Dict]) and 'total_count' (int).
+        """
+        if not self.authenticated:
+             self.authenticate()
+
+        # Construct parameters for filtering
+        query_lines = []
+        f_params = []
+
+        # Ensure tag map is loaded
+        if not self._tag_map:
+            self.get_tag_schema()
+
+        for tag_name, values in query.items():
+            # Resolve tag_name to GUID
+            guid = self._tag_map.get(tag_name) or self._tag_map.get(tag_name.lower())
+            if not guid:
+                logging.warning(f"[DAMINION] Could not find GUID for tag '{tag_name}'. Skipping.")
+                continue
+
+            # Ensure values is a list
+            if not isinstance(values, list):
+                values = [values]
+
+            # Build queryLine part
+            query_parts = []
+            for val in values:
+                if isinstance(val, int): # Handle raw IDs
+                    query_parts.append(f"{guid},{val}")
+                else: # Handle string values
+                    query_parts.append(f"{guid},'{val}'") # Wrap string values in single quotes
+
+            query_lines.append(" OR ".join(query_parts)) # Default to OR for multiple values of the same tag
+
+            # Build f_param part (operators)
+            op = operators.get(tag_name, 'any') if operators else 'any' # Default to 'any' (OR)
+            f_params.append(f"{guid},{op}")
+
+        final_query_line = " AND ".join(query_lines) # Combine different tags with AND
+        final_f_param = ";".join(f_params)
+
+        if not final_query_line:
+            return {'Items': [], 'TotalCount': 0}
+
+        start = (page - 1) * page_size
+            
+        params = {
+            'queryLine': final_query_line,
+            'f': final_f_param,
+            'index': start,
+            'size': page_size,
+            # Legacy fallbacks
+            'search': final_query_line,
+            'start': start,
+            'length': page_size
+        }
+        
+        response = self._make_request(f"/api/MediaItems/Get?{urllib.parse.urlencode(params)}")
+        return self._normalize_items_response(response)
 
     def update_item_metadata(self, item_id: str, category: Optional[str] = None,
                            keywords: Optional[List[str]] = None,
@@ -1623,85 +1700,42 @@ class DaminionClient:
         return {'Items': [], 'TotalCount': 0}
 
     # --- Flag Filtering ---
+    # Based on network interception: Flag Tag ID = 42
+    # Unflagged = 1, Flagged = 2, Rejected = 3
+    FLAGS_TAG_ID = 42
+    FLAG_VALUE_UNFLAGGED = 1
+    FLAG_VALUE_FLAGGED = 2
+    FLAG_VALUE_REJECTED = 3
 
     def get_flagged_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
         """
         Retrieve items marked as 'Flagged'.
-        Uses the Daminion query format for flag status.
-        
-        Returns:
-            Dict with 'Items' list and 'TotalCount' integer
         """
-        flag_queries = ['Flag:=1', 'Flag:>0', 'Pick:=1']
-        
-        for query in flag_queries:
-            try:
-                params = urllib.parse.urlencode({
-                    'search': query,
-                    'start': page_index * page_size,
-                    'length': page_size
-                })
-                response = self._make_request(f"/api/MediaItems/Get?{params}")
-                if response:
-                    normalized = self._normalize_items_response(response)
-                    if normalized.get('TotalCount', 0) > 0 or normalized.get('Items'):
-                        return normalized
-            except DaminionAPIError:
-                continue
-        
-        return {'Items': [], 'TotalCount': 0}
+        query = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_FLAGGED}"
+        operators = f"{self.FLAGS_TAG_ID},any"
+        items = self.get_items_by_query(query, operators, index=page_index * page_size, page_size=page_size)
+        count = self.search_count(query, operators=operators)
+        return {'Items': items, 'TotalCount': count}
 
     def get_rejected_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
         """
         Retrieve items marked as 'Rejected'.
-        
-        Returns:
-            Dict with 'Items' list and 'TotalCount' integer
         """
-        reject_queries = ['Flag:=-1', 'Flag:<0', 'Pick:=-1']
-        
-        for query in reject_queries:
-            try:
-                params = urllib.parse.urlencode({
-                    'search': query,
-                    'start': page_index * page_size,
-                    'length': page_size
-                })
-                response = self._make_request(f"/api/MediaItems/Get?{params}")
-                if response:
-                    normalized = self._normalize_items_response(response)
-                    if normalized.get('TotalCount', 0) > 0 or normalized.get('Items'):
-                        return normalized
-            except DaminionAPIError:
-                continue
-        
-        return {'Items': [], 'TotalCount': 0}
+        query = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_REJECTED}"
+        operators = f"{self.FLAGS_TAG_ID},any"
+        items = self.get_items_by_query(query, operators, index=page_index * page_size, page_size=page_size)
+        count = self.search_count(query, operators=operators)
+        return {'Items': items, 'TotalCount': count}
 
     def get_unflagged_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
         """
-        Retrieve items without any flag (neither flagged nor rejected).
-        
-        Returns:
-            Dict with 'Items' list and 'TotalCount' integer
+        Retrieve items without any flag.
         """
-        unflagged_queries = ['Flag:=0', 'Pick:=0']
-        
-        for query in unflagged_queries:
-            try:
-                params = urllib.parse.urlencode({
-                    'search': query,
-                    'start': page_index * page_size,
-                    'length': page_size
-                })
-                response = self._make_request(f"/api/MediaItems/Get?{params}")
-                if response:
-                    normalized = self._normalize_items_response(response)
-                    if normalized.get('TotalCount', 0) > 0 or normalized.get('Items'):
-                        return normalized
-            except DaminionAPIError:
-                continue
-        
-        return {'Items': [], 'TotalCount': 0}
+        query = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_UNFLAGGED}"
+        operators = f"{self.FLAGS_TAG_ID},any"
+        items = self.get_items_by_query(query, operators, index=page_index * page_size, page_size=page_size)
+        count = self.search_count(query, operators=operators)
+        return {'Items': items, 'TotalCount': count}
 
     # --- Rating Filter ---
 
@@ -1728,30 +1762,38 @@ class DaminionClient:
 
     # --- Text Search with Normalized Response ---
 
-    def search_items(self, query: str, index: int = 0, page_index: Optional[int] = None, 
-                     page_size: int = 100) -> Dict:
+    def search_items(self, queryBody: str, operators: Optional[str] = None, index: int = 0, 
+                     page_index: Optional[int] = None, page_size: int = 100) -> Dict:
         """
         Search for items using the discovered queryLine and size parameters.
+        Supports cumulative filters if queryBody and operators contain semicolons.
         """
+        if not self.authenticated:
+            self.authenticate()
+
         start = index
         if page_index is not None:
             start = page_index * page_size
             
-        # Use both discovered and legacy parameter names for compatibility
+        # Determine tag ID mapping if not already set
+        kw_tag_id = getattr(self, 'KEYWORDS_TAG_ID', None)
+        if kw_tag_id is None:
+            self.get_tag_schema()
+            kw_tag_id = getattr(self, 'KEYWORDS_TAG_ID', 13)
+        
+        f_param = operators or f"{kw_tag_id},all"
+
         params = {
-            'queryLine': query,  # Discovered
-            'f': f"{self.KEYWORDS_TAG_ID},all", # Discovered
-            'index': start,     # Discovered
-            'size': page_size,  # Discovered
-            'search': query,    # Legacy
-            'start': start,     # Legacy
-            'length': page_size # Legacy
+            'queryLine': queryBody,
+            'f': f_param,
+            'index': start,
+            'size': page_size,
+            # Legacy fallbacks
+            'search': queryBody,
+            'start': start,
+            'length': page_size
         }
         
-        # Determine tag ID mapping if not already set
-        if not hasattr(self, 'KEYWORDS_TAG_ID') or not self.KEYWORDS_TAG_ID:
-            self.get_tag_schema()
-            
         return self._make_request(f"/api/MediaItems/Get?{urllib.parse.urlencode(params)}")
 
     def text_search(self, query: str, page_index: int = 0, page_size: int = 100) -> Dict:
@@ -2183,21 +2225,26 @@ class DaminionClient:
             except Exception:
                 pass
 
-    def search_count(self, query: str) -> int:
+    def search_count(self, query: str, operators: Optional[str] = None) -> int:
         """
         Get count of items matching a query.
         Uses both 'queryLine' and 'search' parameters for cross-version compatibility.
         """
-        if not hasattr(self, 'KEYWORDS_TAG_ID') or not self.KEYWORDS_TAG_ID:
+        if not self.authenticated:
+            self.authenticate()
+
+        kw_tag_id = getattr(self, 'KEYWORDS_TAG_ID', None)
+        if kw_tag_id is None:
             self.get_tag_schema()
+            kw_tag_id = getattr(self, 'KEYWORDS_TAG_ID', 13)
             
-        tag_id = self.KEYWORDS_TAG_ID or 13
+        f_param = operators or f"{kw_tag_id},all"
         
         # 1. Try MediaItems/GetCount (Discovered format)
         try:
             params = {
                 "queryLine": query,
-                "f": f"{tag_id},all",
+                "f": f_param,
                 "force": "false"
             }
             logging.info(f"[DAMINION] search_count trying GetCount (new format): {params}")
@@ -2232,7 +2279,7 @@ class DaminionClient:
         try:
             params = {
                 "queryLine": query,
-                "f": f"{tag_id},all",
+                "f": f_param,
                 "index": 0,
                 "size": 1
             }
