@@ -1,0 +1,37 @@
+
+--- Daminion Filter Debug ---
+Server: http://damserver.local/daminion
+
+[TAGS] Detected Tag IDs:
+  Keywords: 13
+  Flag: 42
+  Rating: 4
+  Saved Searches: 40
+  Shared Collections: 46
+  Collections: 41
+
+--- Testing Flag Counts ---
+Query 'Flag:=1' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Flag:=1' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Flag:=-1' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Flag:=-1' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Flag:=0' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Flag:=0' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'flag:flagged' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'flag:flagged' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'flag:rejected' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'flag:rejected' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'flag:unflagged' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'flag:unflagged' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Pick:=1' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Pick:=1' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Pick:=-1' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Pick:=-1' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Pick:=0' (queryLine) -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+Query 'Pick:=0' (search)    -> {'data': 4134, 'error': None, 'success': True, 'errorCode': 0}
+
+--- Testing Saved Searches ---
+Error testing Saved Searches: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/40'."}
+
+--- Testing Shared Collections ---
+Error testing Shared Collections: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/SharedCollection/Get'."}

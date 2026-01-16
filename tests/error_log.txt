@@ -1,0 +1,15 @@
+[DAMINION] Fetching tag schema (Layout) to map Tag Names to GUIDs...
+[DAMINION] [ERROR] API request failed: HTTP 401: Unauthorized - {"message":"Authorization has been denied for this request."}
+[DAMINION] Failed to fetch tag schema: Authentication error: HTTP 401: Unauthorized - {"message":"Authorization has been denied for this request."}. Tag updates using names might fail.
+
+--- 1. Keyword ONLY Search ('alp') ---
+Traceback (most recent call last):
+  File "C:\Users\Dean\Source code\Synapic\tests\verify_combined_filters.py", line 62, in <module>
+    test_cumulative_filters()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Dean\Source code\Synapic\tests\verify_combined_filters.py", line 34, in test_cumulative_filters
+    count1 = client.search_count(query1, operators=ops1)
+  File "c:\Users\Dean\Source code\Synapic\src\core\daminion_client.py", line 2157, in search_count
+    tag_id = self.KEYWORDS_TAG_ID or 13
+             ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DaminionClient' object has no attribute 'KEYWORDS_TAG_ID'

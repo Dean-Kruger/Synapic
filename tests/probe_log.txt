@@ -1,0 +1,111 @@
+2026-01-17 00:01:48,433 - INFO - [DAMINION] Starting authentication to http://damserver.local/daminion...
+2026-01-17 00:01:48,433 - DEBUG - [DAMINION] Login URL: http://damserver.local/daminion/api/UserManager/Login
+2026-01-17 00:01:48,433 - DEBUG - [DAMINION] Sending POST request to login endpoint...
+2026-01-17 00:01:48,433 - DEBUG - [DAMINION] Opening connection with 30s timeout...
+2026-01-17 00:01:48,747 - INFO - [DAMINION] Received response with status: 200
+2026-01-17 00:01:48,747 - DEBUG - [DAMINION] Extracting session cookies from response headers...
+2026-01-17 00:01:48,747 - DEBUG - [DAMINION] Stored cookie: .ASPXANONYMOUS
+2026-01-17 00:01:48,748 - DEBUG - [DAMINION] Stored cookie: .AspNet.ApplicationCookie
+2026-01-17 00:01:48,748 - INFO - [DAMINION] [OK] Successfully authenticated to http://damserver.local/daminion as admin
+2026-01-17 00:01:48,748 - INFO - [DAMINION] Session has 2 cookie(s)
+2026-01-17 00:01:48,748 - INFO - [DAMINION] Fetching tag schema (Layout) to map Tag Names to GUIDs...
+2026-01-17 00:01:49,051 - INFO - [DAMINION] [OK] Mapped 78 tags to GUIDs.
+2026-01-17 00:01:49,051 - DEBUG - [DAMINION] Available Tags: ['General', 'general', 'Filename', 'filename', 'Folders', 'folders', 'File Size', 'file size', 'Media Format', 'media format', 'Number of Pages', 'number of pages', 'Software', 'software', 'Creation Datetime', 'creation datetime', 'Duration', 'duration', 'License Expiration Date', 'license expiration date', 'Imported', 'imported', 'Image', 'image', 'Orientation', 'orientation', 'Width', 'width', 'Height', 'height', 'Color Depth', 'color depth', 'DPI', 'dpi', 'Color Profile', 'color profile', 'Fonts', 'fonts', 'Vendor', 'vendor', 'Camera Model', 'camera model', 'Camera Lens', 'camera lens', 'ISO', 'iso', 'Focal Length', 'focal length', 'Aperture', 'aperture', 'Shutter Speed', 'shutter speed', 'Flash', 'flash', 'Latitude', 'latitude', 'Longitude', 'longitude', 'Direction', 'direction', 'Field of View', 'field of view', 'Altitude', 'altitude', 'Description', 'description', 'Rating', 'rating', 'Color Label', 'color label', 'Title', 'title', 'People', 'people', 'Place', 'place', 'Event', 'event', 'Categories', 'categories', 'AI Labels', 'ai labels', 'AI Objects', 'ai objects', 'Keywords', 'keywords', 'Project', 'project', 'Client', 'client', 'AI Description', 'ai description', 'AI models used', 'ai models used', 'AI Title', 'ai title', 'Authors', 'authors', 'Copyrights', 'copyrights', 'Rights Usage Terms', 'rights usage terms', 'Scene', 'scene', 'Subject Code', 'subject code', 'Intellectual Genre', 'intellectual genre', 'Comment', 'comment', 'Office Document Subject', 'office document subject', 'Office Document Manager', 'office document manager', 'Video', 'video', 'Video Codec', 'video codec', 'Bit Rate', 'bit rate', 'Frame Rate', 'frame rate', 'System', 'system', 'Item ID', 'item id', 'Collections', 'collections', 'Flag', 'flag', 'Shared Collections', 'shared collections', 'Audio', 'audio', 'Audio Bitrate', 'audio bitrate', 'Audio Sample Rate', 'audio sample rate', 'Channel Mode', 'channel mode', 'Audio Title', 'audio title', 'Album', 'album', 'Genres', 'genres', 'Artists', 'artists', 'Composers', 'composers', 'Conductor', 'conductor', 'Year', 'year', 'Track', 'track']
+2026-01-17 00:01:49,051 - DEBUG - [DAMINION] 'Saved Searches' manually mapped to default ID 39.
+2026-01-17 00:01:49,294 - INFO - [DAMINION] Tag Tree: Keywords = 13
+2026-01-17 00:01:49,294 - INFO - [DAMINION] Mapped 162 tags to Integer IDs from /api/settings/getTags.
+2026-01-17 00:01:49,601 - INFO - [DAMINION] Fetching saved searches...
+2026-01-17 00:01:49,838 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/MediaItems/GetSavedSearches'."}
+2026-01-17 00:01:49,838 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000
+2026-01-17 00:01:50,086 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000'."}
+2026-01-17 00:01:50,086 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000 failed: API request failed: 404 Not Found
+2026-01-17 00:01:50,086 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000
+2026-01-17 00:01:50,335 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-17 00:01:50,335 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues?indexedTagId=40&pageIndex=0&pageSize=1000 failed: API request failed: 500 Internal Server Error
+2026-01-17 00:01:50,335 - WARNING - Failed to fetch values for tag Saved Searches using any known endpoint.
+2026-01-17 00:01:50,335 - DEBUG - [DAMINION] Trying saved search endpoint: /api/TagValue/GetValues?tagId=40
+2026-01-17 00:01:50,585 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/TagValue/GetValues?tagId=40'."}
+2026-01-17 00:01:50,585 - DEBUG - [DAMINION] Endpoint /api/TagValue/GetValues?tagId=40 failed: API request failed: 404 Not Found
+2026-01-17 00:01:50,585 - DEBUG - [DAMINION] Trying saved search endpoint: /api/Tag/GetStructure?tagId=40
+2026-01-17 00:01:50,832 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=40'."}
+2026-01-17 00:01:50,832 - DEBUG - [DAMINION] Endpoint /api/Tag/GetStructure?tagId=40 failed: API request failed: 404 Not Found
+2026-01-17 00:01:50,832 - DEBUG - [DAMINION] Trying saved search endpoint: /api/Tag/GetNodes?tagId=40
+2026-01-17 00:01:51,064 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=40'."}
+2026-01-17 00:01:51,065 - DEBUG - [DAMINION] Endpoint /api/Tag/GetNodes?tagId=40 failed: API request failed: 404 Not Found
+2026-01-17 00:01:51,065 - DEBUG - [DAMINION] Trying saved search endpoint: /api/ItemData/GetTagValues?tagId=40
+2026-01-17 00:01:51,312 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/ItemData/GetTagValues?tagId=40'."}
+2026-01-17 00:01:51,312 - DEBUG - [DAMINION] Endpoint /api/ItemData/GetTagValues?tagId=40 failed: API request failed: 404 Not Found
+2026-01-17 00:01:51,312 - DEBUG - [DAMINION] Trying saved search endpoint: /api/SavedSearches/Get
+2026-01-17 00:01:51,542 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/SavedSearches/Get'."}
+2026-01-17 00:01:51,542 - DEBUG - [DAMINION] Endpoint /api/SavedSearches/Get failed: API request failed: 404 Not Found
+2026-01-17 00:01:51,542 - DEBUG - [DAMINION] Trying saved search endpoint: /api/MediaItems/GetSavedSearches
+2026-01-17 00:01:51,777 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/MediaItems/GetSavedSearches'."}
+2026-01-17 00:01:51,777 - DEBUG - [DAMINION] Endpoint /api/MediaItems/GetSavedSearches failed: API request failed: 404 Not Found
+2026-01-17 00:01:51,777 - WARNING - [DAMINION] Failed to retrieve Saved Searches. The server might require specific version endpoints.
+2026-01-17 00:01:51,777 - INFO - [DAMINION] Fetching shared collections...
+2026-01-17 00:01:51,777 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000
+2026-01-17 00:01:52,007 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000'."}
+2026-01-17 00:01:52,007 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000 failed: API request failed: 404 Not Found
+2026-01-17 00:01:52,007 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000
+2026-01-17 00:01:52,232 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-17 00:01:52,232 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000 failed: API request failed: 500 Internal Server Error
+2026-01-17 00:01:52,232 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f
+2026-01-17 00:01:52,478 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:52,478 - DEBUG - [DAMINION] Endpoint /api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f failed: API request failed: 404 Not Found
+2026-01-17 00:01:52,478 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f
+2026-01-17 00:01:52,711 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:52,711 - DEBUG - [DAMINION] Endpoint /api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f failed: API request failed: 404 Not Found
+2026-01-17 00:01:52,711 - WARNING - Failed to fetch values for tag Shared Collections using any known endpoint.
+2026-01-17 00:01:52,711 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000
+2026-01-17 00:01:52,958 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000'."}
+2026-01-17 00:01:52,958 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000 failed: API request failed: 404 Not Found
+2026-01-17 00:01:52,958 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000
+2026-01-17 00:01:53,222 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-17 00:01:53,222 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues?indexedTagId=46&pageIndex=0&pageSize=1000 failed: API request failed: 500 Internal Server Error
+2026-01-17 00:01:53,222 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f
+2026-01-17 00:01:53,481 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:53,481 - DEBUG - [DAMINION] Endpoint /api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f failed: API request failed: 404 Not Found
+2026-01-17 00:01:53,481 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f
+2026-01-17 00:01:53,712 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:53,713 - DEBUG - [DAMINION] Endpoint /api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f failed: API request failed: 404 Not Found
+2026-01-17 00:01:53,713 - WARNING - Failed to fetch values for tag shared collections using any known endpoint.
+2026-01-17 00:01:53,713 - INFO - [DAMINION] No Shared Collections found, trying 'Collections'...
+2026-01-17 00:01:53,713 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000
+2026-01-17 00:01:53,960 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000'."}
+2026-01-17 00:01:53,960 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000 failed: API request failed: 404 Not Found
+2026-01-17 00:01:53,960 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000
+2026-01-17 00:01:54,189 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-17 00:01:54,189 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000 failed: API request failed: 500 Internal Server Error
+2026-01-17 00:01:54,189 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94
+2026-01-17 00:01:54,424 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:54,425 - DEBUG - [DAMINION] Endpoint /api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94 failed: API request failed: 404 Not Found
+2026-01-17 00:01:54,425 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94
+2026-01-17 00:01:54,674 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:54,674 - DEBUG - [DAMINION] Endpoint /api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94 failed: API request failed: 404 Not Found
+2026-01-17 00:01:54,674 - WARNING - Failed to fetch values for tag Collections using any known endpoint.
+2026-01-17 00:01:54,674 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000
+2026-01-17 00:01:54,905 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000'."}
+2026-01-17 00:01:54,905 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues/GetIndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000 failed: API request failed: 404 Not Found
+2026-01-17 00:01:54,906 - DEBUG - [DAMINION] Trying endpoint: /api/IndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000
+2026-01-17 00:01:55,139 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 500: Internal Server Error - {"message":"An error has occurred."}
+2026-01-17 00:01:55,140 - DEBUG - [DAMINION] Endpoint /api/IndexedTagValues?indexedTagId=41&pageIndex=0&pageSize=1000 failed: API request failed: 500 Internal Server Error
+2026-01-17 00:01:55,140 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94
+2026-01-17 00:01:55,386 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:55,387 - DEBUG - [DAMINION] Endpoint /api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94 failed: API request failed: 404 Not Found
+2026-01-17 00:01:55,387 - DEBUG - [DAMINION] Trying endpoint: /api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94
+2026-01-17 00:01:55,634 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:55,635 - DEBUG - [DAMINION] Endpoint /api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94 failed: API request failed: 404 Not Found
+2026-01-17 00:01:55,635 - WARNING - Failed to fetch values for tag Collections using any known endpoint.
+2026-01-17 00:01:55,882 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:56,132 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:56,373 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/TagValue/GetValues?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:56,595 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/ItemData/GetTagValues?tagId=3748f8dd-229c-46b3-9b4b-6d308d1e574f'."}
+2026-01-17 00:01:56,843 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetStructure?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:57,091 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/Tag/GetNodes?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:57,326 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/TagValue/GetValues?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:57,558 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/ItemData/GetTagValues?tagId=84a6207b-4651-4085-af2a-277716d32d94'."}
+2026-01-17 00:01:57,807 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues'."}
+2026-01-17 00:01:58,072 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues'."}
+2026-01-17 00:01:58,304 - ERROR - [DAMINION] [ERROR] API request failed: HTTP 404: Not Found - {"message":"No HTTP resource was found that matches the request URI 'http://damserver.local/daminion/api/IndexedTagValues/GetIndexedTagValues'."}
+2026-01-17 00:01:58,304 - DEBUG - Cleaned up temporary thumbnail files
+2026-01-17 00:01:58,305 - DEBUG - Cleaned up temporary thumbnail files

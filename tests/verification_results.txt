@@ -1,0 +1,28 @@
+[DAMINION] Starting authentication to http://damserver.local/daminion...
+[DAMINION] Received response with status: 200
+[DAMINION] [OK] Successfully authenticated to http://damserver.local/daminion as admin
+[DAMINION] Session has 2 cookie(s)
+[DAMINION] Fetching tag schema (Layout) to map Tag Names to GUIDs...
+[DAMINION] [OK] Mapped 78 tags to GUIDs.
+[DAMINION] Tag Tree: Keywords = 13
+[DAMINION] Tag Map Keys: ['saved searches', 'Folders', 'folders', 'Media Format', 'media format', 'Software', 'software', 'Rating', 'rating', 'Color Label', 'color label', 'People', 'people', 'Place', 'place', 'Event', 'event', 'Categories', 'categories', 'AI Labels', 'ai labels', 'AI Objects', 'ai objects', 'Keywords', 'keywords', 'Project', 'project', 'Client', 'client', 'Authors', 'authors', 'Copyrights', 'copyrights', 'Scene', 'scene', 'Subject Code', 'subject code', 'Intellectual Genre', 'intellectual genre', 'Orientation', 'orientation', 'Color Profile', 'color profile', 'Dominant Color', 'dominant color', 'Fonts', 'fonts', 'Camera Model', 'camera model', 'Camera Lens', 'camera lens', 'ISO', 'iso', 'Focal Length', 'focal length', 'Aperture', 'aperture', 'Shutter Speed', 'shutter speed', 'Flash', 'flash', 'Video Codec', 'video codec', 'Audio Bitrate', 'audio bitrate', 'Audio Sample Rate', 'audio sample rate', 'Channel Mode', 'channel mode', 'Genres', 'genres', 'Artists', 'artists', 'Composers', 'composers', 'Year', 'year', 'Saved Searches', 'Collections', 'collections', 'Flag', 'flag', 'Access Control', 'access control', 'Checked Out To', 'checked out to', 'Shared Collections', 'shared collections', 'File Size', 'file size', 'Number of Pages', 'number of pages', 'Creation Datetime', 'creation datetime', 'Duration', 'duration', 'License Expiration Date', 'license expiration date', 'AI models used', 'ai models used', 'Rights Usage Terms', 'rights usage terms', 'Comment', 'comment', 'Office Document Subject', 'office document subject', 'Office Document Manager', 'office document manager', 'Width', 'width', 'Height', 'height', 'Color Depth', 'color depth', 'DPI', 'dpi', 'Vendor', 'vendor', 'Latitude', 'latitude', 'Longitude', 'longitude', 'Direction', 'direction', 'Field of View', 'field of view', 'Altitude', 'altitude', 'Bit Rate', 'bit rate', 'Frame Rate', 'frame rate', 'Audio Title', 'audio title', 'Album', 'album', 'Conductor', 'conductor', 'Track', 'track', 'Import Date', 'import date', 'Import Session ID', 'import session id', 'Imported by', 'imported by', 'Item ID', 'item id', 'Top Stack Id', 'top stack id', 'Filename', 'filename', 'Title', 'title', 'Description', 'description', 'AI Description', 'ai description', 'AI Title', 'ai title', 'Video Thumbnail', 'video thumbnail']
+[DAMINION] Mapped 81 tags to Integer IDs from /api/settings/getTags.
+[DAMINION] search_count trying GetCount (new format): {'queryLine': '13,4346', 'f': '13,all', 'force': 'false'}
+[DAMINION] Querying: /api/MediaItems/Get?queryLine=13%2C4346&f=13%2Call&index=0&size=5&query=13%2C4346&operators=13%2Call&start=0&length=5
+[DAMINION] search_count trying GetCount (new format): {'queryLine': '42,2', 'f': '42,any', 'force': 'false'}
+[DAMINION] Querying: /api/MediaItems/Get?queryLine=42%2C2&f=42%2Cany&index=0&size=5&query=42%2C2&operators=42%2Cany&start=0&length=5
+[DAMINION] search_count trying GetCount (new format): {'queryLine': '13,4346;42,2', 'f': '13,all;42,any', 'force': 'false'}
+[DAMINION] Querying: /api/MediaItems/Get?queryLine=13%2C4346%3B42%2C2&f=13%2Call%3B42%2Cany&index=0&size=5&query=13%2C4346%3B42%2C2&operators=13%2Call%3B42%2Cany&start=0&length=5
+
+--- 1. Keyword ONLY Search ('alp') ---
+Count: 522
+Retrieved: 5 items
+
+--- 2. Flag ONLY Search (Flagged) ---
+Count: 417
+Retrieved: 5 items
+
+--- 3. Combined Search ('alp' + Flagged) ---
+Count: 47
+Retrieved: 5 items
+SUCCESS: Combined count logic seems correct.
