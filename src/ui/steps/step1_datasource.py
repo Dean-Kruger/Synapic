@@ -474,6 +474,8 @@ class Step1Datasource(ctk.CTkFrame):
                     max_to_fetch = 100
                 if max_to_fetch <= 0: max_to_fetch = None
                 
+                logging.debug(f"[UI] Triggering filtered count: scope={scope}, term='{search_term if scope == 'search' else ''}', status={status}, untagged={untagged}")
+                
                 # Efficient count
                 count = self.controller.session.daminion_client.get_filtered_item_count(
                     scope=scope,
@@ -483,6 +485,8 @@ class Step1Datasource(ctk.CTkFrame):
                     untagged_fields=untagged,
                     status_filter=status
                 )
+                
+                logging.debug(f"[UI] Filtered count result: {count}")
                 
                 suffix = ""
                 if count == -1:

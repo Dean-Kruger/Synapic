@@ -152,8 +152,12 @@ class DaminionClient:
                                  # Update internal constants if found
                                  if t_name == "Saved Searches": self.SAVED_SEARCH_TAG_ID = t_id
                                  if t_name == "Shared Collections": self.SHARED_COLLECTIONS_TAG_ID = t_id
+                                 if t_name == "Keywords": 
+                                      self.KEYWORDS_TAG_ID = t_id
+                                      logging.info(f"[DAMINION] Tag Tree: Keywords = {t_id}")
                                  count_ids += 1
                     
+                    logging.info(f"[DAMINION] Tag Map Keys: {list(self._tag_id_map.keys())}")
                     logging.info(f"[DAMINION] Mapped {count_ids} tags to Integer IDs from /api/settings/getTags.")
                 except Exception as e:
                     logging.warning(f"[DAMINION] Failed to fetch tag integer IDs via /api/settings/getTags: {e}")
@@ -232,6 +236,7 @@ class DaminionClient:
                     return {}
                     
                 result = json.loads(body)
+                logging.debug(f"[DAMINION] Response Sample: {str(result)[:500]}")
                 return result
 
         except urllib.error.HTTPError as e:
@@ -527,15 +532,19 @@ class DaminionClient:
         if self._structured_query_unavailable:
             return []
 
-        # Properly encode parameters to handle spaces and special chars
-        # Daminion API uses 'start' and 'length' for pagination in MediaItems/Get
-        params = urllib.parse.urlencode({
+        # Use discovered parameter names (queryLine, f, index, size)
+        params = {
+            "queryLine": query,
+            "f": operators,
+            "index": index,
+            "size": page_size,
+            # Fallbacks for older servers
             "query": query,
             "operators": operators,
             "start": index,
             "length": page_size
-        })
-        endpoint = f"/api/MediaItems/Get?{params}"
+        }
+        endpoint = f"/api/MediaItems/Get?{urllib.parse.urlencode(params)}"
         
         logging.info(f"[DAMINION] Querying: {endpoint}")
 
@@ -762,18 +771,25 @@ class DaminionClient:
         elif scope == "search":
              if search_term:
                   logging.info(f"[DAMINION] Fetching Keyword Search: {search_term}")
-                  # Use Tag 5000 (All Fields) as suggested by user with pagination support
-                  current_start = 0
-                  batch_size = 500
-                  while (not max_items or max_items <= 0 or len(items_to_process) < max_items):
-                       batch = self.get_items_by_query(f"5000,{search_term}", "5000,all", index=current_start, page_size=batch_size)
-                       if not batch: break
-                       items_to_process.extend(batch)
-                       if len(batch) < batch_size: break
-                       current_start += batch_size
-                       if max_items and max_items > 0 and len(items_to_process) >= max_items:
-                            items_to_process = items_to_process[:max_items]
-                            break
+                  # Use the proper keyword search method that looks up value IDs
+                  items, count = self.search_by_keyword(search_term, page_size=max_items or 1000)
+                  if items:
+                       items_to_process = items
+                       logging.info(f"[DAMINION] Keyword search returned {len(items)} items")
+                  else:
+                       # Fallback to text search
+                       logging.info(f"[DAMINION] Keyword not found as exact tag, trying text search")
+                       current_start = 0
+                       batch_size = 500
+                       while (not max_items or max_items <= 0 or len(items_to_process) < max_items):
+                            batch = self.search_items(query=search_term, index=current_start, page_size=batch_size)
+                            if not batch: break
+                            items_to_process.extend(batch)
+                            if len(batch) < batch_size: break
+                            current_start += batch_size
+                            if max_items and max_items > 0 and len(items_to_process) >= max_items:
+                                 items_to_process = items_to_process[:max_items]
+                                 break
              else:
                   logging.warning("[DAMINION] Scope is 'search' but no search term provided.")
 
@@ -1250,11 +1266,14 @@ class DaminionClient:
                                untagged_fields: List[str] = None,
                                status_filter: str = "all") -> int:
         """
-        Efficiently count items matching filters without downloading them.
         """
+        logging.info(f"[DAMINION] get_filtered_item_count: scope={scope}, status={status_filter}, untagged={untagged_fields}, search={search_term}")
+        
         # 1. Simple Case: All items, no sub-filters
         if scope == "all" and status_filter == "all" and not untagged_fields:
-            return self.get_total_count()
+            total = self.get_total_count()
+            logging.info(f"[DAMINION] Base case: All items. Count: {total}")
+            return total
 
         # 2. Scope-based counting
         if scope == "saved_search" and saved_search_id:
@@ -1266,26 +1285,38 @@ class DaminionClient:
              except: pass
 
         if scope == "collection" and collection_id:
-             # Collections are usually small enough to just fetch and count if needed, 
-             # but let's try to get count if available.
-             items = self.get_shared_collection_items(collection_id, page_size=1)
-             # Note: get_shared_collection_items doesn't always return totalCount in wrapper.
-             # If it returns a list, we only know what we got.
+             # Use GetDetails endpoint which should have itemCount
+             try:
+                  details_ep = f"/api/SharedCollection/GetDetails/{collection_id}"
+                  details = self._make_request(details_ep)
+                  if isinstance(details, dict):
+                       # Try various count field names, avoid HTTP status values (200, 201, etc)
+                       for key in ['itemCount', 'count', 'totalItems', 'recordsTotal', 'totalCount']:
+                           count_val = details.get(key)
+                           if count_val is not None and isinstance(count_val, int):
+                               # Skip if it looks like an HTTP status code
+                               if 200 <= count_val <= 299 and count_val != details.get('itemCount'):
+                                   continue
+                               return count_val
+             except Exception:
+                  pass
+             # Fallback: fetch actual items and count
+             items = self.get_shared_collection_items(collection_id, page_size=500)
              return len(items) if items else 0
 
+
         if scope == "search" and search_term:
-             try:
-                 # Use /api/MediaItems/Get as confirmed by user
-                 params = urllib.parse.urlencode({
-                     "query": f"5000,{search_term}",
-                     "operators": "5000,all",
-                     "start": 0,
-                     "length": 1
-                 })
-                 endpoint = f"/api/MediaItems/Get?{params}"
-                 resp = self._make_request(endpoint)
-                 if isinstance(resp, dict): return resp.get('totalCount', 0)
-             except: pass
+             # Use the proper keyword search method that looks up value IDs
+             count = self.get_keyword_search_count(search_term)
+             if count > 0:
+                  logging.info(f"[DAMINION] get_keyword_search_count for '{search_term}' is {count}")
+                  return count
+             # Fallback to direct tag text query count
+             logging.info(f"[DAMINION] keyword search count failed for '{search_term}', trying direct tag text fallback...")
+             keywords_tag_id = self._tag_id_map.get('Keywords') or self._tag_id_map.get('keywords') or 13
+             count = self.search_count(f"{keywords_tag_id},{search_term}")
+             return count
+
 
         # 3. All Items with Filters: Try search variants
         if scope == "all":
@@ -1697,38 +1728,36 @@ class DaminionClient:
 
     # --- Text Search with Normalized Response ---
 
-    def text_search(self, query: str, page_index: int = 0, page_size: int = 100) -> Dict:
+    def search_items(self, query: str, index: int = 0, page_index: Optional[int] = None, 
+                     page_size: int = 100) -> Dict:
         """
-        Full-text search across the catalog.
-        
-        Args:
-            query: Search text (keywords, file names, metadata, etc.)
-            page_index: Page offset for pagination
-            page_size: Number of items per page
+        Search for items using the discovered queryLine and size parameters.
+        """
+        start = index
+        if page_index is not None:
+            start = page_index * page_size
             
-        Returns:
-            Dict with 'Items' list and 'TotalCount' integer
-        """
-        params = urllib.parse.urlencode({
-            'search': query,
-            'start': page_index * page_size,
-            'length': page_size
-        })
-        response = self._make_request(f"/api/MediaItems/Get?{params}")
-        return self._normalize_items_response(response)
+        # Use both discovered and legacy parameter names for compatibility
+        params = {
+            'queryLine': query,  # Discovered
+            'f': f"{self.KEYWORDS_TAG_ID},all", # Discovered
+            'index': start,     # Discovered
+            'size': page_size,  # Discovered
+            'search': query,    # Legacy
+            'start': start,     # Legacy
+            'length': page_size # Legacy
+        }
+        
+        # Determine tag ID mapping if not already set
+        if not hasattr(self, 'KEYWORDS_TAG_ID') or not self.KEYWORDS_TAG_ID:
+            self.get_tag_schema()
+            
+        return self._make_request(f"/api/MediaItems/Get?{urllib.parse.urlencode(params)}")
 
-    def search_count(self, query: str) -> int:
-        """Get count of items matching a text search without fetching them."""
-        params = urllib.parse.urlencode({'search': query})
-        try:
-            response = self._make_request(f"/api/MediaItems/GetCount?{params}")
-            if isinstance(response, int):
-                return response
-            elif isinstance(response, dict):
-                return response.get('data', response.get('Count', 0))
-        except DaminionAPIError:
-            pass
-        return 0
+    def text_search(self, query: str, page_index: int = 0, page_size: int = 100) -> Dict:
+        """Full-text search (alias for search_items)."""
+        return self._normalize_items_response(self.search_items(query, page_index=page_index, page_size=page_size))
+
 
     # --- Favorites (Tray) Operations ---
 
@@ -1929,6 +1958,202 @@ class DaminionClient:
             max_items=max_items
         )
 
+    # ==================== KEYWORD SEARCH BY TAG VALUE ====================
+    
+    def search_by_keyword(self, keyword: str, page_size: int = 500) -> Tuple[List[Dict], int]:
+        """
+        Search for items by keyword using proper IndexedTagValues query.
+        
+        This uses the correct Daminion API pattern:
+        1. Find the Keywords tag ID from schema
+        2. Query IndexedTagValues to find the value ID for the keyword
+        3. Use query={TagID},{ValueID}&operators={TagID},any format
+        
+        Args:
+            keyword: The keyword value to search for (e.g., "abaya")
+            page_size: Max items to return
+            
+        Returns:
+            Tuple of (items list, total count)
+        """
+        # Ensure tag schema is loaded
+        if not self._tag_id_map:
+            self.get_tag_schema()
+        
+        # Get Keywords tag ID (typically 5000 or similar)
+        keywords_tag_id = self._tag_id_map.get('Keywords') or self._tag_id_map.get('keywords')
+        
+        if not keywords_tag_id:
+            logging.warning("[DAMINION] Keywords tag ID not found in schema")
+            # Try common default
+            keywords_tag_id = 5000
+        
+        logging.info(f"[DAMINION] Searching for keyword '{keyword}' using tag ID {keywords_tag_id}")
+        
+        # Try multiple endpoint formats for compatibility with different Daminion versions
+        # Note: parentValueId=-2 means "search everywhere" (all hierarchy levels)
+        endpoint_formats = [
+            # Format 1: Query params at root with parentValueId (required parameter)
+            f"/api/IndexedTagValues?indexedTagId={keywords_tag_id}&parentValueId=-2&filter={urllib.parse.quote(keyword)}&pageIndex=0&pageSize=100",
+            # Format 2: FindValues endpoint
+            f"/api/IndexedTagValues/FindValues?indexedTagId={keywords_tag_id}&parentValueId=-2&filter={urllib.parse.quote(keyword)}&pageIndex=0&pageSize=100",
+            # Format 3: GetIndexedTagValues path (newer servers)
+            f"/api/IndexedTagValues/GetIndexedTagValues?indexedTagId={keywords_tag_id}&parentValueId=-2&filter={urllib.parse.quote(keyword)}&pageIndex=0&pageSize=100",
+        ]
+        
+        values_response = None
+        for endpoint in endpoint_formats:
+            try:
+                values_response = self._make_request(endpoint)
+                if values_response:
+                    logging.info(f"[DAMINION] IndexedTagValues endpoint working: {endpoint.split('?')[0]}")
+                    break
+            except DaminionAPIError as e:
+                if "404" in str(e):
+                    continue
+                raise
+        
+        if not values_response:
+            logging.warning(f"[DAMINION] No IndexedTagValues endpoint available for keyword lookup")
+            return [], 0
+        
+        keyword_value_id = None
+        total_items_for_keyword = 0
+        
+        if isinstance(values_response, dict):
+            values_list = values_response.get('values') or values_response.get('items') or values_response.get('data') or []
+            logging.info(f"[DAMINION] IndexedTagValues returned {len(values_list)} items. Looking for '{keyword}'")
+            for v in values_list:
+                v_name = v.get('text') or v.get('value') or v.get('name') or v.get('title') or ''
+                logging.debug(f"[DAMINION] Checking tag value: '{v_name}'")
+                if v_name.lower() == keyword.lower():
+                    keyword_value_id = v.get('id') or v.get('valueId')
+                    total_items_for_keyword = v.get('count', 0)
+                    logging.info(f"[DAMINION] Found keyword '{keyword}' with value ID: {keyword_value_id}, count: {total_items_for_keyword}")
+                    break
+        elif isinstance(values_response, list):
+            logging.info(f"[DAMINION] IndexedTagValues returned {len(values_response)} items. Looking for '{keyword}'")
+            for v in values_response:
+                v_name = v.get('text') or v.get('value') or v.get('name') or v.get('title') or ''
+                logging.debug(f"[DAMINION] Checking tag value: '{v_name}'")
+                if v_name.lower() == keyword.lower():
+                    keyword_value_id = v.get('id') or v.get('valueId')
+                    total_items_for_keyword = v.get('count', 0)
+                    break
+        
+        # If we found an ID, use it for exact match
+        if keyword_value_id:
+            query = f"{keywords_tag_id},{keyword_value_id}"
+            operators = f"{keywords_tag_id},all"
+            logging.info(f"[DAMINION] Keyword search with ID: query={query}, operators={operators}")
+            items = self.get_items_by_query(query, operators, page_size=page_size)
+            
+            # If the index count is 0 or missing, use search_count to get the true result count
+            actual_count = total_items_for_keyword
+            if actual_count <= 0:
+                actual_count = self.search_count(query)
+            
+            # If search_count also fails, fall back to results length
+            if actual_count <= 0:
+                actual_count = len(items)
+                
+            logging.info(f"[DAMINION] Keyword ID results: {len(items)} items, count {actual_count}")
+            return items, actual_count
+            
+        # Fallback: User provided screenshot shows query=13,text format works for text search in tag
+        logging.info(f"[DAMINION] Keyword ID not found, trying direct tag text query: query={keywords_tag_id},{keyword}")
+        query = f"{keywords_tag_id},{keyword}"
+        operators = f"{keywords_tag_id},all"
+        items = self.get_items_by_query(query, operators, page_size=page_size)
+        
+        # For text query, we need to get total count specifically
+        count = self.search_count(query)
+        logging.info(f"[DAMINION] Keyword text fallback: {len(items)} items, search_count {count}")
+        return items, count
+
+    def get_keyword_search_count(self, keyword: str) -> int:
+        """
+        Get count of items matching a keyword without fetching all items.
+        
+        Args:
+            keyword: The keyword to search for
+            
+        Returns:
+            Count of matching items
+        """
+        if not self._tag_id_map:
+            self.get_tag_schema()
+        
+        keywords_tag_id = self._tag_id_map.get('Keywords') or self._tag_id_map.get('keywords') or 5000
+        
+        # Try multiple endpoint formats (with parentValueId=-2 for searching all levels)
+        endpoint_formats = [
+            f"/api/IndexedTagValues?indexedTagId={keywords_tag_id}&parentValueId=-2&filter={urllib.parse.quote(keyword)}&pageIndex=0&pageSize=100",
+            f"/api/IndexedTagValues/FindValues?indexedTagId={keywords_tag_id}&parentValueId=-2&filter={urllib.parse.quote(keyword)}&pageIndex=0&pageSize=100",
+            f"/api/IndexedTagValues/GetIndexedTagValues?indexedTagId={keywords_tag_id}&parentValueId=-2&filter={urllib.parse.quote(keyword)}&pageIndex=0&pageSize=100",
+        ]
+        
+        for endpoint in endpoint_formats:
+            try:
+                values_response = self._make_request(endpoint)
+                if not values_response:
+                    continue
+                    
+                values_list = []
+                if isinstance(values_response, dict):
+                    values_list = values_response.get('values') or values_response.get('items') or values_response.get('data') or []
+                elif isinstance(values_response, list):
+                    values_list = values_response
+                
+                for v in values_list:
+                    v_name = v.get('text') or v.get('value') or v.get('name') or v.get('title') or ''
+                    if v_name.lower() == keyword.lower():
+                        count = v.get('count', 0)
+                        if count > 0:
+                            return count
+                        # If no count in response, we need to query
+                        keyword_value_id = v.get('id') or v.get('valueId')
+                        if keyword_value_id:
+                            # Use GetCount with query format
+                            query = f"{keywords_tag_id},{keyword_value_id}"
+                            return self.search_count(query)
+                # If we get here, we reached the end of the list without exact text match
+                # Try direct tag text query count as fallback
+                logging.info(f"[DAMINION] Keyword ID not found for count, trying direct tag text query: search=Keywords:{keyword}")
+                return self.search_count(f"Keywords:{keyword}")
+            except DaminionAPIError as e:
+                if "404" in str(e):
+                    continue
+                return 0
+        
+        # Last fallback
+        return self.search_count(f"Keywords:{keyword}")
+
+
+    def get_all_keywords(self, page_size: int = 1000) -> List[Dict]:
+        """
+        Get all available keywords in the catalog.
+        
+        Returns:
+            List of keyword dicts with 'value', 'id', and 'count' keys
+        """
+        if not self._tag_id_map:
+            self.get_tag_schema()
+        
+        keywords_tag_id = self._tag_id_map.get('Keywords') or self._tag_id_map.get('keywords') or 5000
+        
+        try:
+            endpoint = f"/api/IndexedTagValues/GetIndexedTagValues?indexedTagId={keywords_tag_id}&pageIndex=0&pageSize={page_size}"
+            values_response = self._make_request(endpoint)
+            
+            if isinstance(values_response, dict):
+                return values_response.get('values') or values_response.get('items') or []
+            elif isinstance(values_response, list):
+                return values_response
+            return []
+        except DaminionAPIError:
+            return []
+
     def cleanup_temp_files(self):
         """Remove all cached thumbnail files."""
         try:
@@ -1957,6 +2182,68 @@ class DaminionClient:
                 client.cleanup_temp_files()
             except Exception:
                 pass
+
+    def search_count(self, query: str) -> int:
+        """
+        Get count of items matching a query.
+        Uses both 'queryLine' and 'search' parameters for cross-version compatibility.
+        """
+        if not hasattr(self, 'KEYWORDS_TAG_ID') or not self.KEYWORDS_TAG_ID:
+            self.get_tag_schema()
+            
+        tag_id = self.KEYWORDS_TAG_ID or 13
+        
+        # 1. Try MediaItems/GetCount (Discovered format)
+        try:
+            params = {
+                "queryLine": query,
+                "f": f"{tag_id},all",
+                "force": "false"
+            }
+            logging.info(f"[DAMINION] search_count trying GetCount (new format): {params}")
+            endpoint = f"/api/MediaItems/GetCount?{urllib.parse.urlencode(params)}"
+            resp = self._make_request(endpoint)
+            
+            if isinstance(resp, int):
+                return resp
+            if isinstance(resp, dict):
+                count = resp.get('data') or resp.get('totalCount') or resp.get('count')
+                if isinstance(count, int):
+                    return count
+        except Exception as e:
+            logging.debug(f"[DAMINION] GetCount (new format) failed: {e}")
+
+        # 2. Try MediaItems/GetCount (Legacy search format)
+        try:
+            params = {"search": query}
+            endpoint = f"/api/MediaItems/GetCount?{urllib.parse.urlencode(params)}"
+            resp = self._make_request(endpoint)
+            
+            if isinstance(resp, int):
+                return resp
+            if isinstance(resp, dict):
+                count = resp.get('data') or resp.get('totalCount') or resp.get('count')
+                if isinstance(count, int):
+                    return count
+        except Exception:
+            pass
+
+        # 3. Try MediaItems/Get with size=1 (Final fallback)
+        try:
+            params = {
+                "queryLine": query,
+                "f": f"{tag_id},all",
+                "index": 0,
+                "size": 1
+            }
+            endpoint = f"/api/MediaItems/Get?{urllib.parse.urlencode(params)}"
+            resp = self._make_request(endpoint)
+            if isinstance(resp, dict):
+                return resp.get('totalCount') or resp.get('recordsTotal') or 0
+        except Exception:
+            pass
+            
+        return 0
 
     def test_connection(self) -> Dict[str, Any]:
         """
