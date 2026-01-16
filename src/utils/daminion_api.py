@@ -26,6 +26,11 @@ class DaminionAPI:
         self.password = password
         self.timeout = timeout
         self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest'
+        })
         self.authenticated = False
 
     def authenticate(self, username: Optional[str] = None, password: Optional[str] = None) -> bool:
@@ -65,14 +70,26 @@ class DaminionAPI:
             else:
                 raise DaminionAuthenticationError("Client is not authenticated.")
 
+        # Match DaminionClient's URL construction: base_url + / + endpoint (stripped of leading /)
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         kwargs.setdefault('timeout', self.timeout)
+        logger.debug(f"Making {method} request to: {url}")
         
         try:
+            # Add some common headers like the original client
+            headers = kwargs.get('headers', {})
+            headers.update({
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            })
+            kwargs['headers'] = headers
+
             response = self.session.request(method, url, **kwargs)
+            if response.status_code != 200 and response.status_code != 204:
+                logger.error(f"Request failed with {response.status_code}: {response.text} at {url}")
             response.raise_for_status()
             
-            if response.status_code == 204: # No Content
+            if response.status_code == 204 or not response.content:
                 return None
             
             return response.json()
