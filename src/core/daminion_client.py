@@ -1559,6 +1559,376 @@ class DaminionClient:
             logging.warning(f"[DAMINION] [ERROR] Failed to update metadata for item {item_id}")
         return result
 
+    # ==================== MERGED FROM DaminionAPI ====================
+    # Flag filtering, rating filter, favorites, AI processing, catalog stats
+    
+    def _normalize_items_response(self, response: Any) -> Dict:
+        """
+        Normalize various API response formats into a consistent structure.
+        
+        Returns:
+            Dict with 'Items' (list) and 'TotalCount' (int)
+        """
+        if response is None:
+            return {'Items': [], 'TotalCount': 0}
+        
+        if isinstance(response, list):
+            return {'Items': response, 'TotalCount': len(response)}
+        
+        if isinstance(response, dict):
+            # Daminion uses 'mediaItems' for item lists (primary)
+            items = (response.get('mediaItems') or response.get('Items') or 
+                    response.get('items') or response.get('Data') or 
+                    response.get('data') or [])
+            
+            # Daminion uses 'recordsTotal' or 'data' for total count
+            total = (response.get('recordsTotal') or response.get('TotalCount') or 
+                    response.get('totalCount') or response.get('Total') or 
+                    response.get('total') or response.get('Count') or 
+                    response.get('count') or len(items))
+            
+            return {'Items': items, 'TotalCount': total}
+        
+        return {'Items': [], 'TotalCount': 0}
+
+    # --- Flag Filtering ---
+
+    def get_flagged_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
+        """
+        Retrieve items marked as 'Flagged'.
+        Uses the Daminion query format for flag status.
+        
+        Returns:
+            Dict with 'Items' list and 'TotalCount' integer
+        """
+        flag_queries = ['Flag:=1', 'Flag:>0', 'Pick:=1']
+        
+        for query in flag_queries:
+            try:
+                params = urllib.parse.urlencode({
+                    'search': query,
+                    'start': page_index * page_size,
+                    'length': page_size
+                })
+                response = self._make_request(f"/api/MediaItems/Get?{params}")
+                if response:
+                    normalized = self._normalize_items_response(response)
+                    if normalized.get('TotalCount', 0) > 0 or normalized.get('Items'):
+                        return normalized
+            except DaminionAPIError:
+                continue
+        
+        return {'Items': [], 'TotalCount': 0}
+
+    def get_rejected_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
+        """
+        Retrieve items marked as 'Rejected'.
+        
+        Returns:
+            Dict with 'Items' list and 'TotalCount' integer
+        """
+        reject_queries = ['Flag:=-1', 'Flag:<0', 'Pick:=-1']
+        
+        for query in reject_queries:
+            try:
+                params = urllib.parse.urlencode({
+                    'search': query,
+                    'start': page_index * page_size,
+                    'length': page_size
+                })
+                response = self._make_request(f"/api/MediaItems/Get?{params}")
+                if response:
+                    normalized = self._normalize_items_response(response)
+                    if normalized.get('TotalCount', 0) > 0 or normalized.get('Items'):
+                        return normalized
+            except DaminionAPIError:
+                continue
+        
+        return {'Items': [], 'TotalCount': 0}
+
+    def get_unflagged_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
+        """
+        Retrieve items without any flag (neither flagged nor rejected).
+        
+        Returns:
+            Dict with 'Items' list and 'TotalCount' integer
+        """
+        unflagged_queries = ['Flag:=0', 'Pick:=0']
+        
+        for query in unflagged_queries:
+            try:
+                params = urllib.parse.urlencode({
+                    'search': query,
+                    'start': page_index * page_size,
+                    'length': page_size
+                })
+                response = self._make_request(f"/api/MediaItems/Get?{params}")
+                if response:
+                    normalized = self._normalize_items_response(response)
+                    if normalized.get('TotalCount', 0) > 0 or normalized.get('Items'):
+                        return normalized
+            except DaminionAPIError:
+                continue
+        
+        return {'Items': [], 'TotalCount': 0}
+
+    # --- Rating Filter ---
+
+    def get_items_by_rating(self, min_rating: int = 1, max_rating: int = 5, 
+                           page_index: int = 0, page_size: int = 100) -> Dict:
+        """
+        Retrieve items within a rating range (1-5 stars).
+        
+        Returns:
+            Dict with 'Items' list and 'TotalCount' integer
+        """
+        if min_rating == max_rating:
+            query = f'Rating:={min_rating}'
+        else:
+            query = f'Rating:>={min_rating} AND Rating:<={max_rating}'
+        
+        params = urllib.parse.urlencode({
+            'search': query,
+            'start': page_index * page_size,
+            'length': page_size
+        })
+        response = self._make_request(f"/api/MediaItems/Get?{params}")
+        return self._normalize_items_response(response)
+
+    # --- Text Search with Normalized Response ---
+
+    def text_search(self, query: str, page_index: int = 0, page_size: int = 100) -> Dict:
+        """
+        Full-text search across the catalog.
+        
+        Args:
+            query: Search text (keywords, file names, metadata, etc.)
+            page_index: Page offset for pagination
+            page_size: Number of items per page
+            
+        Returns:
+            Dict with 'Items' list and 'TotalCount' integer
+        """
+        params = urllib.parse.urlencode({
+            'search': query,
+            'start': page_index * page_size,
+            'length': page_size
+        })
+        response = self._make_request(f"/api/MediaItems/Get?{params}")
+        return self._normalize_items_response(response)
+
+    def search_count(self, query: str) -> int:
+        """Get count of items matching a text search without fetching them."""
+        params = urllib.parse.urlencode({'search': query})
+        try:
+            response = self._make_request(f"/api/MediaItems/GetCount?{params}")
+            if isinstance(response, int):
+                return response
+            elif isinstance(response, dict):
+                return response.get('data', response.get('Count', 0))
+        except DaminionAPIError:
+            pass
+        return 0
+
+    # --- Favorites (Tray) Operations ---
+
+    def get_favorites(self) -> List[Dict]:
+        """GET api/MediaItems/Tray - Get items in favorites/tray."""
+        try:
+            response = self._make_request("/api/MediaItems/Tray")
+            return self._normalize_items_response(response).get('Items', [])
+        except DaminionAPIError:
+            return []
+
+    def add_to_favorites(self, item_ids: List[int]) -> bool:
+        """POST api/MediaItems/AppendToTray - Add items to favorites."""
+        try:
+            self._make_request("/api/MediaItems/AppendToTray", method='POST', data=item_ids)
+            return True
+        except DaminionAPIError:
+            return False
+
+    def clear_favorites(self) -> bool:
+        """POST api/MediaItems/ClearTray/0 - Clear all favorites."""
+        try:
+            self._make_request("/api/MediaItems/ClearTray/0", method='POST')
+            return True
+        except DaminionAPIError:
+            return False
+
+    # --- AI Processing ---
+
+    def process_ai_labels(self, item_ids: List[int]) -> bool:
+        """POST api/MediaItems/ProcessAILabels - Trigger AI labeling for items."""
+        try:
+            self._make_request("/api/MediaItems/ProcessAILabels", method='POST', data=item_ids)
+            return True
+        except DaminionAPIError:
+            return False
+
+    def process_ai_labels_query(self, query: str) -> bool:
+        """POST api/MediaItems/ProcessAILabelsQuery - AI labeling by query."""
+        try:
+            self._make_request("/api/MediaItems/ProcessAILabelsQuery", method='POST', data=query)
+            return True
+        except DaminionAPIError:
+            return False
+
+    # --- Item Approval/Deletion ---
+
+    def approve_items(self, item_ids: List[int]) -> bool:
+        """POST api/MediaItems/ApproveItems - Approve pending items."""
+        try:
+            self._make_request("/api/MediaItems/ApproveItems", method='POST', data=item_ids)
+            return True
+        except DaminionAPIError:
+            return False
+
+    def delete_items(self, item_ids: List[int]) -> bool:
+        """POST api/MediaItems/Remove - Delete items from catalog."""
+        try:
+            self._make_request("/api/MediaItems/Remove", method='POST', data=item_ids)
+            return True
+        except DaminionAPIError:
+            return False
+
+    # --- Settings ---
+
+    def get_watermark_data(self, guid: str) -> Dict:
+        """GET api/Settings/GetWatermarkData - Get watermark configuration."""
+        try:
+            return self._make_request(f"/api/Settings/GetWatermarkData?guid={guid}")
+        except DaminionAPIError:
+            return {}
+
+    def get_security_mode(self) -> str:
+        """GET api/Settings/GetSecurityMode - Get security mode setting."""
+        try:
+            response = self._make_request("/api/Settings/GetSecurityMode")
+            return str(response) if response else ""
+        except DaminionAPIError:
+            return ""
+
+    # --- User Management ---
+
+    def get_users(self) -> List[Dict]:
+        """GET api/UserManager/GetUsers - Get list of users."""
+        try:
+            response = self._make_request("/api/UserManager/GetUsers")
+            if isinstance(response, list):
+                return response
+            elif isinstance(response, dict):
+                return response.get('users', response.get('items', []))
+            return []
+        except DaminionAPIError:
+            return []
+
+    def get_roles(self) -> List[Dict]:
+        """GET api/UserManager/GetRoles - Get list of roles."""
+        try:
+            response = self._make_request("/api/UserManager/GetRoles")
+            if isinstance(response, list):
+                return response
+            elif isinstance(response, dict):
+                return response.get('roles', response.get('items', []))
+            return []
+        except DaminionAPIError:
+            return []
+
+    # --- Catalog Statistics ---
+
+    def get_catalog_stats(self) -> Dict[str, Any]:
+        """
+        Get overall catalog statistics.
+        
+        Returns:
+            Dict with total_items, collections_count, saved_searches_count
+        """
+        stats = {
+            'total_items': 0,
+            'collections_count': 0,
+            'saved_searches_count': 0
+        }
+        
+        try:
+            stats['total_items'] = self.get_total_count()
+        except DaminionAPIError:
+            pass
+        
+        try:
+            collections = self.get_shared_collections()
+            if collections:
+                stats['collections_count'] = len(collections)
+        except DaminionAPIError:
+            pass
+        
+        try:
+            searches = self.get_saved_searches()
+            if searches:
+                stats['saved_searches_count'] = len(searches)
+        except DaminionAPIError:
+            pass
+        
+        return stats
+
+    # --- Thumbnail URL ---
+
+    def get_thumbnail_url(self, item_id: int, width: int = 200, height: int = 200) -> str:
+        """Returns the URL for a thumbnail."""
+        return f"{self.base_url}/api/Thumbnail/Get/{item_id}?width={width}&height={height}"
+
+    # --- Pagination Helper ---
+
+    def paginate_results(self, fetch_func: Callable, page_size: int = 100, 
+                        max_items: Optional[int] = None) -> List[Dict]:
+        """
+        Helper to paginate through all results using a fetch function.
+        
+        Args:
+            fetch_func: Function that takes (page_index, page_size) and returns {'Items': [], 'TotalCount': int}
+            page_size: Items per page
+            max_items: Maximum items to retrieve (None = all)
+            
+        Returns:
+            List of all items
+        """
+        all_items = []
+        page_index = 0
+        
+        while True:
+            result = fetch_func(page_index, page_size)
+            items = result.get('Items', [])
+            total = result.get('TotalCount', 0)
+            
+            if not items:
+                break
+            
+            all_items.extend(items)
+            
+            if len(all_items) >= total:
+                break
+            if max_items and len(all_items) >= max_items:
+                all_items = all_items[:max_items]
+                break
+            
+            page_index += 1
+        
+        return all_items
+
+    def get_all_flagged_items(self, max_items: Optional[int] = None) -> List[Dict]:
+        """Retrieve all flagged items with automatic pagination."""
+        return self.paginate_results(
+            lambda pi, ps: self.get_flagged_items_filtered(page_index=pi, page_size=ps),
+            max_items=max_items
+        )
+
+    def get_all_search_results(self, query: str, max_items: Optional[int] = None) -> List[Dict]:
+        """Retrieve all items matching a search query with automatic pagination."""
+        return self.paginate_results(
+            lambda pi, ps: self.text_search(query, page_index=pi, page_size=ps),
+            max_items=max_items
+        )
+
     def cleanup_temp_files(self):
         """Remove all cached thumbnail files."""
         try:
