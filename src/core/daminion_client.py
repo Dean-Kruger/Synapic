@@ -742,7 +742,7 @@ class DaminionClient:
                        current_start = 0
                        batch_size = 500
                        while (not max_items or max_items <= 0 or len(items_to_process) < max_items):
-                            batch = self.search_items(query=search_term, index=current_start, page_size=batch_size)
+                            batch = self.search_items(queryBody=search_term, index=current_start, page_size=batch_size)
                             if not batch: break
                             items_to_process.extend(batch)
                             if len(batch) < batch_size: break
@@ -770,6 +770,13 @@ class DaminionClient:
                   items_to_process = all_items
 
         # Apply final pass filtering
+        # When doing keyword search, exclude 'Keywords' from untagged filter since results will have keywords
+        effective_untagged_fields = untagged_fields
+        if scope == "search" and search_term and untagged_fields:
+            effective_untagged_fields = [f for f in untagged_fields if f.lower() != 'keywords']
+            if len(effective_untagged_fields) < len(untagged_fields):
+                logging.debug(f"[DAMINION] Excluded 'Keywords' from untagged filter for keyword search")
+        
         if items_to_process:
              processed_count = 0
              dropped_count = 0
@@ -778,7 +785,7 @@ class DaminionClient:
                 if 'id' not in item and 'uniqueId' in item:
                      item['id'] = item['uniqueId']
                      
-                if self._passes_filters(item, status_filter, untagged_fields):
+                if self._passes_filters(item, status_filter, effective_untagged_fields):
                     filtered_items.append(item)
                     processed_count += 1
                     if max_items and max_items > 0 and len(filtered_items) >= max_items:
@@ -1711,30 +1718,38 @@ class DaminionClient:
         """
         Retrieve items marked as 'Flagged'.
         """
-        query = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_FLAGGED}"
+        # Note: FLAGS_TAG_ID is numeric ID 42, but get_items_by_query expects tag names
+        # We'll use direct API call instead since this uses numeric IDs
+        query_str = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_FLAGGED}"
         operators = f"{self.FLAGS_TAG_ID},any"
-        items = self.get_items_by_query(query, operators, index=page_index * page_size, page_size=page_size)
-        count = self.search_count(query, operators=operators)
+        # Use search_items which accepts string queries
+        result = self.search_items(query_str, operators, page_index=page_index, page_size=page_size)
+        items = self._normalize_items_response(result).get('Items', [])
+        count = self.search_count(query_str, operators=operators)
         return {'Items': items, 'TotalCount': count}
 
     def get_rejected_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
         """
         Retrieve items marked as 'Rejected'.
         """
-        query = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_REJECTED}"
+        query_str = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_REJECTED}"
         operators = f"{self.FLAGS_TAG_ID},any"
-        items = self.get_items_by_query(query, operators, index=page_index * page_size, page_size=page_size)
-        count = self.search_count(query, operators=operators)
+        # Use search_items which accepts string queries
+        result = self.search_items(query_str, operators, page_index=page_index, page_size=page_size)
+        items = self._normalize_items_response(result).get('Items', [])
+        count = self.search_count(query_str, operators=operators)
         return {'Items': items, 'TotalCount': count}
 
     def get_unflagged_items_filtered(self, page_index: int = 0, page_size: int = 100) -> Dict:
         """
         Retrieve items without any flag.
         """
-        query = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_UNFLAGGED}"
+        query_str = f"{self.FLAGS_TAG_ID},{self.FLAG_VALUE_UNFLAGGED}"
         operators = f"{self.FLAGS_TAG_ID},any"
-        items = self.get_items_by_query(query, operators, index=page_index * page_size, page_size=page_size)
-        count = self.search_count(query, operators=operators)
+        # Use search_items which accepts string queries
+        result = self.search_items(query_str, operators, page_index=page_index, page_size=page_size)
+        items = self._normalize_items_response(result).get('Items', [])
+        count = self.search_count(query_str, operators=operators)
         return {'Items': items, 'TotalCount': count}
 
     # --- Rating Filter ---
@@ -2085,10 +2100,12 @@ class DaminionClient:
         
         # If we found an ID, use it for exact match
         if keyword_value_id:
-            query = f"{keywords_tag_id},{keyword_value_id}"
-            operators = f"{keywords_tag_id},all"
-            logging.info(f"[DAMINION] Keyword search with ID: query={query}, operators={operators}")
-            items = self.get_items_by_query(query, operators, page_size=page_size)
+            # Build proper query dictionary for get_items_by_query
+            query = {"Keywords": keyword_value_id}
+            operators = {"Keywords": "any"}
+            logging.info(f"[DAMINION] Keyword search with ID: Keywords={keyword_value_id}")
+            result = self.get_items_by_query(query, operators, page_size=page_size)
+            items = result.get('Items', [])
             
             # If the index count is 0 or missing, use search_count to get the true result count
             actual_count = total_items_for_keyword
@@ -2102,14 +2119,17 @@ class DaminionClient:
             logging.info(f"[DAMINION] Keyword ID results: {len(items)} items, count {actual_count}")
             return items, actual_count
             
-        # Fallback: User provided screenshot shows query=13,text format works for text search in tag
-        logging.info(f"[DAMINION] Keyword ID not found, trying direct tag text query: query={keywords_tag_id},{keyword}")
-        query = f"{keywords_tag_id},{keyword}"
-        operators = f"{keywords_tag_id},all"
-        items = self.get_items_by_query(query, operators, page_size=page_size)
+        # Fallback: try text-based keyword search through query dictionary
+        logging.info(f"[DAMINION] Keyword ID not found, trying direct tag text query for '{keyword}'")
+        query = {"Keywords": keyword}
+        operators = {"Keywords": "any"}
+        result = self.get_items_by_query(query, operators, page_size=page_size)
+        items = result.get('Items', [])
         
         # For text query, we need to get total count specifically
-        count = self.search_count(query)
+        # Need to use the numeric tag ID for search_count
+        count_query = f"{keywords_tag_id}:'{keyword}'"
+        count = self.search_count(count_query)
         logging.info(f"[DAMINION] Keyword text fallback: {len(items)} items, search_count {count}")
         return items, count
 
