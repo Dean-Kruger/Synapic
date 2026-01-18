@@ -196,38 +196,50 @@ class DaminionClient:
     def get_filtered_item_count(
         self,
         scope: str = "all",
-        status_filter: str = "all",
-        untagged_tags: Optional[List[str]] = None,
+        saved_search_id: Optional[int] = None,
+        collection_id: Optional[int] = None,
         search_term: Optional[str] = None,
-        collection_id: Optional[int] = None
+        untagged_fields: Optional[List[str]] = None,
+        status_filter: str = "all"
     ) -> int:
         """
         Get count of items matching filters.
         
+        EXACTLY matches old DaminionClient interface for backward compatibility.
+        
         Args:
-            scope: Search scope ('all', 'search', 'collection')
-            status_filter: Status filter ('all', 'unassigned', 'flagged', etc.)
-            untagged_tags: List of tag names that must be empty
-            search_term: Keyword search term
-            collection_id: Collection ID for collection scope
+            scope: Search scope ('all', 'saved_search', 'collection', 'search')
+            saved_search_id: Saved search ID (for scope='saved_search')
+            collection_id: Collection ID (for scope='collection')
+            search_term: Keyword search term (for scope='search')
+            untagged_fields: List of tag names that must be empty
+            status_filter: Status filter ('all', 'unassigned', 'approved', 'rejected')
             
         Returns:
             Number of matching items
         """
         try:
+            # Simple case get total
+            if scope == "all" and status_filter == "all" and not untagged_fields:
+                count = self._api.media_items.get_count()
+                logger.info(f"Base case: All items. Count: {count}")
+                return count
+            
+            # Saved search
+            if scope == "saved_search" and saved_search_id:
+                logger.warning("Saved searches not supported via Web API")
+                return 0
+            
+            # Collection
             if scope == "collection" and collection_id:
-                # Get collection items count
-                items = self._api.collections.get_items(collection_id, page_size=1)
-                # Need to get full count - use MediaItems count with collection filter
-                # For now, approximate from collection info
                 collections = self._api.collections.get_all()
                 for coll in collections:
                     if coll.id == collection_id:
                         return coll.item_count
                 return 0
             
-            elif scope == "search" and search_term:
-                # Search by keyword
+            # Keyword search
+            if scope == "search" and search_term:
                 keywords_tag_id = self._get_tag_id("keywords")
                 if not keywords_tag_id:
                     logger.warning("Keywords tag not found")
@@ -246,7 +258,7 @@ class DaminionClient:
                 # Use the first matching keyword
                 keyword_value = keyword_values[0]
                 
-                # Search with this keyword
+                # Get count with proper query format
                 query_line = f"{keywords_tag_id},{keyword_value.id}"
                 operators = f"{keywords_tag_id},any"
                 
@@ -258,39 +270,38 @@ class DaminionClient:
                 logger.info(f"Keyword search '{search_term}' found {count} items")
                 return count
             
-            else:
-                # Get total count
-                count = self._api.media_items.get_count()
-                logger.info(f"Total catalog count: {count}")
-                return count
+            # Can't determine count
+            return -1
                 
         except Exception as e:
             logger.error(f"Failed to get filtered count: {e}", exc_info=True)
-            return 0
+            return -1
     
     def get_items_filtered(
         self,
         scope: str = "all",
-        status_filter: str = "all",
-        untagged_tags: Optional[List[str]] = None,
-        search_term: Optional[str] = None,
+        saved_search_id: Optional[int] = None,
         collection_id: Optional[int] = None,
-        max_items: int = 0,
-        progress_callback: Optional[Callable] = None,
-        stop_event: Optional[Any] = None
+        search_term: Optional[str] = None,
+        untagged_fields: Optional[List[str]] = None,
+        status_filter: str = "all",
+        max_items: Optional[int] = None,
+        progress_callback: Optional[Callable] = None
     ) -> List[Dict]:
         """
         Retrieve items matching filters.
         
+        EXACTLY matches old DaminionClient interface for backward compatibility.
+        
         Args:
-            scope: Search scope
+            scope: Search scope ('all', 'saved_search', 'collection', 'search')
+            saved_search_id: Saved search ID (for scope='saved_search')
+            collection_id: Collection ID (for scope='collection')
+            search_term: Keyword search term (for scope='search')
+            untagged_fields: Tags that must be empty
             status_filter: Status filter
-            untagged_tags: Tags that must be empty
-            search_term: Keyword search term
-            collection_id: Collection ID
             max_items: Maximum items to return (0 = unlimited)
             progress_callback: Progress callback function
-            stop_event: Stop event for cancellation
             
         Returns:
             List of matching media items
@@ -298,16 +309,21 @@ class DaminionClient:
         try:
             items = []
             
+            # Saved search - not supported
+            if scope == "saved_search":
+                logger.warning("Saved searches not supported via Web API")
+                return []
+            
+            # Collection
             if scope == "collection" and collection_id:
-                # Get collection items
                 items = self._api.collections.get_items(
                     collection_id=collection_id,
-                    page_size=max_items if max_items > 0 else 500
+                    page_size=max_items if max_items and max_items > 0 else 500
                 )
                 logger.info(f"Retrieved {len(items)} items from collection")
                 
+            # Keyword search
             elif scope == "search" and search_term:
-                # Search by keyword
                 keywords_tag_id = self._get_tag_id("keywords")
                 if not keywords_tag_id:
                     logger.warning("Keywords tag not found")
@@ -333,46 +349,28 @@ class DaminionClient:
                 items = self._api.media_items.search(
                     query_line=query_line,
                     operators=operators,
-                    page_size=max_items if max_items > 0 else 500
+                    page_size=max_items if max_items and max_items > 0 else 500
                 )
                 
                 logger.info(f"Keyword search '{search_term}' returned {len(items)} items")
                 
-            else:
-                # Get all items (with limit)
+            # All items
+            elif scope == "all":
                 items = self._api.media_items.search(
                     query="*",
-                    page_size=max_items if max_items > 0 else 500
+                    page_size=max_items if max_items and max_items > 0 else 500
                 )
                 logger.info(f"Retrieved {len(items)} items (all)")
             
-            # Apply status filter if needed
-            if status_filter == "unassigned":
-                filtered_items = []
-                for item in items:
-                    # Check if item needs filtering
-                   # Get full metadata if needed
-                    try:
-                        metadata = self._api.item_data.get(item['id'], get_all=False)
-                        # TODO: Implement proper status checking based on metadata
-                        # For now, include all items
-                        filtered_items.append(item)
-                    except:
-                        filtered_items.append(item)
-                
-                logger.info(f"Status filter '{status_filter}': {len(filtered_items)}/{len(items)} items passed")
-                items = filtered_items
+            # Apply status filter if needed (simplified for now)
+            if status_filter != "all":
+                # TODO: Implement proper status filtering
+                logger.debug(f"Status filter '{status_filter}' - not fully implemented yet")
             
-            # Apply untagged filter if needed
-            if untagged_tags:
-                filtered_items = []
-                for item in items:
-                    # TODO: Implement proper untagged filtering
-                    # For now, include all items
-                    filtered_items.append(item)
-                
-                logger.info(f"Untagged filter: {len(filtered_items)}/{len(items)} items passed")
-                items = filtered_items
+            # Apply untagged filter if needed (simplified for now)  
+            if untagged_fields:
+                # TODO: Implement proper untagged filtering
+                logger.debug(f"Untagged filter - not fully implemented yet")
             
             return items
             
