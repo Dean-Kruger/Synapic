@@ -459,6 +459,131 @@ class DaminionClient:
             logger.error(f"Failed to get file path for item {item_id}: {e}")
             return None
     
+    def update_item_metadata(
+        self,
+        item_id: int,
+        category: Optional[str] = None,
+        keywords: Optional[List[str]] = None,
+        description: Optional[str] = None
+    ) -> bool:
+        """
+        Update metadata for a media item.
+        
+        Args:
+            item_id: Media item ID
+            category: Category to set (single value)
+            keywords: List of keywords to add
+            description: Description text to set
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            operations = []
+            
+            # Get tag GUIDs from schema
+            if not self._tag_schema:
+                logger.error("Tag schema not loaded")
+                return False
+            
+            # Build tag GUID lookup
+            tag_guid_map = {tag.name.lower(): tag.guid for tag in self._tag_schema}
+            
+            # Add category if provided
+            if category:
+                category_guid = tag_guid_map.get('category')
+                if category_guid:
+                    # For indexed tags like Category, we need to find or create the value
+                    category_tag_id = self._get_tag_id('category')
+                    if category_tag_id:
+                        # Find existing category value
+                        category_values = self._api.tags.find_tag_values(
+                            tag_id=category_tag_id,
+                            filter_text=category
+                        )
+                        
+                        if category_values:
+                            # Use existing value
+                            operations.append({
+                                "guid": category_guid,
+                                "id": category_values[0].id,
+                                "remove": False
+                            })
+                        else:
+                            # Create new category value
+                            try:
+                                new_id = self._api.tags.create_tag_value(
+                                    tag_guid=category_guid,
+                                    value_text=category
+                                )
+                                operations.append({
+                                    "guid": category_guid,
+                                    "id": new_id,
+                                    "remove": False
+                                })
+                            except Exception as e:
+                                logger.warning(f"Failed to create category value '{category}': {e}")
+            
+            # Add keywords if provided
+            if keywords:
+                keywords_guid = tag_guid_map.get('keywords')
+                if keywords_guid:
+                    keywords_tag_id = self._get_tag_id('keywords')
+                    if keywords_tag_id:
+                        for keyword in keywords:
+                            # Find or create keyword value
+                            keyword_values = self._api.tags.find_tag_values(
+                                tag_id=keywords_tag_id,
+                                filter_text=keyword
+                            )
+                            
+                            if keyword_values:
+                                operations.append({
+                                    "guid": keywords_guid,
+                                    "id": keyword_values[0].id,
+                                    "remove": False
+                                })
+                            else:
+                                # Create new keyword
+                                try:
+                                    new_id = self._api.tags.create_tag_value(
+                                        tag_guid=keywords_guid,
+                                        value_text=keyword
+                                    )
+                                    operations.append({
+                                        "guid": keywords_guid,
+                                        "id": new_id,
+                                        "remove": False
+                                    })
+                                except Exception as e:
+                                    logger.warning(f"Failed to create keyword '{keyword}': {e}")
+            
+            # Add description if provided
+            if description:
+                description_guid = tag_guid_map.get('description')
+                if description_guid:
+                    # Description is a simple text field, not indexed
+                    operations.append({
+                        "guid": description_guid,
+                        "value": description
+                    })
+            
+            # Perform batch update if we have operations
+            if operations:
+                self._api.item_data.batch_update(
+                    item_ids=[item_id],
+                    operations=operations
+                )
+                logger.info(f"Successfully updated metadata for item {item_id}")
+                return True
+            else:
+                logger.warning(f"No metadata operations to perform for item {item_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to update metadata for item {item_id}: {e}", exc_info=True)
+            return False
+    
     def logout(self):
         """Logout and cleanup."""
         try:
