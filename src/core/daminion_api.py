@@ -230,22 +230,21 @@ class DaminionAPI:
         Raises:
             DaminionAuthenticationError: If authentication fails
         """
-        endpoint = "/api/UserManager/Login"
-        
-        # Build request body
-        body = {
-            "netManagerLogin": self.username,
-            "netManagerPass": self.password
-        }
-        
-        if self.catalog_id:
-            body["catalogId"] = self.catalog_id
-        
         try:
+            # Build query parameters (Daminion expects these in URL, not body)
+            params = {
+                "userName": self.username,
+                "password": self.password
+            }
+            
+            if self.catalog_id:
+                params["catalogId"] = self.catalog_id
+            
+            # Make POST request with params in URL
             response = self._make_request(
-                endpoint,
+                "/api/UserManager/Login",
                 method="POST",
-                data=body,
+                params=params,
                 skip_auth=True
             )
             
