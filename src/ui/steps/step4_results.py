@@ -65,7 +65,7 @@ class Step4Results(ctk.CTkFrame):
         action_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         action_frame.grid(row=4, column=0, pady=20, sticky="ew")
         
-        ctk.CTkButton(action_frame, text="Open Log Folder", command=self.open_logs, fg_color="gray").pack(side="left", padx=20)
+        ctk.CTkButton(action_frame, text="Open Log File", command=self.open_logs, fg_color="gray").pack(side="left", padx=20)
         ctk.CTkButton(action_frame, text="Export CSV", command=self.export_report).pack(side="left", padx=20)
         ctk.CTkButton(action_frame, text="New Session", command=self.new_session, fg_color="green", width=200).pack(side="right", padx=20)
 
@@ -89,27 +89,37 @@ class Step4Results(ctk.CTkFrame):
         ctk.CTkLabel(row, text=tags, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
 
     def open_logs(self):
-        """Open the log folder in the system file explorer."""
+        """Open the detailed log file (synapic.log)."""
         from src.utils.logger import LOG_DIR
+        log_file = LOG_DIR / "synapic.log"
         
         try:
-            if not LOG_DIR.exists():
-                print(f"Log directory does not exist: {LOG_DIR}")
+            if not log_file.exists():
+                print(f"Log file does not exist: {log_file}")
+                # Fallback to directory
+                if LOG_DIR.exists():
+                     self._open_path(LOG_DIR)
                 return
             
-            # Platform-specific folder opening
-            system = platform.system()
-            if system == 'Windows':
-                os.startfile(LOG_DIR)
-            elif system == 'Darwin':  # macOS
-                subprocess.run(['open', str(LOG_DIR)])
-            else:  # Linux and others
-                subprocess.run(['xdg-open', str(LOG_DIR)])
-                
-            print(f"Opened log folder: {LOG_DIR}")
+            self._open_path(log_file)
+            print(f"Opened log file: {log_file}")
             
         except Exception as e:
-            print(f"Failed to open log folder: {e}")
+            print(f"Failed to open log file: {e}")
+
+    def _open_path(self, path):
+        """Helper to open file or folder."""
+        import subprocess
+        import os
+        import platform
+        
+        system = platform.system()
+        if system == 'Windows':
+            os.startfile(path)
+        elif system == 'Darwin':  # macOS
+            subprocess.run(['open', str(path)])
+        else:  # Linux
+            subprocess.run(['xdg-open', str(path)])
 
     def export_report(self):
         print("Exporting report...")

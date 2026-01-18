@@ -120,6 +120,48 @@ class DaminionClient:
             logger.error(f"Failed to load tag schema: {e}")
             self._tag_schema = []
     
+    def download_thumbnail(self, item_id: int, width: int = 300, height: int = 300) -> Optional[Path]:
+        """
+        Download thumbnail for a media item.
+        
+        Matches old DaminionClient interface.
+        
+        Args:
+            item_id: Media item ID
+            width: Thumbnail width in pixels
+            height: Thumbnail height in pixels
+            
+        Returns:
+            Path to downloaded thumbnail file, or None if failed
+        """
+        try:
+            # Create temp directory if not exists
+            if not self.temp_dir.exists():
+                self.temp_dir.mkdir(parents=True, exist_ok=True)
+                
+            # Fetch thumbnail data
+            thumbnail_bytes = self._api.thumbnails.get(
+                item_id=item_id,
+                width=width,
+                height=height
+            )
+            
+            if not thumbnail_bytes:
+                logger.warning(f"No thumbnail data received for item {item_id}")
+                return None
+                
+            # Save to temp file
+            temp_file = self.temp_dir / f"{item_id}.jpg"
+            with open(temp_file, 'wb') as f:
+                f.write(thumbnail_bytes)
+                
+            logger.debug(f"Saved thumbnail to {temp_file}")
+            return temp_file
+            
+        except Exception as e:
+            logger.error(f"Failed to download thumbnail for {item_id}: {e}")
+            return None
+
     def _get_tag_id(self, tag_name: str) -> Optional[int]:
         """Get tag ID from tag name."""
         return self._tag_name_to_id.get(tag_name.lower())
