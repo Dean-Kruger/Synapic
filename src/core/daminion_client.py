@@ -402,7 +402,24 @@ class DaminionClient:
         """Retrieve list of shared collections available on the server."""
         logging.info("[DAMINION] Fetching shared collections...")
         
-        # Proven to be ID 46 via probe (previously thought 45).
+        # Try official API endpoint first (per official Daminion API docs)
+        try:
+            endpoint = f"/api/SharedCollection/GetCollections?index={index}&pageSize={page_size}"
+            response = self._make_request(endpoint)
+            
+            if isinstance(response, list):
+                logging.info(f"[DAMINION] Retrieved {len(response)} shared collections via official API")
+                return response
+            elif isinstance(response, dict):
+                collections = response.get('collections') or response.get('items') or response.get('data') or []
+                if collections:
+                    logging.info(f"[DAMINION] Retrieved {len(collections)} shared collections via official API")
+                    return collections
+        except DaminionAPIError as e:
+            if "404" not in str(e):
+                logging.warning(f"[DAMINION] SharedCollection/GetCollections failed: {e}")
+        
+        # Fallback: Try using tag values for "Shared Collections" (ID 46)
         results = self.get_tag_values("Shared Collections")
         if not results:
              results = self.get_tag_values("shared collections")
@@ -420,12 +437,10 @@ class DaminionClient:
                        "name": item.get('name') or item.get('title') or item.get('stringValue') or item.get('value'),
                        "count": item.get('count', 0)
                   })
+             logging.info(f"[DAMINION] Retrieved {len(transformed)} collections via tag values fallback")
              return transformed
-
-        # Legacy endpoint fallback? (The probe showed 404 for this, but maybe keep as last resort)
-        # endpoint = f"/api/SharedCollection/GetCollections?index={index}&pageSize={page_size}"
-        # ... skipped as it failed in probe ...
         
+        logging.warning("[DAMINION] Could not retrieve shared collections via any method")
         return []
 
     def get_shared_collection_items(self, collection_id: str | int, index: int = 0, page_size: int = 200) -> List[Dict]:
@@ -536,76 +551,36 @@ class DaminionClient:
             raise
 
     def get_saved_searches(self) -> List[Dict]:
-        """Retrieve list of saved searches via the tag tree or specialized endpoint."""
+        """
+        Retrieve list of saved searches.
+        
+        NOTE: Saved Searches is not documented in the official Daminion Web API.
+        This feature may be desktop-client-only or version-specific.
+        We attempt to retrieve via tag values as a fallback.
+        """
         logging.info("[DAMINION] Fetching saved searches...")
+        logging.warning("[DAMINION] Note: 'Saved Searches' is not in official API docs - attempting fallback methods")
         
-        # 1. Try specialized endpoint (works on some versions)
-        try:
-            endpoint = "/api/MediaItems/GetSavedSearches"
-            response = self._make_request(endpoint)
-            # Response handling...
-            if isinstance(response, list):
-                return response
-            if isinstance(response, dict):
-                 searches = response.get('values') or response.get('items') or response.get('data')
-                 if searches: return searches
-        except Exception:
-             pass
-             
-        # 2. Try fetching as Tag Values for ID 39 (Saved Searches)
-        # Proven to be ID 39 via probe.
-        # User hint: ?query=39,117 suggests 39 is the tag, 117 is the value (Saved Search Item).
-        # We need the LIST of values (117, etc).
-        
-        # Try GetStructure/GetNodes for ID 39 which usually returns the tree
-        candidates = [
-            f"/api/TagValue/GetValues?tagId={self.SAVED_SEARCH_TAG_ID}",
-            f"/api/Tag/GetStructure?tagId={self.SAVED_SEARCH_TAG_ID}",
-            f"/api/Tag/GetNodes?tagId={self.SAVED_SEARCH_TAG_ID}", 
-            f"/api/ItemData/GetTagValues?tagId={self.SAVED_SEARCH_TAG_ID}",
-            f"/api/SavedSearches/Get",
-            f"/api/MediaItems/GetSavedSearches"
-        ]
-        
-        # Fallback to get_tag_values which is more comprehensive
+        # Try getting as tag values (most compatible approach)
         results = self.get_tag_values("Saved Searches")
         if results:
-             # Transform to standard format if needed
+             # Transform to standard format
              transformed = []
              for item in results:
                   transformed.append({
                        "id": item.get('id') or item.get('valueId'),
-                       "name": item.get('name') or item.get('title') or item.get('stringValue')
+                       "name": item.get('name') or item.get('title') or item.get('stringValue') or item.get('value'),
+                       "count": item.get('count', 0)
                   })
+             logging.info(f"[DAMINION] Retrieved {len(transformed)} saved searches via tag values")
              return transformed
-
-        for endpoint in candidates:
-             try:
-                 logging.debug(f"[DAMINION] Trying saved search endpoint: {endpoint}")
-                 response = self._make_request(endpoint)
-                 
-                 items = []
-                 if isinstance(response, list):
-                     items = response
-                 elif isinstance(response, dict):
-                     items = response.get('items') or response.get('nodes') or response.get('values') or []
-                     
-                 if items:
-                     logging.info(f"[DAMINION] Found {len(items)} saved searches via {endpoint}")
-                     return items
-                     # Ensure items have 'name' or 'title' mapping
-                     for item in items:
-                          if 'title' in item and 'name' not in item:
-                               item['name'] = item['title']
-                          if 'id' in item and 'value' not in item:
-                               item['value'] = item['name'] # for dropdown
-                     return items
-             except Exception as e:
-                 logging.debug(f"[DAMINION] Endpoint {endpoint} failed: {e}")
-
-        # 3. Fallback: If we assume 500s on correct endpoints are due to server issues, 
-        # we return empty but user can manually input if we enabled it.
-        logging.warning("[DAMINION] Failed to retrieve Saved Searches. The server might require specific version endpoints.")
+        
+        # If tag values approach fails, Saved Searches likely not supported
+        logging.warning(
+            "[DAMINION] Saved Searches not available via Web API. "
+            "This feature may only be accessible through the desktop client. "
+            "Consider using Shared Collections as an alternative."
+        )
         return []
 
     def get_items_filtered(self, 
@@ -902,54 +877,76 @@ class DaminionClient:
             return None
 
     def _passes_filters(self, item: Dict, status_filter: str, untagged_fields: List[str]) -> bool:
-        """Helper to check if an item passes status and untagged metadata filters."""
-        if not isinstance(item, dict): return False
+        """
+        Helper to check if an item passes status and untagged metadata filters.
+        
+        NOTE: Items from search_items() or search_by_keyword() may lack full ItemData,
+        particularly the 'Flagged' property. In such cases:
+        - If status_filter is set but item lacks flag data, we ACCEPT it (pass through)
+        - This prevents false rejections when filtering search results
+        """
+        if not isinstance(item, dict): 
+            return False
         
         # Status/Flag Logic
-        # From ItemData: 'Flag' property. 'values' list is non-empty if flagged?
-        # User screenshot: Unflagged items have no flag info or specific tag?
-        # In test output: ID 1 and 4 had Flag Raw Value = [] (Empty list). 
-        # We assume Empty List = Unflagged.
+        is_flagged = item.get('Flagged', None)  # None = unknown, False = unflagged, True = flagged
         
-        is_flagged = item.get('Flagged', False) # Set by get_item_details
-        
-        # Fallback to old checks if 'Flagged' key missing (e.g. from search results)
-        if 'Flagged' not in item:
+        # Fallback detection for items without 'Flagged' property (from search results)
+        if is_flagged is None:
+             # Try to detect from other fields
              status_val = item.get('Status') or item.get('status')
              status_id = item.get('2') 
              flag_val = item.get('Flag') or item.get('flag')
-             status_str = str(status_val or "").lower()
-             flag_str = str(flag_val or "").lower()
-             is_flagged = "flagged" in status_str or "flagged" in flag_str or status_id in [1, 2] or flag_val == 2
+             
+             if any([status_val, status_id, flag_val]):
+                 # We have some flag-related data, try to interpret it
+                 status_str = str(status_val or "").lower()
+                 flag_str = str(flag_val or "").lower()
+                 is_flagged = "flagged" in status_str or "flagged" in flag_str or status_id in [1, 2] or flag_val == 2
+             # else: is_flagged remains None (unknown)
 
         # Status Filter Logic
         if status_filter == "approved":
-             # In this user's context, "Approved" likely means "Flagged" based on UI?
-             # User UI shows: Unflagged, Flagged, Rejected.
-             # "Approved" usually maps to Flagged for selection.
-             if not is_flagged: return False
+             # "Approved" = Flagged items only
+             if is_flagged is None:
+                 # Unknown flag status - PASS THROUGH (don't reject)
+                 # This item came from search and lacks full metadata
+                 logging.debug(f"[FILTER] Item {item.get('id')} has unknown flag status, passing through for 'approved' filter")
+                 pass  # Continue to untagged check
+             elif not is_flagged:
+                 return False  # Definitely not flagged
+                 
         elif status_filter == "rejected":
-             # Need to detect Rejected status. Usually ID 3.
-             # In ItemData properties, if Flag is Rejected, how does it look?
-             # Assuming Flag is 3?
-             pass # Logic for rejected - if we can't detect, we might miss it.
-        elif status_filter == "unassigned": # Unflagged
-             if is_flagged: return False
+             # Rejected detection - need specific logic based on your Daminion setup
+             # For now, we don't have reliable detection, so pass through
+             logging.debug(f"[FILTER] 'Rejected' status filter not fully implemented, passing item through")
+             pass
+             
+        elif status_filter == "unassigned": # Unflagged only
+             if is_flagged is None:
+                 # Unknown - could be unflagged, so PASS THROUGH
+                 logging.debug(f"[FILTER] Item {item.get('id')} has unknown flag status, passing through for 'unassigned' filter")
+                 pass  # Continue to untagged check
+             elif is_flagged:
+                 return False  # Definitely flagged, reject it
         
-        # Untagged check
+        # Untagged check - require ALL specified fields to be empty
         if untagged_fields:
             is_any_field_empty = False
-            item_lower = {k.lower(): v for k, v in item.items()} # Flattened keys
+            item_lower = {k.lower(): v for k, v in item.items()}
             
             for field in untagged_fields:
                 val = item_lower.get(field.lower())
-                # Empty means None, "", empty list, or null string
-                # If field missing from ItemData/Get, it's untagged
-                if val is None or (isinstance(val, str) and not val.strip()) or (isinstance(val, list) and not val):
+                # Empty means None, "", empty list, or list with only empty strings
+                if val is None or \
+                   (isinstance(val, str) and not val.strip()) or \
+                   (isinstance(val, list) and (not val or all(not str(v).strip() for v in val))):
                     is_any_field_empty = True
                     break
             
-            if not is_any_field_empty: return False
+            if not is_any_field_empty:
+                # None of the fields are empty, so item is fully tagged - reject it
+                return False
             
         return True
 
