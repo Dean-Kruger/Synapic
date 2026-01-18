@@ -22,7 +22,9 @@ import threading
 
 
 # Log directory configuration
-LOG_DIR = Path.home() / ".synapic" / "logs"
+# Get the project root directory (3 levels up from this file: utils -> src -> project root)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+LOG_DIR = PROJECT_ROOT / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Sensitive field patterns to mask
