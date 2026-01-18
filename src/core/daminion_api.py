@@ -688,23 +688,44 @@ class TagsAPI(BaseAPI):
         Returns:
             List of matching TagValue objects
         """
+        # Use GetIndexedTagValues with parentValueId=-2 (search all levels)
+        # This matches the old working client implementation
         params = {
             "indexedTagId": tag_id,
-            "filter": filter_text
+            "parentValueId": -2,  # Required: search all hierarchy levels
+            "filter": filter_text,
+            "pageIndex": 0,
+            "pageSize": 100
         }
         
-        response = self._request("/api/IndexedTagValues/FindValues", params=params)
-        
-        values_data = response if isinstance(response, list) else response.get('values', [])
-        
-        return [
-            TagValue(
-                id=v.get('id', 0),
-                text=v.get('text', ''),
-                count=v.get('count', 0)
+        # Try GetIndexedTagValues endpoint (works with tag integer ID)
+        try:
+            response = self._request(
+                "/api/IndexedTagValues/GetIndexedTagValues", 
+                params=params
             )
-            for v in values_data
-        ]
+        except DaminionAPIError:
+            # Fallback: try base IndexedTagValues endpoint
+            response = self._request("/api/IndexedTagValues", params=params)
+        
+        # Parse response
+        values_data = response
+        if isinstance(response, dict):
+            values_data = response.get('values', response.get('items', response.get('data', [])))
+        
+        # Build TagValue list, matching exact keyword case-insensitively
+        result = []
+        for v in values_data:
+            text = v.get('text') or v.get('value') or v.get('name') or v.get('title') or ''
+            # Only include if it matches the filter text (case-insensitive exact match)
+            if text.lower() == filter_text.lower():
+                result.append(TagValue(
+                    id=v.get('id') or v.get('valueId', 0),
+                    text=text,
+                    count=v.get('count', 0)
+                ))
+        
+        return result
     
     def create_tag_value(
         self,
