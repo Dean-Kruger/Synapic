@@ -6,6 +6,7 @@ while using the new, robust DaminionAPI implementation internally.
 """
 
 import logging
+import tempfile
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from pathlib import Path
 
@@ -47,6 +48,10 @@ class DaminionClient:
         self.username = username
         self.password = password
         self.rate_limit = rate_limit
+        
+        # Initialize temp directory for thumbnails
+        self.temp_dir = Path(tempfile.gettempdir()) / "daminion_cache"
+        self.temp_dir.mkdir(exist_ok=True)
         
         # Create new API instance
         self._api = DaminionAPI(
