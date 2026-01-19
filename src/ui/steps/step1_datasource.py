@@ -63,6 +63,9 @@ class Step1Datasource(ctk.CTkFrame):
         
         ctk.CTkButton(nav_frame, text="Next Step", command=self.next_step, width=200, height=40).pack(pady=10)
 
+        # Debounce timer for search
+        self._debounce_timer = None
+
     def init_local_frame(self):
         ds = self.controller.session.datasource
         self.local_frame = ctk.CTkFrame(self.content_area)
@@ -255,7 +258,7 @@ class Step1Datasource(ctk.CTkFrame):
 
         ctk.CTkLabel(self.filters_container, text="Select Target Scope:", font=("Roboto", 18, "bold")).pack(anchor="w", padx=20, pady=(10, 0))
         
-        self.tabs = ctk.CTkTabview(self.filters_container, height=150)
+        self.tabs = ctk.CTkTabview(self.filters_container, height=150, command=self.update_count)
         self.tabs.pack(fill="x", padx=20, pady=(0, 10))
         
         self.tabs.add("Global Scan")
@@ -409,6 +412,19 @@ class Step1Datasource(ctk.CTkFrame):
             self.lbl_total_count.configure(text="")
             return
 
+        # Cancel existing timer if any
+        if self._debounce_timer:
+            self.after_cancel(self._debounce_timer)
+        
+        # Determine if we should debounce (only for keyword search typing)
+        is_typing = False
+        if hasattr(self, 'tabs') and self.tabs.get() == "Keyword Search":
+            is_typing = True
+        
+        delay = 500 if is_typing else 100
+        self._debounce_timer = self.after(delay, self._update_count_actual)
+
+    def _update_count_actual(self):
         self.lbl_total_count.configure(text="Counting...")
         
         import threading
@@ -478,7 +494,8 @@ class Step1Datasource(ctk.CTkFrame):
                         search_term=search_term if scope == "search" else None,
                         untagged_fields=untagged,
                         status_filter=status,
-                        max_items=limit_fallback
+                        max_items=limit_fallback,
+                        force_refresh=True
                     )
                     final_count = len(items)
                     if final_count >= limit_fallback:

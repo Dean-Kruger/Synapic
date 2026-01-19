@@ -245,27 +245,31 @@ class DaminionClient:
         collection_id: Optional[int] = None,
         search_term: Optional[str] = None,
         untagged_fields: Optional[List[str]] = None,
-        status_filter: str = "all"
+        status_filter: str = "all",
+        force_refresh: bool = False
     ) -> int:
         """Get count of items matching filters."""
-        logger.info(f"DAMINION COUNT REQUEST | scope: {scope} | search: {search_term} | status: {status_filter} | untagged: {untagged_fields}")
+        logger.info(f"DAMINION COUNT REQUEST | scope: {scope} | search: {search_term} | status: {status_filter} | untagged: {untagged_fields} | force: {force_refresh}")
         try:
-            # 1. Build text-based search components for robustness
-            search_parts = []
+            # 1. Build structured query components
+            q_parts = []
+            f_parts = []
             
-            # Status Filter
+            # Status Filter (Flag Tag usually ID 41)
             sf = (status_filter or "all").lower()
+            flag_tag_id = self._get_tag_id("flag") or 41
             if sf == "approved": 
-                search_parts.append("flag:flagged")
-                search_parts.append("status:approved")
+                q_parts.append(f"{flag_tag_id},2") # Flagged
+                f_parts.append(f"{flag_tag_id},any")
             elif sf == "rejected": 
-                search_parts.append("flag:rejected")
-                search_parts.append("status:rejected")
+                q_parts.append(f"{flag_tag_id},3") # Rejected
+                f_parts.append(f"{flag_tag_id},any")
             elif sf == "unassigned": 
-                search_parts.append("flag:unflagged")
-                search_parts.append("status:unassigned")
+                q_parts.append(f"{flag_tag_id},1") # Unflagged
+                f_parts.append(f"{flag_tag_id},any")
             
-            # Untagged Logic
+            # Untagged Logic (Text-based search is often better for ':none' on some versions)
+            search_parts = []
             if untagged_fields:
                 # If plural 'categories' wasn't used, normalize it
                 normalized_untagged = []
@@ -282,33 +286,42 @@ class DaminionClient:
                 search_parts.append(f'"{search_term}"')
 
             combined_search = " ".join(search_parts) if search_parts else None
-            logger.debug(f"Combined filter string: '{combined_search}'")
             
-            # Base Case: Global scan, no filters
-            if not combined_search and scope == "all":
-                 return self._api.media_items.get_count()
+            # 2. Scope-specific structured query components
+            if scope == "saved_search" and saved_search_id:
+                tag_id = self._get_tag_id("saved searches") or 39
+                q_parts.append(f"{tag_id},{saved_search_id}")
+                f_parts.append(f"{tag_id},any")
+            elif scope == "collection" and collection_id:
+                tag_id = self._get_tag_id("shared collections") or self._get_tag_id("collections") or 46
+                q_parts.append(f"{tag_id},{collection_id}")
+                f_parts.append(f"{tag_id},any")
 
-            # Collection total count fast-path
-            if scope == "collection" and collection_id and not combined_search:
-                collections = self._api.collections.get_all()
-                for coll in collections:
-                    if coll.id == collection_id:
-                        return coll.item_count
-                return 0
+            q_line = ";".join(q_parts) if q_parts else None
+            ops = ";".join(f_parts) if f_parts else None
+
+            # Execute Count with search string and structured query
+            count = self._api.media_items.get_count(
+                query=combined_search, 
+                query_line=q_line,
+                operators=ops,
+                force=force_refresh
+            )
+            logger.debug(f"Initial get_count(query='{combined_search}', q_line='{q_line}') returned {count}")
             
-            # Execute Count with search string
-            # If search string is used, we might need force=True to bypass cache if it's returning stale total
-            count = self._api.media_items.get_count(query=combined_search, force=True)
-            logger.debug(f"Initial get_count(query='{combined_search}') returned {count}")
-            
-            # If we got a count that looks like total catalog size but we HAD filters,
-            # or if it's suspiciously high, try a fallback search with size=1 to verify totalCount
-            if combined_search and count > 0:
-                 # Check if this count is actually the total count
+            # If we got a count that looks like total catalog size but we HAD filters/scope,
+            # try fallback search to verify totalCount
+            if (combined_search or q_line) and count > 0:
                  total_catalog = self._api.media_items.get_count()
-                 if count == total_catalog and combined_search:
-                      logger.warning(f"Count {count} matches total catalog {total_catalog} despite filters. Trying fallback search...")
-                      _, count = self._api.media_items.search(query=combined_search, page_size=1, include_total=True)
+                 if count >= total_catalog:
+                      logger.warning(f"Count {count} likely incorrect (matches total). Trying fallback search...")
+                      _, count = self._api.media_items.search(
+                          query=combined_search, 
+                          query_line=q_line,
+                          operators=ops,
+                          page_size=1, 
+                          include_total=True
+                      )
                       logger.info(f"Fallback search returned totalCount={count}")
             
             # Fallback for structured searches if search string failed (returned 0)
