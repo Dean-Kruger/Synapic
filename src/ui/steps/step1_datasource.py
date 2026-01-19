@@ -470,7 +470,7 @@ class Step1Datasource(ctk.CTkFrame):
                 final_count = count
                 if count == -1:
                     # Fallback to fetching items with a cap to Estimate
-                    limit_fallback = 200 # Lowered for faster UI response
+                    limit_fallback = 1000 # Increased for better estimation
                     items = self.controller.session.daminion_client.get_items_filtered(
                         scope=scope,
                         saved_search_id=ss_id,

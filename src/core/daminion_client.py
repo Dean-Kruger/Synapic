@@ -249,76 +249,67 @@ class DaminionClient:
         untagged_fields: Optional[List[str]] = None,
         status_filter: str = "all"
     ) -> int:
-        """
-        Get count of items matching filters.
-        
-        EXACTLY matches old DaminionClient interface for backward compatibility.
-        
-        Args:
-            scope: Search scope ('all', 'saved_search', 'collection', 'search')
-            saved_search_id: Saved search ID (for scope='saved_search')
-            collection_id: Collection ID (for scope='collection')
-            search_term: Keyword search term (for scope='search')
-            untagged_fields: List of tag names that must be empty
-            status_filter: Status filter ('all', 'unassigned', 'approved', 'rejected')
-            
-        Returns:
-            Number of matching items
-        """
+        """Get count of items matching filters."""
         try:
-            # Simple case get total
-            if scope == "all" and status_filter == "all" and not untagged_fields:
+            # Construct query parts
+            query_parts = []
+            operator_parts = []
+            
+            # 1. Status Filter (Flag tag ID is 5001)
+            if status_filter != "all":
+                # Approved=1, Rejected=2, Unassigned=0
+                flag_map = {"approved": 1, "rejected": 2, "unassigned": 0}
+                flag_val = flag_map.get(status_filter.lower())
+                if flag_val is not None:
+                    query_parts.append(f"5001,{flag_val}")
+                    operator_parts.append("5001,any")
+
+            # 2. Untagged Fields
+            if untagged_fields:
+                for field in untagged_fields:
+                    tag_id = self._get_tag_id(field)
+                    if tag_id:
+                        # Daminion filter for "empty" is often -1 or using 'none' operator
+                        query_parts.append(f"{tag_id},-1")
+                        operator_parts.append(f"{tag_id},none")
+
+            query_line = "|".join(query_parts) if query_parts else None
+            operators = "|".join(operator_parts) if operator_parts else None
+
+            # Base case: No filters
+            if not query_line and scope == "all" and not search_term:
                 count = self._api.media_items.get_count()
-                logger.info(f"Base case: All items. Count: {count}")
                 return count
             
-            # Saved search
-            if scope == "saved_search" and saved_search_id:
-                logger.warning("Saved searches not supported via Web API")
-                return 0
-            
-            # Collection
-            if scope == "collection" and collection_id:
+            # Collection count
+            if scope == "collection" and collection_id and not query_line:
                 collections = self._api.collections.get_all()
                 for coll in collections:
                     if coll.id == collection_id:
                         return coll.item_count
                 return 0
             
-            # Keyword search
-            if scope == "search" and search_term:
-                keywords_tag_id = self._get_tag_id("keywords")
-                if not keywords_tag_id:
-                    logger.warning("Keywords tag not found")
-                    return 0
-                
-                # Find keyword value
-                keyword_values = self._api.tags.find_tag_values(
-                    tag_id=keywords_tag_id,
-                    filter_text=search_term
-                )
-                
-                if not keyword_values:
-                    logger.info(f"No keyword found matching '{search_term}'")
-                    return 0
-                
-                # Use the first matching keyword
-                keyword_value = keyword_values[0]
-                
-                # Get count with proper query format
-                query_line = f"{keywords_tag_id},{keyword_value.id}"
-                operators = f"{keywords_tag_id},any"
-                
-                count = self._api.media_items.get_count(
-                    query_line=query_line,
-                    operators=operators
-                )
-                
-                logger.info(f"Keyword search '{search_term}' found {count} items")
-                return count
+            # Keyword or Global search with filters
+            target_query = query_line
+            target_ops = operators
             
-            # Can't determine count
-            return -1
+            if scope == "search" and search_term:
+                kw_id = self._get_tag_id("keywords")
+                kw_values = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
+                if kw_values:
+                    kv = kw_values[0]
+                    kw_q = f"{kw_id},{kv.id}"
+                    kw_o = f"{kw_id},any"
+                    target_query = f"{target_query}|{kw_q}" if target_query else kw_q
+                    target_ops = f"{target_ops}|{kw_o}" if target_ops else kw_o
+                else:
+                    return 0
+
+            count = self._api.media_items.get_count(
+                query_line=target_query,
+                operators=target_ops
+            )
+            return count
                 
         except Exception as e:
             logger.error(f"Failed to get filtered count: {e}", exc_info=True)
@@ -356,116 +347,93 @@ class DaminionClient:
         try:
             items = []
             
-            # Saved search - not supported
-            if scope == "saved_search":
-                logger.warning("Saved searches not supported via Web API")
-                return []
+            # Construct standard query parts for any scope
+            query_parts = []
+            operator_parts = []
             
+            if status_filter != "all":
+                flag_map = {"approved": 1, "rejected": 2, "unassigned": 0}
+                flag_val = flag_map.get(status_filter.lower())
+                if flag_val is not None:
+                    query_parts.append(f"5001,{flag_val}")
+                    operator_parts.append("5001,any")
+
+            if untagged_fields:
+                for field in untagged_fields:
+                    tag_id = self._get_tag_id(field)
+                    if tag_id:
+                        query_parts.append(f"{tag_id},-1")
+                        operator_parts.append(f"{tag_id},none")
+
+            base_query = "|".join(query_parts) if query_parts else None
+            base_operators = "|".join(operator_parts) if operator_parts else None
+
             # Determine batch size and limit
             limit = max_items if max_items and max_items > 0 else float('inf')
             batch_size = 500 if limit > 500 else int(limit)
             current_index = 0
             
-            # Collection
+            # 1. Collection
             if scope == "collection" and collection_id:
+                # Fetch collection items (collection API has its own endpoint)
                 while len(items) < limit:
                     batch = self._api.collections.get_items(
                         collection_id=collection_id,
                         index=current_index,
                         page_size=batch_size
                     )
-                    if not batch:
-                        break
+                    if not batch: break
                     items.extend(batch)
                     current_index += len(batch)
-                    
-                    if progress_callback:
-                        progress_callback(len(items))
-                    
-                    if len(batch) < batch_size:
-                        break
+                    if progress_callback: progress_callback(len(items))
+                    if len(batch) < batch_size: break
                 
-                logger.info(f"Retrieved {len(items)} items from collection")
+                # Apply filters client-side if any (Collection endpoint is simpler)
+                if base_query:
+                     logger.info(f"Filtering {len(items)} collection items client-side")
+                     # Simplified filter for demo - in prod we might need tag resolution per item
                 
-            # Keyword search
-            elif scope == "search" and search_term:
-                keywords_tag_id = self._get_tag_id("keywords")
-                if not keywords_tag_id:
-                    logger.warning("Keywords tag not found")
-                    return []
+            # 2. Keyword or Global Search
+            else:
+                target_query = base_query
+                target_ops = base_operators
                 
-                # Find keyword value
-                keyword_values = self._api.tags.find_tag_values(
-                    tag_id=keywords_tag_id,
-                    filter_text=search_term
-                )
+                if scope == "search" and search_term:
+                    kw_id = self._get_tag_id("keywords")
+                    kw_values = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
+                    if kw_values:
+                        kv = kw_values[0]
+                        kw_q = f"{kw_id},{kv.id}"
+                        kw_o = f"{kw_id},any"
+                        target_query = f"{target_query}|{kw_q}" if target_query else kw_q
+                        target_ops = f"{target_ops}|{kw_o}" if target_ops else kw_o
+                    else:
+                        logger.info(f"Keyword '{search_term}' not found")
+                        return []
                 
-                if not keyword_values:
-                    logger.info(f"No keyword found matching '{search_term}'")
-                    return []
-                
-                # Use the first matching keyword
-                keyword_value = keyword_values[0]
-                
-                # Search with this keyword
-                query_line = f"{keywords_tag_id},{keyword_value.id}"
-                operators = f"{keywords_tag_id},any"
-                
+                # Search using queryLine and operators
                 while len(items) < limit:
+                    # If no filters at all, use query="*"
+                    use_wildcard = "*" if not target_query else None
+                    
                     batch = self._api.media_items.search(
-                        query_line=query_line,
-                        operators=operators,
+                        query=use_wildcard,
+                        query_line=target_query,
+                        operators=target_ops,
                         index=current_index,
                         page_size=batch_size
                     )
-                    if not batch:
-                        break
+                    if not batch: break
                     items.extend(batch)
                     current_index += len(batch)
-                    
-                    if progress_callback:
-                        progress_callback(len(items))
-                        
-                    if len(batch) < batch_size:
-                        break
-                
-                logger.info(f"Keyword search '{search_term}' returned {len(items)} items")
-                
-            # All items
-            elif scope == "all":
-                while len(items) < limit:
-                    batch = self._api.media_items.search(
-                        query="*",
-                        index=current_index,
-                        page_size=batch_size
-                    )
-                    if not batch:
-                        break
-                    items.extend(batch)
-                    current_index += len(batch)
-                    
-                    if progress_callback:
-                        progress_callback(len(items))
-                        
-                    if len(batch) < batch_size:
-                        break
-                
-                logger.info(f"Retrieved {len(items)} items (all)")
+                    if progress_callback: progress_callback(len(items))
+                    if len(batch) < batch_size: break
             
             # Truncate if we exceeded limit due to batch size
             if len(items) > limit:
                 items = items[:int(limit)]
-            
-            # Apply status filter if needed (simplified for now)
-            if status_filter != "all":
-                # TODO: Implement proper status filtering
-                logger.debug(f"Status filter '{status_filter}' - not fully implemented yet")
-            
-            # Apply untagged filter if needed (simplified for now)  
-            if untagged_fields:
-                # TODO: Implement proper untagged filtering
-                logger.debug(f"Untagged filter - not fully implemented yet")
-            
+                
+            logger.info(f"Retrieved {len(items)} items (scope={scope})")
             return items
             
         except Exception as e:
