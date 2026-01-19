@@ -18,17 +18,16 @@ class App(ctk.CTk):
 
         # Set Icon
         import os
-        icon_path = os.path.join(os.getcwd(), "Icon.png")
+        # Get the path to the icon file in the release folder
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        icon_path = os.path.join(base_dir, "release", "Icon.ico")
         if os.path.exists(icon_path):
-             try:
-                 from PIL import Image, ImageTk
-                 # Method 1: For title bar (Windows only usually calls .iconbitmap, but .iconphoto is cross-platform)
-                 # self.iconbitmap(icon_path) # Needs .ico
-                 img = Image.open(icon_path)
-                 self.iconphoto(False, ImageTk.PhotoImage(img))
-                 self.logger.info(f"Loaded application icon from {icon_path}")
-             except Exception as e:
-                 self.logger.warning(f"Failed to set application icon: {e}")
+            try:
+                # Use iconbitmap for .ico files on Windows
+                self.iconbitmap(icon_path)
+                self.logger.info(f"Loaded application icon from {icon_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to set application icon: {e}")
 
 
         self.grid_rowconfigure(0, weight=1)
