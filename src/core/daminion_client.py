@@ -248,6 +248,7 @@ class DaminionClient:
         status_filter: str = "all"
     ) -> int:
         """Get count of items matching filters."""
+        logger.info(f"DAMINION COUNT REQUEST | scope: {scope} | search: {search_term} | status: {status_filter} | untagged: {untagged_fields}")
         try:
             # 1. Build text-based search components for robustness
             search_parts = []
@@ -256,10 +257,13 @@ class DaminionClient:
             sf = (status_filter or "all").lower()
             if sf == "approved": 
                 search_parts.append("flag:flagged")
+                search_parts.append("status:approved")
             elif sf == "rejected": 
                 search_parts.append("flag:rejected")
+                search_parts.append("status:rejected")
             elif sf == "unassigned": 
                 search_parts.append("flag:unflagged")
+                search_parts.append("status:unassigned")
             
             # Untagged Logic
             if untagged_fields:
@@ -278,6 +282,7 @@ class DaminionClient:
                 search_parts.append(f'"{search_term}"')
 
             combined_search = " ".join(search_parts) if search_parts else None
+            logger.debug(f"Combined filter string: '{combined_search}'")
             
             # Base Case: Global scan, no filters
             if not combined_search and scope == "all":
@@ -292,7 +297,19 @@ class DaminionClient:
                 return 0
             
             # Execute Count with search string
-            count = self._api.media_items.get_count(query=combined_search)
+            # If search string is used, we might need force=True to bypass cache if it's returning stale total
+            count = self._api.media_items.get_count(query=combined_search, force=True)
+            logger.debug(f"Initial get_count(query='{combined_search}') returned {count}")
+            
+            # If we got a count that looks like total catalog size but we HAD filters,
+            # or if it's suspiciously high, try a fallback search with size=1 to verify totalCount
+            if combined_search and count > 0:
+                 # Check if this count is actually the total count
+                 total_catalog = self._api.media_items.get_count()
+                 if count == total_catalog and combined_search:
+                      logger.warning(f"Count {count} matches total catalog {total_catalog} despite filters. Trying fallback search...")
+                      _, count = self._api.media_items.search(query=combined_search, page_size=1, include_total=True)
+                      logger.info(f"Fallback search returned totalCount={count}")
             
             # Fallback for structured searches if search string failed (returned 0)
             if count <= 0:
@@ -306,6 +323,7 @@ class DaminionClient:
                                operators=f"{kw_id},any"
                            )
 
+            logger.info(f"DAMINION COUNT RESULT | count: {count} | scope: {scope} | query: '{combined_search}'")
             return count
                 
         except Exception as e:

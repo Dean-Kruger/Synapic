@@ -440,8 +440,9 @@ class MediaItemsAPI(BaseAPI):
         index: int = 0,
         page_size: int = 500,
         sort_tag: Optional[int] = None,
-        ascending: bool = True
-    ) -> List[Dict[str, Any]]:
+        ascending: bool = True,
+        include_total: bool = False
+    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], int]]:
         """
         Search for media items using text or structured query.
         
@@ -484,10 +485,20 @@ class MediaItemsAPI(BaseAPI):
         
         response = self._request("/api/MediaItems/Get", params=params)
         
+        items = []
+        total = 0
+        
         # Handle different response formats
         if isinstance(response, dict):
-            return response.get('mediaItems', response.get('items', response.get('data', [])))
-        return response if isinstance(response, list) else []
+            items = response.get('mediaItems', response.get('items', response.get('data', [])))
+            total = response.get('totalCount', response.get('count', len(items)))
+        elif isinstance(response, list):
+            items = response
+            total = len(items)
+            
+        if include_total:
+            return items, total
+        return items
     
     def get_by_ids(self, item_ids: List[int]) -> List[Dict[str, Any]]:
         """
@@ -529,8 +540,15 @@ class MediaItemsAPI(BaseAPI):
         if operators:
             params["f"] = operators
         
-        result = self._request("/api/MediaItems/GetCount", params=params)
-        return result if isinstance(result, int) else result.get('count', 0)
+        try:
+            result = self._request("/api/MediaItems/GetCount", params=params)
+            count = result if isinstance(result, int) else result.get('count', result.get('totalCount', 0))
+            logging.debug(f"API GetCount result: {count} (params: {params})")
+            return count
+        except Exception as e:
+            logging.warning(f"API GetCount failed: {e}. Falling back to search with size=1")
+            _, total = self.search(query=query, query_line=query_line, operators=operators, page_size=1, include_total=True)
+            return total
     
     def get_absolute_path(self, item_id: int) -> str:
         """
