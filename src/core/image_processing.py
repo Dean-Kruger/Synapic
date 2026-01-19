@@ -225,27 +225,28 @@ def extract_tags_from_result(
     keywords = []
     description = ""
     
-    # Temporary debug logging for troubleshooting
-    if model_task == config.MODEL_TASK_IMAGE_CLASSIFICATION:
-        pass # standard classification
-    elif model_task == config.MODEL_TASK_ZERO_SHOT:
-        logging.info(f"Extractingtags - Task: {model_task}, Threshold: {threshold}")
-        logging.info(f"Raw Result: {str(result)[:200]}...")
+    # Enhanced logging for troubleshooting
+    if model_task in [config.MODEL_TASK_IMAGE_CLASSIFICATION, config.MODEL_TASK_ZERO_SHOT, config.MODEL_TASK_IMAGE_TO_TEXT, "image-text-to-text"]:
+        logging.info(f"Extracting tags - Task: {model_task}, Threshold: {threshold}")
+        # Log a bit more of the result for debugging (e.g. the "S" issue)
+        logging.info(f"Raw Result: {str(result)[:500]}")
 
     try:
         if model_task == config.MODEL_TASK_IMAGE_CLASSIFICATION:
             # "Keywords (Auto)" - Extract top 5 specific tags
-            # We map this to KEYWORDS now.
             if isinstance(result, list):
                 # Sort by score descending just in case
                 sorted_res = sorted(result, key=lambda x: x['score'], reverse=True)
                 for item in sorted_res[:5]: # Top 5
                    if item['score'] >= threshold:
-                       keywords.append(item['label'])
+                       label = item['label']
+                       # Handle models that might return comma-separated labels
+                       keywords.extend([k.strip() for k in label.split(',')])
                        
             elif isinstance(result, dict):
                  if result['score'] >= threshold:
-                    keywords.append(result['label'])
+                    label = result['label']
+                    keywords.extend([k.strip() for k in label.split(',')])
 
         elif model_task == config.MODEL_TASK_ZERO_SHOT:
             # "Categories (Custom)" - Extract broad buckets
@@ -288,10 +289,18 @@ def extract_tags_from_result(
             if isinstance(raw_gen, dict):
                 description = raw_gen.get('description', '')
                 category = raw_gen.get('category', '')
-                keywords = raw_gen.get('keywords', [])
-                if isinstance(keywords, str):
-                     # Handle if model returns keywords as a single string
-                     keywords = [k.strip() for k in keywords.split(',')]
+                keywords_raw = raw_gen.get('keywords', [])
+                
+                # Robust keyword splitting (handle string or list with commas)
+                if isinstance(keywords_raw, str):
+                     keywords = [k.strip() for k in keywords_raw.split(',')]
+                elif isinstance(keywords_raw, list):
+                     keywords = []
+                     for k in keywords_raw:
+                         if isinstance(k, str):
+                             keywords.extend([part.strip() for part in k.split(',')])
+                         else:
+                             keywords.append(str(k))
             
             # CASE 2: String (Plain Caption) or Chat Format
             else:
@@ -321,9 +330,17 @@ def extract_tags_from_result(
                         if isinstance(data, dict):
                             description = data.get('description') or data.get('generated_text') or data.get('text') or description
                             category = data.get('category', category)
-                            keywords = data.get('keywords', keywords)
-                            if isinstance(keywords, str):
-                                keywords = [k.strip() for k in keywords.split(',')]
+                            keywords_raw = data.get('keywords', keywords)
+                            
+                            if isinstance(keywords_raw, str):
+                                keywords = [k.strip() for k in keywords_raw.split(',')]
+                            elif isinstance(keywords_raw, list):
+                                keywords = []
+                                for k in keywords_raw:
+                                    if isinstance(k, str):
+                                        keywords.extend([part.strip() for part in k.split(',')])
+                                    else:
+                                        keywords.append(str(k))
                             # If we successfully parsed JSON, don't fallback to treating whole text as description
                             text = "" 
                     except (json.JSONDecodeError, TypeError):
@@ -337,7 +354,8 @@ def extract_tags_from_result(
                     prefixes_to_strip = [
                         "Describe the image.", "Describe this image.", "Caption:", "Description:",
                         "The image shows", "This image shows", "An image of", "A picture of",
-                        "generated_text:", "Output:", "Response:"
+                        "generated_text:", "Output:", "Response:", "Analysing the image:",
+                        "Analysis:", "Here is the JSON object:"
                     ]
                     
                     # Case-insensitive prefix stripping loop
@@ -348,9 +366,12 @@ def extract_tags_from_result(
                             if description.lower().startswith(prefix.lower()):
                                 description = description[len(prefix):].strip()
                         
-                        # Also strip rogue leading characters often seen in some model outputs (like 's, ')
-                        if description.startswith("s, ") or description.startswith("s "):
-                            description = description[2:].strip()
+                        # Strip common VLM artifacts like 's' at the start followed by comma (often from 'Image shows...')
+                        # or other rogue leading characters
+                        if description.lower().startswith("s, "):
+                             description = description[3:].strip()
+                        elif description.lower().startswith("s "):
+                             description = description[2:].strip()
                         
                         # Strip leading punctuation/symbols often left by prefix removal
                         description = description.lstrip(":.,- ")
@@ -360,6 +381,12 @@ def extract_tags_from_result(
 
                     # Final polish
                     description = description.strip()
+                    
+                    # If description is just a single character (like 'S'), it's likely a failure or artifact
+                    if len(description) <= 1:
+                        logging.warning(f"Extracted description too short ('{description}'). Setting to empty.")
+                        description = ""
+
                     if description and not description[0].isupper():
                         description = description[0].upper() + description[1:]
                     
@@ -367,6 +394,10 @@ def extract_tags_from_result(
                     # Unless they were extracted via JSON above.
                     if not keywords:
                         keywords = []
+
+        # Deduplicate keywords
+        if keywords:
+            keywords = list(dict.fromkeys([k for k in keywords if k]))
 
     except Exception as e:
         logging.error(f"Error extracting tags from result: {e}")

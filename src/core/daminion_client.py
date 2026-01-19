@@ -361,12 +361,30 @@ class DaminionClient:
                 logger.warning("Saved searches not supported via Web API")
                 return []
             
+            # Determine batch size and limit
+            limit = max_items if max_items and max_items > 0 else float('inf')
+            batch_size = 500 if limit > 500 else int(limit)
+            current_index = 0
+            
             # Collection
             if scope == "collection" and collection_id:
-                items = self._api.collections.get_items(
-                    collection_id=collection_id,
-                    page_size=max_items if max_items and max_items > 0 else 500
-                )
+                while len(items) < limit:
+                    batch = self._api.collections.get_items(
+                        collection_id=collection_id,
+                        index=current_index,
+                        page_size=batch_size
+                    )
+                    if not batch:
+                        break
+                    items.extend(batch)
+                    current_index += len(batch)
+                    
+                    if progress_callback:
+                        progress_callback(len(items))
+                    
+                    if len(batch) < batch_size:
+                        break
+                
                 logger.info(f"Retrieved {len(items)} items from collection")
                 
             # Keyword search
@@ -393,21 +411,50 @@ class DaminionClient:
                 query_line = f"{keywords_tag_id},{keyword_value.id}"
                 operators = f"{keywords_tag_id},any"
                 
-                items = self._api.media_items.search(
-                    query_line=query_line,
-                    operators=operators,
-                    page_size=max_items if max_items and max_items > 0 else 500
-                )
+                while len(items) < limit:
+                    batch = self._api.media_items.search(
+                        query_line=query_line,
+                        operators=operators,
+                        index=current_index,
+                        page_size=batch_size
+                    )
+                    if not batch:
+                        break
+                    items.extend(batch)
+                    current_index += len(batch)
+                    
+                    if progress_callback:
+                        progress_callback(len(items))
+                        
+                    if len(batch) < batch_size:
+                        break
                 
                 logger.info(f"Keyword search '{search_term}' returned {len(items)} items")
                 
             # All items
             elif scope == "all":
-                items = self._api.media_items.search(
-                    query="*",
-                    page_size=max_items if max_items and max_items > 0 else 500
-                )
+                while len(items) < limit:
+                    batch = self._api.media_items.search(
+                        query="*",
+                        index=current_index,
+                        page_size=batch_size
+                    )
+                    if not batch:
+                        break
+                    items.extend(batch)
+                    current_index += len(batch)
+                    
+                    if progress_callback:
+                        progress_callback(len(items))
+                        
+                    if len(batch) < batch_size:
+                        break
+                
                 logger.info(f"Retrieved {len(items)} items (all)")
+            
+            # Truncate if we exceeded limit due to batch size
+            if len(items) > limit:
+                items = items[:int(limit)]
             
             # Apply status filter if needed (simplified for now)
             if status_filter != "all":

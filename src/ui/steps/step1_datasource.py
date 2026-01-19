@@ -332,19 +332,19 @@ class Step1Datasource(ctk.CTkFrame):
         if ds.daminion_untagged_description: self.chk_untagged_desc.select()
         self.chk_untagged_desc.pack(side="left", padx=20)
 
-        # Limit Control (Slider)
-        limit_frame = ctk.CTkFrame(self.filters_container)
-        limit_frame.pack(fill="x", padx=20, pady=10)
+        # Limit Control (Toggle - hidden by default)
+        self.limit_toggle_frame = ctk.CTkFrame(self.filters_container, fg_color="#1a1a1a")
+        # Managed in update_count
         
-        ctk.CTkLabel(limit_frame, text="Max Items to Process:", font=("Roboto", 16, "bold")).pack(side="left", padx=20, pady=10)
+        limit_container = ctk.CTkFrame(self.limit_toggle_frame, fg_color="transparent")
+        limit_container.pack(pady=10, padx=20)
         
-        self.slider_val_label = ctk.CTkLabel(limit_frame, text=str(ds.max_items if ds.max_items > 0 else "Unlimited"), 
-                                             font=("Roboto", 14, "bold"), text_color="#3a7ebf", width=80)
-        self.slider_val_label.pack(side="right", padx=20)
-
-        self.max_items_slider = ctk.CTkSlider(limit_frame, from_=0, to=2000, number_of_steps=20, command=self.update_slider_label)
-        self.max_items_slider.set(ds.max_items if ds.max_items <= 2000 else 2000)
-        self.max_items_slider.pack(side="left", fill="x", expand=True, padx=10)
+        ctk.CTkLabel(limit_container, text="High record count detected:", font=("Roboto", 14, "bold"), text_color="#ffcc00").pack(side="left", padx=(0, 20))
+        
+        self.limit_var = ctk.StringVar(value="500")
+        
+        ctk.CTkRadioButton(limit_container, text="Only process 500", variable=self.limit_var, value="500").pack(side="left", padx=10)
+        ctk.CTkRadioButton(limit_container, text="Process all", variable=self.limit_var, value="all").pack(side="left", padx=10)
 
         # Background Fetching for dropdowns
         self._load_daminion_data()
@@ -404,22 +404,6 @@ class Step1Datasource(ctk.CTkFrame):
         self.chk_untagged_desc.select()
         self.update_count()
 
-    def clear_container(self, container):
-        for widget in container.winfo_children():
-            widget.destroy()
-
-    def select_all_untagged(self):
-        self.chk_untagged_kws.select()
-        self.chk_untagged_cats.select()
-        self.chk_untagged_desc.select()
-        self.update_count()
-
-
-    def update_slider_label(self, val):
-        val = int(val)
-        self.slider_val_label.configure(text=str(val) if val > 0 else "Unlimited")
-        self.update_count()
-
     def update_count(self, *args):
         if not self.controller.session.daminion_client or not self.controller.session.daminion_client.authenticated:
             self.lbl_total_count.configure(text="")
@@ -435,6 +419,7 @@ class Step1Datasource(ctk.CTkFrame):
                 scope = "all"
                 ss_id = None
                 col_id = None
+                search_term = None
                 
                 if tab == "Saved Searches":
                     scope = "saved_search"
@@ -467,13 +452,6 @@ class Step1Datasource(ctk.CTkFrame):
                 if hasattr(self, 'chk_untagged_desc') and self.chk_untagged_desc.get(): 
                     untagged.append("Description")
                 
-                # Check slider
-                try:
-                    max_to_fetch = int(self.max_items_slider.get())
-                except:
-                    max_to_fetch = 100
-                if max_to_fetch <= 0: max_to_fetch = None
-                
                 logging.debug(f"[UI] Triggering filtered count: scope={scope}, term='{search_term if scope == 'search' else ''}', status={status}, untagged={untagged}")
                 
                 # Efficient count
@@ -489,6 +467,7 @@ class Step1Datasource(ctk.CTkFrame):
                 logging.debug(f"[UI] Filtered count result: {count}")
                 
                 suffix = ""
+                final_count = count
                 if count == -1:
                     # Fallback to fetching items with a cap to Estimate
                     limit_fallback = 200 # Lowered for faster UI response
@@ -501,11 +480,20 @@ class Step1Datasource(ctk.CTkFrame):
                         status_filter=status,
                         max_items=limit_fallback
                     )
-                    count = len(items)
-                    if count >= limit_fallback:
+                    final_count = len(items)
+                    if final_count >= limit_fallback:
                         suffix = "+"
                 
-                self.after(0, lambda: self.lbl_total_count.configure(text=f"Records: {count}{suffix}"))
+                # Update UI and Toggle Visibility
+                def _update_ui():
+                    self.lbl_total_count.configure(text=f"Records: {final_count}{suffix}")
+                    # Show toggle if records > 500 (or unknown)
+                    if final_count > 500 or suffix == "+":
+                         self.limit_toggle_frame.pack(fill="x", padx=20, pady=10)
+                    else:
+                         self.limit_toggle_frame.pack_forget()
+
+                self.after(0, _update_ui)
             except Exception as e:
                 self.logger.error(f"Count failed: {e}")
                 self.after(0, lambda: self.lbl_total_count.configure(text="Count Error"))
@@ -551,9 +539,11 @@ class Step1Datasource(ctk.CTkFrame):
             ds.daminion_untagged_categories = self.chk_untagged_cats.get()
             ds.daminion_untagged_description = self.chk_untagged_desc.get()
             
-            try:
-                ds.max_items = int(self.max_items_slider.get())
-            except:
-                ds.max_items = 100
+            # Apply limit from toggle if visible
+            if self.limit_toggle_frame.winfo_manager(): # Check if packed/grid
+                 val = self.limit_var.get()
+                 ds.max_items = 500 if val == "500" else 0 # 0 means unlimited
+            else:
+                 ds.max_items = 0
         
         self.controller.show_step("Step2Tagging")
