@@ -504,6 +504,7 @@ class MediaItemsAPI(BaseAPI):
     
     def get_count(
         self,
+        query: Optional[str] = None,
         query_line: Optional[str] = None,
         operators: Optional[str] = None,
         force: bool = False
@@ -512,6 +513,7 @@ class MediaItemsAPI(BaseAPI):
         Get count of items matching query without retrieving full data.
         
         Args:
+            query: Simple text search query
             query_line: Structured query
             operators: Operators for query
             force: Force refresh of cached count
@@ -520,6 +522,8 @@ class MediaItemsAPI(BaseAPI):
             Number of matching items
         """
         params = {"force": str(force).lower()}
+        if query:
+            params["search"] = query
         if query_line:
             params["queryLine"] = query_line
         if operators:

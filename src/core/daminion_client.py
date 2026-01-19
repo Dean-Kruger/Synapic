@@ -114,57 +114,55 @@ class DaminionClient:
         try:
             self._tag_schema = self._api.tags.get_all_tags()
             
-            # Build lookup dictionaries
+            # Build lookup dictionaries from standard tags
             for tag in self._tag_schema:
                 self._tag_name_to_id[tag.name.lower()] = tag.id
                 self._tag_id_to_name[tag.id] = tag.name
             
-            logger.info(f"Loaded tag schema: {len(self._tag_schema)} tags")
+            # Also fetch from layout to find system tags (Flag, Status, etc)
+            try:
+                layout = self._api.item_data.get_default_layout()
+                self._extract_tags_from_layout(layout)
+            except Exception as e:
+                logger.debug(f"Failed to load tags from layout: {e}")
+            
+            logger.info(f"Loaded tag schema: {len(self._tag_name_to_id)} unique tags mapped")
             
         except Exception as e:
             logger.error(f"Failed to load tag schema: {e}")
             self._tag_schema = []
+
+    def _extract_tags_from_layout(self, obj):
+        """Recursively extract property IDs from layout structure."""
+        if isinstance(obj, dict):
+            p_name = obj.get('propertyName') or obj.get('name')
+            p_id = obj.get('id') or obj.get('propertyId')
+            
+            if p_name and p_id and isinstance(p_id, int):
+                self._tag_name_to_id[p_name.lower()] = p_id
+                self._tag_id_to_name[p_id] = p_name
+            
+            for val in obj.values():
+                if isinstance(val, (dict, list)):
+                    self._extract_tags_from_layout(val)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._extract_tags_from_layout(item)
     
-    def download_thumbnail(self, item_id: int, width: int = 300, height: int = 300) -> Optional[Path]:
-        """
-        Download thumbnail for a media item.
-        
-        Matches old DaminionClient interface.
-        
-        Args:
-            item_id: Media item ID
-            width: Thumbnail width in pixels
-            height: Thumbnail height in pixels
-            
-        Returns:
-            Path to downloaded thumbnail file, or None if failed
-        """
+    def get_thumbnail(self, item_id: int, width: int = 200, height: int = 200) -> Optional[bytes]:
+        """Get raw thumbnail bytes."""
         try:
-            # Create temp directory if not exists
-            if not self.temp_dir.exists():
-                self.temp_dir.mkdir(parents=True, exist_ok=True)
-                
-            # Fetch thumbnail data
-            thumbnail_bytes = self._api.thumbnails.get(
-                item_id=item_id,
-                width=width,
-                height=height
-            )
-            
-            if not thumbnail_bytes:
-                logger.warning(f"No thumbnail data received for item {item_id}")
-                return None
-                
-            # Save to temp file
-            temp_file = self.temp_dir / f"{item_id}.jpg"
-            with open(temp_file, 'wb') as f:
-                f.write(thumbnail_bytes)
-                
-            logger.debug(f"Saved thumbnail to {temp_file}")
-            return temp_file
-            
+            return self._api.thumbnails.get(item_id, width, height)
         except Exception as e:
-            logger.error(f"Failed to download thumbnail for {item_id}: {e}")
+            logger.error(f"Failed to get thumbnail for item {item_id}: {e}")
+            return None
+
+    def get_file_path(self, item_id: int) -> Optional[str]:
+        """Get the absolute path to the original file."""
+        try:
+            return self._api.media_items.get_absolute_path(item_id)
+        except Exception as e:
+            logger.error(f"Failed to get file path for item {item_id}: {e}")
             return None
 
     def _get_tag_id(self, tag_name: str) -> Optional[int]:
@@ -251,64 +249,63 @@ class DaminionClient:
     ) -> int:
         """Get count of items matching filters."""
         try:
-            # Construct query parts
-            query_parts = []
-            operator_parts = []
+            # 1. Build text-based search components for robustness
+            search_parts = []
             
-            # 1. Status Filter (Flag tag ID is 5001)
-            if status_filter != "all":
-                # Approved=1, Rejected=2, Unassigned=0
-                flag_map = {"approved": 1, "rejected": 2, "unassigned": 0}
-                flag_val = flag_map.get(status_filter.lower())
-                if flag_val is not None:
-                    query_parts.append(f"5001,{flag_val}")
-                    operator_parts.append("5001,any")
-
-            # 2. Untagged Fields
+            # Status Filter
+            sf = (status_filter or "all").lower()
+            if sf == "approved": 
+                search_parts.append("flag:flagged")
+            elif sf == "rejected": 
+                search_parts.append("flag:rejected")
+            elif sf == "unassigned": 
+                search_parts.append("flag:unflagged")
+            
+            # Untagged Logic
             if untagged_fields:
-                for field in untagged_fields:
-                    tag_id = self._get_tag_id(field)
-                    if tag_id:
-                        # Daminion filter for "empty" is often -1 or using 'none' operator
-                        query_parts.append(f"{tag_id},-1")
-                        operator_parts.append(f"{tag_id},none")
+                # If plural 'categories' wasn't used, normalize it
+                normalized_untagged = []
+                for f in untagged_fields:
+                    if f.lower() == "category": normalized_untagged.append("Categories")
+                    else: normalized_untagged.append(f)
+                
+                # Some servers support specific 'Tag:none'
+                for f in normalized_untagged:
+                    search_parts.append(f"{f}:none")
 
-            query_line = "|".join(query_parts) if query_parts else None
-            operators = "|".join(operator_parts) if operator_parts else None
+            # Keyword Search term
+            if scope == "search" and search_term:
+                search_parts.append(f'"{search_term}"')
 
-            # Base case: No filters
-            if not query_line and scope == "all" and not search_term:
-                count = self._api.media_items.get_count()
-                return count
+            combined_search = " ".join(search_parts) if search_parts else None
             
-            # Collection count
-            if scope == "collection" and collection_id and not query_line:
+            # Base Case: Global scan, no filters
+            if not combined_search and scope == "all":
+                 return self._api.media_items.get_count()
+
+            # Collection total count fast-path
+            if scope == "collection" and collection_id and not combined_search:
                 collections = self._api.collections.get_all()
                 for coll in collections:
                     if coll.id == collection_id:
                         return coll.item_count
                 return 0
             
-            # Keyword or Global search with filters
-            target_query = query_line
-            target_ops = operators
+            # Execute Count with search string
+            count = self._api.media_items.get_count(query=combined_search)
             
-            if scope == "search" and search_term:
-                kw_id = self._get_tag_id("keywords")
-                kw_values = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
-                if kw_values:
-                    kv = kw_values[0]
-                    kw_q = f"{kw_id},{kv.id}"
-                    kw_o = f"{kw_id},any"
-                    target_query = f"{target_query}|{kw_q}" if target_query else kw_q
-                    target_ops = f"{target_ops}|{kw_o}" if target_ops else kw_o
-                else:
-                    return 0
+            # Fallback for structured searches if search string failed (returned 0)
+            if count <= 0:
+                 # Try structured query for keyword if text search failed
+                 if scope == "search" and search_term:
+                      kw_id = self._get_tag_id("keywords")
+                      kw_vals = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
+                      if kw_vals:
+                           count = self._api.media_items.get_count(
+                               query_line=f"{kw_id},{kw_vals[0].id}",
+                               operators=f"{kw_id},any"
+                           )
 
-            count = self._api.media_items.get_count(
-                query_line=target_query,
-                operators=target_ops
-            )
             return count
                 
         except Exception as e:
@@ -326,153 +323,206 @@ class DaminionClient:
         max_items: Optional[int] = None,
         progress_callback: Optional[Callable] = None
     ) -> List[Dict]:
-        """
-        Retrieve items matching filters.
-        
-        EXACTLY matches old DaminionClient interface for backward compatibility.
-        
-        Args:
-            scope: Search scope ('all', 'saved_search', 'collection', 'search')
-            saved_search_id: Saved search ID (for scope='saved_search')
-            collection_id: Collection ID (for scope='collection')
-            search_term: Keyword search term (for scope='search')
-            untagged_fields: Tags that must be empty
-            status_filter: Status filter
-            max_items: Maximum items to return (0 = unlimited)
-            progress_callback: Progress callback function
-            
-        Returns:
-            List of matching media items
-        """
+        """Retrieve items matching filters with pagination."""
         try:
             items = []
-            
-            # Construct standard query parts for any scope
-            query_parts = []
-            operator_parts = []
-            
-            if status_filter != "all":
-                flag_map = {"approved": 1, "rejected": 2, "unassigned": 0}
-                flag_val = flag_map.get(status_filter.lower())
-                if flag_val is not None:
-                    query_parts.append(f"5001,{flag_val}")
-                    operator_parts.append("5001,any")
-
-            if untagged_fields:
-                for field in untagged_fields:
-                    tag_id = self._get_tag_id(field)
-                    if tag_id:
-                        query_parts.append(f"{tag_id},-1")
-                        operator_parts.append(f"{tag_id},none")
-
-            base_query = "|".join(query_parts) if query_parts else None
-            base_operators = "|".join(operator_parts) if operator_parts else None
-
-            # Determine batch size and limit
             limit = max_items if max_items and max_items > 0 else float('inf')
             batch_size = 500 if limit > 500 else int(limit)
             current_index = 0
             
-            # 1. Collection
-            if scope == "collection" and collection_id:
-                # Fetch collection items (collection API has its own endpoint)
+            # 1. Build text-based search components
+            search_parts = []
+            sf = (status_filter or "all").lower()
+            if sf == "approved": search_parts.append("flag:flagged")
+            elif sf == "rejected": search_parts.append("flag:rejected")
+            elif sf == "unassigned": search_parts.append("flag:unflagged")
+            
+            if untagged_fields:
+                for f in untagged_fields:
+                    f_name = "Categories" if f.lower() == "category" else f
+                    search_parts.append(f"{f_name}:none")
+
+            combined_search = " ".join(search_parts) if search_parts else None
+            
+            # Scope: Keyword Search
+            if scope == "search" and search_term:
+                final_search = f'"{search_term}"'
+                if combined_search:
+                    final_search += f" {combined_search}"
+                
                 while len(items) < limit:
-                    batch = self._api.collections.get_items(
-                        collection_id=collection_id,
-                        index=current_index,
-                        page_size=batch_size
-                    )
+                    batch = self._api.media_items.search(query=final_search, index=current_index, page_size=batch_size)
                     if not batch: break
                     items.extend(batch)
                     current_index += len(batch)
                     if progress_callback: progress_callback(len(items))
                     if len(batch) < batch_size: break
-                
-                # Apply filters client-side if any (Collection endpoint is simpler)
-                if base_query:
-                     logger.info(f"Filtering {len(items)} collection items client-side")
-                     # Simplified filter for demo - in prod we might need tag resolution per item
-                
-            # 2. Keyword or Global Search
-            else:
-                target_query = base_query
-                target_ops = base_operators
-                
-                if scope == "search" and search_term:
-                    kw_id = self._get_tag_id("keywords")
-                    kw_values = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
-                    if kw_values:
-                        kv = kw_values[0]
-                        kw_q = f"{kw_id},{kv.id}"
-                        kw_o = f"{kw_id},any"
-                        target_query = f"{target_query}|{kw_q}" if target_query else kw_q
-                        target_ops = f"{target_ops}|{kw_o}" if target_ops else kw_o
-                    else:
-                        logger.info(f"Keyword '{search_term}' not found")
-                        return []
-                
-                # Search using queryLine and operators
+            
+            # Scope: Global Scan
+            elif scope == "all":
                 while len(items) < limit:
-                    # If no filters at all, use query="*"
-                    use_wildcard = "*" if not target_query else None
-                    
+                    query = combined_search or "*"
+                    batch = self._api.media_items.search(query=query, index=current_index, page_size=batch_size)
+                    if not batch: break
+                    items.extend(batch)
+                    current_index += len(batch)
+                    if progress_callback: progress_callback(len(items))
+                    if len(batch) < batch_size: break
+            
+            # Scope: Shared Collection
+            elif scope == "collection" and collection_id:
+                while len(items) < limit:
+                    batch = self._api.collections.get_items(collection_id=collection_id, index=current_index, page_size=batch_size)
+                    if not batch: break
+                    items.extend(batch)
+                    current_index += len(batch)
+                    if len(batch) < batch_size: break
+                
+                # Apply filters client-side for collections
+                if sf != "all" or untagged_fields:
+                    original_items = items
+                    items = [it for it in original_items if self._passes_filters(it, status_filter, untagged_fields)]
+                    if progress_callback: progress_callback(len(items))
+            
+            # Scope: Saved Search
+            elif scope == "saved_search" and saved_search_id:
+                # Saved searches often need structured query
+                tag_id = self._get_tag_id("saved searches") or 39
+                while len(items) < limit:
                     batch = self._api.media_items.search(
-                        query=use_wildcard,
-                        query_line=target_query,
-                        operators=target_ops,
+                        query_line=f"{tag_id},{saved_search_id}",
+                        operators=f"{tag_id},any",
                         index=current_index,
                         page_size=batch_size
                     )
                     if not batch: break
                     items.extend(batch)
                     current_index += len(batch)
-                    if progress_callback: progress_callback(len(items))
                     if len(batch) < batch_size: break
-            
-            # Truncate if we exceeded limit due to batch size
-            if len(items) > limit:
-                items = items[:int(limit)]
                 
-            logger.info(f"Retrieved {len(items)} items (scope={scope})")
-            return items
-            
+                # Apply filters client-side
+                if sf != "all" or untagged_fields:
+                    original_items = items
+                    items = [it for it in original_items if self._passes_filters(it, status_filter, untagged_fields)]
+                    if progress_callback: progress_callback(len(items))
+
+            return items[:int(limit)] if limit != float('inf') else items
+                
         except Exception as e:
-            logger.error(f"Failed to get filtered items: {e}", exc_info=True)
+            logger.error(f"Failed to retrieve filtered items: {e}")
             return []
-    
-    def get_thumbnail(self, item_id: int, width: int = 200, height: int = 200) -> Optional[bytes]:
+
+    def _passes_filters(self, item: Dict, status_filter: str, untagged_fields: Optional[List[str]]) -> bool:
+        """Check if an item passes status and untagged filters (client-side)."""
+        # Note: Search results often have limited properties.
+        # This is a best-effort check. If data is missing, we prefer to ACCEPT the item
+        # so the user can see it, rather than hiding it incorrectly.
+        
+        # 1. Status Filter
+        sf = (status_filter or "all").lower()
+        if sf != "all":
+            # Attempt to find flag status in various fields
+            flag_val = item.get('flag') or item.get('Flag')
+            if flag_val is not None:
+                # Map Daminion Flag values: 1=Approved, 2=Rejected, 0=Unassigned
+                # Or sometimes strings "Flagged", "Unflagged"
+                fv = str(flag_val).lower()
+                if sf == "approved" and fv not in ("1", "approved", "flagged"): return False
+                if sf == "rejected" and fv not in ("2", "rejected"): return False
+                if sf == "unassigned" and fv not in ("0", "unassigned", "unflagged"): return False
+        
+        # 2. Untagged Check
+        if untagged_fields:
+            for field in untagged_fields:
+                f_norm = field.lower()
+                # Check for empty values in typical result keys
+                val = item.get(field) or item.get(field.capitalize()) or item.get(f_norm)
+                if val:
+                    # Not untagged - if any required untagged field has data, it fails the "must be untagged" check
+                    # (Assuming the logic is "Item must have NO keywords" if untagged_keywords is checked)
+                    # Wait, if user checked multiple, usually it's "OR" or "AND"?
+                    # UI says "Identify Untagged Items", usually means "Show me items where these are empty".
+                    pass # Keep going
+                else:
+                    # Found an empty field, this might be what we want
+                    continue
+            
+            # Brute force check for Keywords specifically
+            if "keywords" in [f.lower() for f in untagged_fields]:
+                 kws = item.get('Keywords') or item.get('keywords') or []
+                 if kws: return False # Has keywords, so not untagged
+        
+        return True
+
+    def get_items_by_ids(self, item_ids: List[int]) -> List[Dict]:
+        """Fetch full details for specific items."""
+        try:
+            return self._api.media_items.get_by_ids(item_ids)
+        except Exception as e:
+            logger.error(f"Failed to get items by IDs: {e}")
+            return []
+
+    def get_media_items_by_ids(self, item_ids: List[int]) -> List[Dict]:
+        """Compatibility wrapper for get_items_by_ids."""
+        return self.get_items_by_ids(item_ids)
+
+    def download_thumbnail(self, item_id: int, width: int = 300, height: int = 300) -> Optional[Path]:
+        """Download thumbnail to a temporary file."""
+        try:
+            # Fetch thumbnail data
+            thumbnail_bytes = self.get_thumbnail(item_id, width, height)
+            if not thumbnail_bytes:
+                return None
+                
+            # Save to temp file
+            temp_file = self.temp_dir / f"{item_id}.jpg"
+            with open(temp_file, 'wb') as f:
+                f.write(thumbnail_bytes)
+            return temp_file
+        except Exception as e:
+            logger.error(f"Failed to download thumbnail: {e}")
+            return None
+
+    def update_item_tags(self, item_id: int, tags: Dict[str, List[str]]) -> bool:
         """
-        Get thumbnail for an item.
+        Update tags for a single item.
         
         Args:
-            item_id: Item ID
-            width: Thumbnail width
-            height: Thumbnail height
+            item_id: Media item ID
+            tags: Dict of tag names and values
             
         Returns:
-            Thumbnail image data or None
+            True if successful
         """
         try:
-            return self._api.thumbnails.get(item_id, width, height)
-        except Exception as e:
-            logger.error(f"Failed to get thumbnail for item {item_id}: {e}")
-            return None
-    
-    def get_file_path(self, item_id: int) -> Optional[str]:
-        """
-        Get file path for an item.
-        
-        Args:
-            item_id: Item ID
+            # Prepare operations
+            ops = []
+            for tag_name, values in tags.items():
+                tag_id = self._get_tag_id(tag_name)
+                tag_info = next((t for t in self._tag_schema if t.id == tag_id), None) if self._tag_schema else None
+                guid = tag_info.guid if tag_info else tag_name
+                
+                for val in values:
+                    # Try to find value ID for indexed tags
+                    val_id = None
+                    if tag_id:
+                        # This should Ideally be cached
+                        found_vals = self._api.tags.find_tag_values(tag_id=tag_id, filter_text=val)
+                        if found_vals:
+                            val_id = found_vals[0].id
+                    
+                    ops.append({
+                        "guid": guid,
+                        "value": val,
+                        "id": val_id,
+                        "remove": False
+                    })
             
-        Returns:
-            File path or None
-        """
-        try:
-            return self._api.media_items.get_absolute_path(item_id)
+            self._api.item_data.batch_update(item_ids=[item_id], operations=ops)
+            return True
         except Exception as e:
-            logger.error(f"Failed to get file path for item {item_id}: {e}")
-            return None
+            logger.error(f"Failed to update tags for item {item_id}: {e}")
+            return False
     
     def update_item_metadata(
         self,
