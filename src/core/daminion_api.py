@@ -766,16 +766,15 @@ class TagsAPI(BaseAPI):
         Returns:
             ID of created value
         """
-        data = {
-            "tagGuid": tag_guid,
-            "value": value_text
-        }
+        params = {"g": tag_guid}
+        data = {"value": value_text}
         if parent_id is not None:
             data["parentId"] = parent_id
         
         return self._request(
             "/api/IndexedTagValues/CreateValueByGuid",
             method="POST",
+            params=params,
             data=data
         )
     

@@ -206,11 +206,29 @@ class DaminionClient:
         """
         Retrieve list of saved searches.
         
-        Note: Saved Searches are not available via Web API.
-        Returns empty list with warning.
+        Note: Saved Searches are often not available via a dedicated Web API endpoint.
+        We fallback to fetching values from the 'Saved Searches' tag.
         """
-        logger.warning("Saved Searches not available via Web API - use Shared Collections instead")
-        return []
+        try:
+            tag_id = self._get_tag_id("saved searches")
+            if not tag_id:
+                logger.warning("Tag 'Saved Searches' not found in schema. Cannot retrieve saved searches.")
+                return []
+            
+            tag_values = self._api.tags.get_tag_values(tag_id=tag_id)
+            result = []
+            for val in tag_values:
+                result.append({
+                    'id': val.id,
+                    'name': val.text,
+                    'count': val.count
+                })
+            
+            logger.info(f"Retrieved {len(result)} saved searches via tag values")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get saved searches: {e}")
+            return []
     
     def get_shared_collection_items(self, collection_id: int, index: int = 0, page_size: int = 200) -> List[Dict]:
         """
@@ -585,12 +603,18 @@ class DaminionClient:
             # Build tag GUID lookup
             tag_guid_map = {tag.name.lower(): tag.guid for tag in self._tag_schema}
             
+            def get_guid(name):
+                # Try common variations
+                for n in [name.lower(), name.lower() + 's', name.lower()[:-1] if name.lower().endswith('s') else name.lower()]:
+                    if n in tag_guid_map:
+                        return tag_guid_map[n]
+                return None
+
             # Add category if provided
             if category:
-                category_guid = tag_guid_map.get('category')
+                category_guid = get_guid('categories')
                 if category_guid:
-                    # For indexed tags like Category, we need to find or create the value
-                    category_tag_id = self._get_tag_id('category')
+                    category_tag_id = self._get_tag_id('categories') or self._get_tag_id('category')
                     if category_tag_id:
                         # Find existing category value
                         category_values = self._api.tags.find_tag_values(
@@ -599,35 +623,27 @@ class DaminionClient:
                         )
                         
                         if category_values:
-                            # Use existing value
                             operations.append({
                                 "guid": category_guid,
                                 "id": category_values[0].id,
                                 "remove": False
                             })
                         else:
-                            # Create new category value
-                            try:
-                                new_id = self._api.tags.create_tag_value(
-                                    tag_guid=category_guid,
-                                    value_text=category
-                                )
-                                operations.append({
-                                    "guid": category_guid,
-                                    "id": new_id,
-                                    "remove": False
-                                })
-                            except Exception as e:
-                                logger.warning(f"Failed to create category value '{category}': {e}")
+                            # Fallback to value-based creation via BatchUpdate if pre-creation fails
+                            operations.append({
+                                "guid": category_guid,
+                                "value": category,
+                                "remove": False
+                            })
             
             # Add keywords if provided
             if keywords:
-                keywords_guid = tag_guid_map.get('keywords')
+                keywords_guid = get_guid('keywords')
                 if keywords_guid:
                     keywords_tag_id = self._get_tag_id('keywords')
                     if keywords_tag_id:
                         for keyword in keywords:
-                            # Find or create keyword value
+                            # Find existing keyword value
                             keyword_values = self._api.tags.find_tag_values(
                                 tag_id=keywords_tag_id,
                                 filter_text=keyword
@@ -640,8 +656,9 @@ class DaminionClient:
                                     "remove": False
                                 })
                             else:
-                                # Create new keyword
+                                # Try to create or just pass value
                                 try:
+                                    logger.debug(f"Creating new keyword value: {keyword}")
                                     new_id = self._api.tags.create_tag_value(
                                         tag_guid=keywords_guid,
                                         value_text=keyword
@@ -652,13 +669,17 @@ class DaminionClient:
                                         "remove": False
                                     })
                                 except Exception as e:
-                                    logger.warning(f"Failed to create keyword '{keyword}': {e}")
+                                    logger.warning(f"Failed to create keyword '{keyword}' via API (will try value-based update): {e}")
+                                    operations.append({
+                                        "guid": keywords_guid,
+                                        "value": keyword,
+                                        "remove": False
+                                    })
             
             # Add description if provided
             if description:
-                description_guid = tag_guid_map.get('description')
+                description_guid = get_guid('description') or get_guid('caption')
                 if description_guid:
-                    # Description is a simple text field, not indexed
                     operations.append({
                         "guid": description_guid,
                         "value": description
