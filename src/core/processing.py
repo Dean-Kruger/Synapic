@@ -254,7 +254,9 @@ class ProcessingManager:
                 )
 
             # 3. Extract Tags
-            cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task)
+            # Convert threshold from 1-100 scale to 0.0-1.0 scale
+            threshold = engine.confidence_threshold / 100.0
+            cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task, threshold=threshold)
             self.logger.debug(f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}")
             
             # 4. Write Metadata

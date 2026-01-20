@@ -121,9 +121,55 @@ class ConfigDialog(ctk.CTkToplevel):
         self.init_hf_tab()
         self.init_or_tab()
         
+        # Common Settings Section (below tabs)
+        settings_frame = ctk.CTkFrame(self)
+        settings_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+        
+        # Threshold Slider
+        threshold_label_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        threshold_label_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkLabel(
+            threshold_label_frame, 
+            text="Confidence Threshold:", 
+            font=("Roboto", 13, "bold")
+        ).pack(side="left", padx=(10, 5))
+        
+        self.threshold_value_label = ctk.CTkLabel(
+            threshold_label_frame,
+            text=f"{session.engine.confidence_threshold}%",
+            font=("Roboto", 13),
+            text_color="#2FA572"
+        )
+        self.threshold_value_label.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(
+            threshold_label_frame,
+            text="(Filters out low-probability category/keyword matches)",
+            font=("Roboto", 10),
+            text_color="gray"
+        ).pack(side="left", padx=10)
+        
+        # Slider
+        self.threshold_slider = ctk.CTkSlider(
+            settings_frame,
+            from_=1,
+            to=100,
+            number_of_steps=99,
+            command=self.on_threshold_change
+        )
+        self.threshold_slider.set(session.engine.confidence_threshold)
+        self.threshold_slider.pack(fill="x", padx=20, pady=(0, 10))
+        
         # Select current
         map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter"}
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
+
+    def on_threshold_change(self, value):
+        """Update threshold value label and session when slider changes."""
+        threshold_int = int(value)
+        self.threshold_value_label.configure(text=f"{threshold_int}%")
+        self.session.engine.confidence_threshold = threshold_int
 
     def init_local_tab(self):
         self.tab_local.grid_columnconfigure(0, weight=1)

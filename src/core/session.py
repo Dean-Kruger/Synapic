@@ -31,6 +31,7 @@ class EngineConfig:
     api_key: str = ""
     system_prompt: str = "" # For OpenRouter/LLMs
     task: str = "image-to-text" # Default task
+    confidence_threshold: int = 50 # Confidence threshold (1-100) for category/keyword filtering
 
 class Session:
     def __init__(self):
