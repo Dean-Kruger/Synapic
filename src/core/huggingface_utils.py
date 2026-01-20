@@ -58,7 +58,7 @@ def get_device_info():
 
 
 class TqdmToQueue(tqdm):
-    """A custom tqdm class that sends progress updates to a queue."""
+    """A custom tqdm class that sends progress updates to a queue and suppresses terminal output."""
     _lock = RLock()
     _q = None
     _update_type = None
@@ -70,14 +70,31 @@ class TqdmToQueue(tqdm):
             TqdmToQueue._q = kwargs.pop('q')
         if 'update_type' in kwargs:
             TqdmToQueue._update_type = kwargs.pop('update_type')
+        
+        # Suppress terminal output by directing to null
+        self.fp = open(os.devnull, 'w') if os.name != 'nt' else open('NUL', 'w')
+        kwargs['file'] = self.fp
         super().__init__(*args, **kwargs)
 
     def update(self, n=1):
-        super().update(n)
+        # We don't call super().update(n) to avoid any potential terminal output
+        # but we track the internal state if needed.
+        # super().update(n) 
+        
         with TqdmToQueue._lock:
             TqdmToQueue._overall_downloaded_bytes += n
             if TqdmToQueue._q and TqdmToQueue._update_type:
+                # Log occasionally to avoid flooding but show it's working
+                if TqdmToQueue._overall_downloaded_bytes % (1024 * 1024) == 0: # every MB
+                     logging.debug(f"Progress Update: {TqdmToQueue._overall_downloaded_bytes}/{TqdmToQueue._overall_total_size}")
                 TqdmToQueue._q.put((TqdmToQueue._update_type, (TqdmToQueue._overall_downloaded_bytes, TqdmToQueue._overall_total_size)))
+
+    def close(self):
+        super().close()
+        if hasattr(self, 'fp') and self.fp and not self.fp.closed:
+            try:
+                self.fp.close()
+            except: pass
 
     @classmethod
     def get_lock(cls):
@@ -135,7 +152,8 @@ def get_remote_model_size(model_id: str, token: Optional[str] = None) -> int:
     """Fetch the total size of a model from the Hub in bytes."""
     try:
         api = HfApi(token=token)
-        model_info = api.model_info(repo_id=model_id)
+        # CRITICAL: files_metadata=True is required to get sizes of all files in repo
+        model_info = api.model_info(repo_id=model_id, files_metadata=True)
         return sum(s.size for s in (model_info.siblings or []) if s.size is not None)
     except Exception as e:
         logging.warning(f"Failed to get size for {model_id}: {e}")
@@ -244,8 +262,9 @@ def get_suggested_task(model_config: dict) -> str:
     if mtype in ["blip", "blip-2", "git", "qwen2_vl", "llava"]:
         return config.MODEL_TASK_IMAGE_TO_TEXT
     
-    # Default fallback
-    return config.MODEL_TASK_IMAGE_CLASSIFICATION
+def get_model_capability(task: str) -> str:
+    """Returns a human-readable capability string for a given task."""
+    return config.CAPABILITY_MAP.get(task, "Unknown")
 
 def find_local_models() -> dict[str, dict]:
     """
@@ -281,13 +300,15 @@ def find_local_models() -> dict[str, dict]:
                 
                 # Infer suggested task
                 suggested_task = get_suggested_task(model_config)
+                capability = get_model_capability(suggested_task)
                 
                 local_models[model_id] = {
                     'config': model_config,
                     'path': latest_snapshot,
                     'size_bytes': size_bytes,
                     'size_str': format_size(size_bytes),
-                    'suggested_task': suggested_task
+                    'suggested_task': suggested_task,
+                    'capability': capability
                 }
         except Exception as e:
             logging.debug(f"Could not inspect model {model_id}: {e}")
@@ -343,7 +364,7 @@ def download_model_worker(model_id, q, token=None):
         
         # Determine missing bytes to make progress bar accurate
         api = HfApi(token=token)
-        model_info = api.model_info(repo_id=model_id)
+        model_info = api.model_info(repo_id=model_id, files_metadata=True)
         
         model_cache_dir = get_model_cache_dir(model_id)
         snapshot_dir = os.path.join(model_cache_dir, 'snapshots')

@@ -11,6 +11,14 @@ from . import openrouter_utils
 from . import image_processing
 from . import config
 
+# Import verification test
+try:
+    import tests.verify_metadata as verifier
+except ImportError:
+    # Fallback if tests is not in path (e.g. when packaged)
+    verifier = None
+
+
 class ProcessingManager:
     def __init__(self, session: Session, log_callback: Callable[[str], None], progress_callback: Callable[[float, int, int], None]):
         self.session = session
@@ -257,6 +265,26 @@ class ProcessingManager:
                     keywords=kws,
                     description=desc
                 )
+                
+                # Perform verification if update was successful
+                if success and verifier:
+                    self.logger.info(f"Verifying metadata for Daminion item {item_id}...")
+                    verified = verifier.verify_metadata_update(
+                        client=daminion_client,
+                        item_id=item_id,
+                        expected_cat=cat,
+                        expected_kws=kws,
+                        expected_desc=desc
+                    )
+                    if verified:
+                        self.logger.info(f"Metadata verification successful for item {item_id}")
+                        self.log(f"Verification: Passed")
+                    else:
+                        self.logger.warning(f"Metadata verification failed for item {item_id}")
+                        self.log(f"Verification: FAILED (Check details in log file)")
+                        # We don't fail the whole item if verification fails, 
+                        # just log it as a warning.
+
             else:
                 success = image_processing.write_metadata(
                     image_path=path,

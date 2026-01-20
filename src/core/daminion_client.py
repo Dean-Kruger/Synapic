@@ -603,18 +603,11 @@ class DaminionClient:
             # Build tag GUID lookup
             tag_guid_map = {tag.name.lower(): tag.guid for tag in self._tag_schema}
             
-            def get_guid(name):
-                # Try common variations
-                for n in [name.lower(), name.lower() + 's', name.lower()[:-1] if name.lower().endswith('s') else name.lower()]:
-                    if n in tag_guid_map:
-                        return tag_guid_map[n]
-                return None
-
             # Add category if provided
             if category:
-                category_guid = get_guid('categories')
+                category_guid = tag_guid_map.get('category') or tag_guid_map.get('categories')
                 if category_guid:
-                    category_tag_id = self._get_tag_id('categories') or self._get_tag_id('category')
+                    category_tag_id = self._get_tag_id('category') or self._get_tag_id('categories')
                     if category_tag_id:
                         # Find existing category value
                         category_values = self._api.tags.find_tag_values(
@@ -629,21 +622,34 @@ class DaminionClient:
                                 "remove": False
                             })
                         else:
-                            # Fallback to value-based creation via BatchUpdate if pre-creation fails
-                            operations.append({
-                                "guid": category_guid,
-                                "value": category,
-                                "remove": False
-                            })
+                            # Try to create or just pass value
+                            try:
+                                new_id = self._api.tags.create_tag_value(
+                                    tag_guid=category_guid,
+                                    value_text=category
+                                )
+                                operations.append({
+                                    "guid": category_guid,
+                                    "id": new_id,
+                                    "remove": False
+                                })
+                            except Exception as e:
+                                logger.warning(f"Failed to create category value '{category}': {e}")
+                                # Fallback to value
+                                operations.append({
+                                    "guid": category_guid,
+                                    "value": category,
+                                    "remove": False
+                                })
             
             # Add keywords if provided
             if keywords:
-                keywords_guid = get_guid('keywords')
+                keywords_guid = tag_guid_map.get('keywords')
                 if keywords_guid:
                     keywords_tag_id = self._get_tag_id('keywords')
                     if keywords_tag_id:
                         for keyword in keywords:
-                            # Find existing keyword value
+                            # Find or create keyword value
                             keyword_values = self._api.tags.find_tag_values(
                                 tag_id=keywords_tag_id,
                                 filter_text=keyword
@@ -656,9 +662,8 @@ class DaminionClient:
                                     "remove": False
                                 })
                             else:
-                                # Try to create or just pass value
+                                # Create new keyword
                                 try:
-                                    logger.debug(f"Creating new keyword value: {keyword}")
                                     new_id = self._api.tags.create_tag_value(
                                         tag_guid=keywords_guid,
                                         value_text=keyword
@@ -669,7 +674,8 @@ class DaminionClient:
                                         "remove": False
                                     })
                                 except Exception as e:
-                                    logger.warning(f"Failed to create keyword '{keyword}' via API (will try value-based update): {e}")
+                                    logger.warning(f"Failed to create keyword '{keyword}': {e}")
+                                    # Fallback to value
                                     operations.append({
                                         "guid": keywords_guid,
                                         "value": keyword,
@@ -678,7 +684,7 @@ class DaminionClient:
             
             # Add description if provided
             if description:
-                description_guid = get_guid('description') or get_guid('caption')
+                description_guid = tag_guid_map.get('description') or tag_guid_map.get('caption')
                 if description_guid:
                     operations.append({
                         "guid": description_guid,
@@ -700,6 +706,7 @@ class DaminionClient:
         except Exception as e:
             logger.error(f"Failed to update metadata for item {item_id}: {e}", exc_info=True)
             return False
+
     
     def logout(self):
         """Logout and cleanup."""

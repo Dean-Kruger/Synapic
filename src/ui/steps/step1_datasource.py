@@ -315,12 +315,12 @@ class Step1Datasource(ctk.CTkFrame):
         self.search_entry.bind("<KeyRelease>", self.update_count)
 
         # Metadata Condition (Untagged)
-        metadata_frame = ctk.CTkFrame(self.filters_container)
-        metadata_frame.pack(fill="x", padx=20, pady=5)
+        self.metadata_frame = ctk.CTkFrame(self.filters_container)
+        self.metadata_frame.pack(fill="x", padx=20, pady=5)
         
-        ctk.CTkLabel(metadata_frame, text="Identify Untagged Items (Optional):", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
+        ctk.CTkLabel(self.metadata_frame, text="Identify Untagged Items (Optional):", font=("Roboto", 16, "bold")).pack(anchor="w", padx=20, pady=(10, 5))
 
-        untagged_frame = ctk.CTkFrame(metadata_frame, fg_color="transparent")
+        untagged_frame = ctk.CTkFrame(self.metadata_frame, fg_color="transparent")
         untagged_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         self.chk_untagged_kws = ctk.CTkCheckBox(untagged_frame, text="Keywords", command=self.update_count)
@@ -506,7 +506,11 @@ class Step1Datasource(ctk.CTkFrame):
                     self.lbl_total_count.configure(text=f"Records: {final_count}{suffix}")
                     # Show toggle if records > 500 (or unknown)
                     if final_count > 500 or suffix == "+":
-                         self.limit_toggle_frame.pack(fill="x", padx=20, pady=10)
+                         if hasattr(self, 'metadata_frame'):
+                             # Reposition before metadata frame if possible
+                             self.limit_toggle_frame.pack(fill="x", padx=20, pady=10, before=self.metadata_frame)
+                         else:
+                             self.limit_toggle_frame.pack(fill="x", padx=20, pady=10)
                     else:
                          self.limit_toggle_frame.pack_forget()
 

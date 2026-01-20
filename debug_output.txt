@@ -1,0 +1,19 @@
+INFO:root:Initialized DaminionAPI for http://researchserver.juicefilm.local/daminion
+INFO:src.core.daminion_client:DaminionClient initialized for http://researchserver.juicefilm.local/daminion
+INFO:root:Successfully authenticated as admin
+INFO:src.core.daminion_client:Loaded tag schema: 82 unique tags mapped
+INFO:src.core.daminion_client:Successfully authenticated to http://researchserver.juicefilm.local/daminion
+
+Fetching item 883889...
+
+Item Structure: ['uniqueId', 'id', 'linkedInCount', 'linkedOutCount', 'guid', 'hashCode', 'name', 'fileName', 'values', 'rawValues', 'mediaFormat', 'orientation', 'versionControlState', 'colorLabel', 'width', 'height', 'fileSize', 'formatType', 'videoType', 'expirationDate', 'thumbnailPath', 'videoPreview', 'status']
+
+Values (first 10):
+Traceback (most recent call last):
+  File "c:\Users\deank\sourcecode\Synapic\tests\debug_item_structure.py", line 47, in <module>
+    main()
+    ~~~~^^
+  File "c:\Users\deank\sourcecode\Synapic\tests\debug_item_structure.py", line 38, in main
+    for i, v in enumerate(item['values'][:10]):
+                          ~~~~~~~~~~~~~~^^^^^
+TypeError: 'NoneType' object is not subscriptable

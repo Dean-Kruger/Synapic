@@ -1,0 +1,22 @@
+2026-01-20 13:04:41,405 - root - INFO - Initialized DaminionAPI for http://researchserver.juicefilm.local/daminion
+2026-01-20 13:04:41,405 - src.core.daminion_client - INFO - DaminionClient initialized for http://researchserver.juicefilm.local/daminion
+2026-01-20 13:04:41,522 - root - INFO - Successfully authenticated as admin
+2026-01-20 13:04:41,690 - src.core.daminion_client - INFO - Loaded tag schema: 82 unique tags mapped
+2026-01-20 13:04:41,690 - src.core.daminion_client - INFO - Successfully authenticated to http://researchserver.juicefilm.local/daminion
+2026-01-20 13:04:41,690 - __main__ - INFO - Testing persistence with unique keyword: Synapic_57aec852
+2026-01-20 13:04:41,962 - __main__ - INFO - Current keywords: ['Transport', 'Road', 'Seashore', 'Coast', 'Seacoast', 'Sea-Coast', 'baboon', 'warthog', 'African elephant', 'Loxodonta africana', 'Indian elephant', 'Elephas maximus', 'Synapic_a959704d']
+2026-01-20 13:04:41,962 - __main__ - INFO - Adding keyword to item 883889...
+2026-01-20 13:04:42,088 - src.core.daminion_client - WARNING - Failed to create keyword 'Synapic_57aec852': Request failed: API Error 404: Value cannot be null.
+
+Parameter name: g
+
+   at System.Guid..ctor(String g)
+
+   at DAMClient.Web.Controllers.IndexedTagValuesController.DoCreateValue(String username, ValueData data, Boolean useGuid) in C:\Daminion\code\DAMClient.Web\Controllers\IndexedTagValuesController.cs:line 2090
+2026-01-20 13:04:42,259 - src.core.daminion_client - INFO - Successfully updated metadata for item 883889
+2026-01-20 13:04:42,259 - __main__ - INFO - Update reported success. Waiting 2 seconds for server to commit...
+2026-01-20 13:04:44,259 - __main__ - INFO - Retrieving metadata to verify persistence...
+2026-01-20 13:04:44,882 - __main__ - INFO - Keywords AFTER update: ['Transport', 'Road', 'Seashore', 'Coast', 'Seacoast', 'Sea-Coast', 'baboon', 'warthog', 'African elephant', 'Loxodonta africana', 'Indian elephant', 'Elephas maximus', 'Synapic_a959704d', 'Synapic_57aec852']
+2026-01-20 13:04:44,882 - __main__ - INFO - SUCCESS: Unique keyword found in catalog!
+2026-01-20 13:04:44,902 - root - WARNING - Logout error: Resource not found: HTTP 404: Not Found
+2026-01-20 13:04:44,902 - src.core.daminion_client - INFO - Logged out successfully

@@ -38,6 +38,14 @@ TASK_DISPLAY_MAP = {
     MODEL_TASK_IMAGE_TO_TEXT: "Description"
 }
 
+CAPABILITY_MAP = {
+    MODEL_TASK_IMAGE_CLASSIFICATION: "Keywording",
+    MODEL_TASK_ZERO_SHOT: "Categorisation",
+    MODEL_TASK_IMAGE_TO_TEXT: "Description",
+    "image-text-to-text": "Multi-modal",
+    "visual-question-answering": "Multi-modal"
+}
+
 DISPLAY_TASK_MAP = {v: k for k, v in TASK_DISPLAY_MAP.items()}
 
 # --- Image Processing ---

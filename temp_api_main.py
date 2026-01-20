@@ -440,9 +440,8 @@ class MediaItemsAPI(BaseAPI):
         index: int = 0,
         page_size: int = 500,
         sort_tag: Optional[int] = None,
-        ascending: bool = True,
-        include_total: bool = False
-    ) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], int]]:
+        ascending: bool = True
+    ) -> List[Dict[str, Any]]:
         """
         Search for media items using text or structured query.
         
@@ -485,20 +484,10 @@ class MediaItemsAPI(BaseAPI):
         
         response = self._request("/api/MediaItems/Get", params=params)
         
-        items = []
-        total = 0
-        
         # Handle different response formats
         if isinstance(response, dict):
-            items = response.get('mediaItems', response.get('items', response.get('data', [])))
-            total = response.get('totalCount', response.get('count', len(items)))
-        elif isinstance(response, list):
-            items = response
-            total = len(items)
-            
-        if include_total:
-            return items, total
-        return items
+            return response.get('mediaItems', response.get('items', response.get('data', [])))
+        return response if isinstance(response, list) else []
     
     def get_by_ids(self, item_ids: List[int]) -> List[Dict[str, Any]]:
         """
@@ -511,16 +500,10 @@ class MediaItemsAPI(BaseAPI):
             List of media item dictionaries
         """
         ids_str = ','.join(str(id) for id in item_ids)
-        response = self._request("/api/MediaItems/GetByIds", params={"ids": ids_str})
-        
-        if isinstance(response, dict):
-            return response.get('mediaItems', response.get('items', response.get('data', [])))
-        return response if isinstance(response, list) else []
-
+        return self._request("/api/MediaItems/GetByIds", params={"ids": ids_str})
     
     def get_count(
         self,
-        query: Optional[str] = None,
         query_line: Optional[str] = None,
         operators: Optional[str] = None,
         force: bool = False
@@ -529,7 +512,6 @@ class MediaItemsAPI(BaseAPI):
         Get count of items matching query without retrieving full data.
         
         Args:
-            query: Simple text search query
             query_line: Structured query
             operators: Operators for query
             force: Force refresh of cached count
@@ -538,22 +520,13 @@ class MediaItemsAPI(BaseAPI):
             Number of matching items
         """
         params = {"force": str(force).lower()}
-        if query:
-            params["search"] = query
         if query_line:
             params["queryLine"] = query_line
         if operators:
             params["f"] = operators
         
-        try:
-            result = self._request("/api/MediaItems/GetCount", params=params)
-            count = result if isinstance(result, int) else result.get('count', result.get('totalCount', 0))
-            logging.debug(f"API GetCount result: {count} (params: {params})")
-            return count
-        except Exception as e:
-            logging.warning(f"API GetCount failed: {e}. Falling back to search with size=1")
-            _, total = self.search(query=query, query_line=query_line, operators=operators, page_size=1, include_total=True)
-            return total
+        result = self._request("/api/MediaItems/GetCount", params=params)
+        return result if isinstance(result, int) else result.get('count', 0)
     
     def get_absolute_path(self, item_id: int) -> str:
         """
@@ -772,22 +745,17 @@ class TagsAPI(BaseAPI):
             ID of created value
         """
         data = {
-            "guid": tag_guid,
+            "tagGuid": tag_guid,
             "value": value_text
         }
         if parent_id is not None:
             data["parentId"] = parent_id
         
-        response = self._request(
+        return self._request(
             "/api/IndexedTagValues/CreateValueByGuid",
             method="POST",
             data=data
         )
-        
-        # Response is a list of created values
-        if isinstance(response, list) and len(response) > 0:
-            return response[0].get('id', 0)
-        return response if isinstance(response, (int, str)) else 0
     
     def update_tag_value(
         self,

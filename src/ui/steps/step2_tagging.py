@@ -151,6 +151,17 @@ class ConfigDialog(ctk.CTkToplevel):
         )
         self.local_list_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
         
+        # Add a header label for clarity
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Size':>10}"
+        self.list_header = ctk.CTkLabel(
+            self.local_list_frame, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        )
+        self.list_header.pack(fill="x", pady=(5, 10), padx=5)
+        
         # Selection and action
         footer = ctk.CTkFrame(self.tab_local, fg_color="transparent")
         footer.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
@@ -197,7 +208,11 @@ class ConfigDialog(ctk.CTkToplevel):
                 sorted_models = sorted(all_local.items(), key=lambda x: x[1].get('size_bytes', 0), reverse=True)
                 
                 for model_id, info in sorted_models:
-                    self.add_cached_model_item(model_id, info.get('size_str', 'Unknown size'))
+                    self.add_cached_model_item(
+                        model_id, 
+                        info.get('size_str', 'Unknown size'),
+                        info.get('capability', 'Unknown')
+                    )
                     
         except Exception as e:
             ctk.CTkLabel(
@@ -206,17 +221,22 @@ class ConfigDialog(ctk.CTkToplevel):
                 text_color="red"
             ).pack()
 
-    def add_cached_model_item(self, model_id, size_str):
+    def add_cached_model_item(self, model_id, size_str, capability):
         """Add a cached model to the list."""
         frame = ctk.CTkFrame(self.local_list_frame)
         frame.pack(fill="x", pady=2)
         
+        # Format the text with "columns" using padding/fixed width font if possible, 
+        # but for now a nice formatted string.
+        display_text = f"✓ {model_id:<40} | {capability:^15} | {size_str:>10}"
+        
         btn = ctk.CTkButton(
             frame, 
-            text=f"✓ {model_id} ({size_str})", 
+            text=display_text, 
+            font=("Courier New", 12), # Using monospace for column-like look
             fg_color="transparent", 
             border_width=1,
-            text_color="green",
+            text_color="#2FA572",
             anchor="w",
             command=lambda m=model_id: self.select_local_model(m)
         )
@@ -325,6 +345,17 @@ class ConfigDialog(ctk.CTkToplevel):
         self.hf_list = ctk.CTkScrollableFrame(self.tab_hf, label_text="Recommended Multi-modal Models")
         self.hf_list.grid(row=3, column=0, sticky="nsew", padx=10, pady=5)
 
+        # Add header
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Size':>10}"
+        self.hf_list_header = ctk.CTkLabel(
+            self.hf_list, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        )
+        self.hf_list_header.pack(fill="x", pady=(5, 10), padx=5)
+
         # Selection
         row4 = ctk.CTkFrame(self.tab_hf, fg_color="transparent")
         row4.grid(row=4, column=0, sticky="ew", padx=10, pady=(10,20))
@@ -352,33 +383,50 @@ class ConfigDialog(ctk.CTkToplevel):
 
     def search_hf_online(self):
         query = self.hf_search.get()
-        # Default to multimodal tasks
-        tasks = ["image-to-text", "visual-question-answering"]
-        
         # Clear list
         for w in self.hf_list.winfo_children(): w.destroy()
-        ctk.CTkLabel(self.hf_list, text="Searching Hub (Multi-modal only)...", text_color="gray").pack(pady=10)
+        ctk.CTkLabel(self.hf_list, text="Searching Hub...", text_color="gray").pack(pady=10)
         
         def worker():
             try:
-                # Combine results from typical multimodal tasks
+                from huggingface_hub import list_models
+                from src.core import huggingface_utils, config
+                
+                tasks = [
+                    config.MODEL_TASK_IMAGE_CLASSIFICATION,
+                    config.MODEL_TASK_IMAGE_TO_TEXT,
+                    config.MODEL_TASK_ZERO_SHOT,
+                    "visual-question-answering",
+                    "image-text-to-text"
+                ]
+                
                 all_results = []
                 for t in tasks:
                     models = list_models(filter=t, search=query, limit=5, sort="downloads", direction=-1)
-                    all_results.extend([m.id for m in models])
+                    for m in models:
+                        all_results.append({
+                            'id': m.id,
+                            'task': t,
+                            'capability': huggingface_utils.get_model_capability(t)
+                        })
                 
                 # Deduplicate
-                unique_results = list(dict.fromkeys(all_results))
+                seen = set()
+                unique_results = []
+                for r in all_results:
+                    if r['id'] not in seen:
+                        unique_results.append(r)
+                        seen.add(r['id'])
                 
                 # Fetch sizes
-                from src.core import huggingface_utils
-                results_with_size = []
-                for mid in unique_results:
+                results_with_details = []
+                for item in unique_results:
+                    mid = item['id']
                     size_bytes = huggingface_utils.get_remote_model_size(mid)
-                    size_str = huggingface_utils.format_size(size_bytes)
-                    results_with_size.append((mid, size_str))
+                    item['size_str'] = huggingface_utils.format_size(size_bytes)
+                    results_with_details.append(item)
 
-                self.after(0, lambda: self.show_hf_results(results_with_size))
+                self.after(0, lambda: self.show_hf_results(results_with_details))
             except Exception as e:
                 error_msg = str(e)
                 self.after(0, lambda: self.show_hf_results([], error=error_msg))
@@ -389,6 +437,10 @@ class ConfigDialog(ctk.CTkToplevel):
     def show_hf_results(self, results, error=None):
         for w in self.hf_list.winfo_children(): w.destroy()
         
+        # Re-add header
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Size':>10}"
+        ctk.CTkLabel(self.hf_list, text=header_text, font=("Courier New", 12, "bold"), text_color="gray", anchor="w").pack(fill="x", pady=(5, 10), padx=5)
+
         if error:
             ctk.CTkLabel(self.hf_list, text=f"Error: {error}", text_color="red").pack()
             return
@@ -397,9 +449,22 @@ class ConfigDialog(ctk.CTkToplevel):
             ctk.CTkLabel(self.hf_list, text="No models found.").pack()
             return
 
-        for mid, size_str in results:
-            btn = ctk.CTkButton(self.hf_list, text=f"{mid} ({size_str})", fg_color="transparent", border_width=1, 
-                                anchor="w", command=lambda m=mid: self.select_hf_model(m))
+        for item in results:
+            mid = item['id']
+            size_str = item.get('size_str', 'Unknown')
+            capability = item.get('capability', 'Unknown')
+            
+            display_text = f"{mid:<40} | {capability:^15} | {size_str:>10}"
+            
+            btn = ctk.CTkButton(
+                self.hf_list, 
+                text=display_text, 
+                font=("Courier New", 12),
+                fg_color="transparent", 
+                border_width=1, 
+                anchor="w", 
+                command=lambda m=mid: self.select_hf_model(m)
+            )
             btn.pack(fill="x", pady=2)
 
     def select_hf_model(self, mid):
@@ -537,6 +602,17 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.results_frame = ctk.CTkScrollableFrame(self, label_text="Hugging Face Hub Results")
         self.results_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
         
+        # Add a header label
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Size':>10}"
+        self.results_header = ctk.CTkLabel(
+            self.results_frame, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        )
+        self.results_header.pack(fill="x", pady=(5, 10), padx=5)
+        
         # Status footer
         self.footer = ctk.CTkFrame(self)
         self.footer.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
@@ -563,41 +639,84 @@ class DownloadManagerDialog(ctk.CTkToplevel):
     def _search_worker(self, query, task):
         try:
             from huggingface_hub import list_models
-            from src.core import huggingface_utils
-            tasks = ["image-to-text", "visual-question-answering"]
-            all_found = []
+            from src.core import huggingface_utils, config
+            
+            # search across all relevant image tasks to be helpful
+            tasks = [
+                config.MODEL_TASK_IMAGE_CLASSIFICATION,
+                config.MODEL_TASK_IMAGE_TO_TEXT,
+                config.MODEL_TASK_ZERO_SHOT,
+                "visual-question-answering",
+                "image-text-to-text"
+            ]
+            
+            all_results = []
             for t in tasks:
-                models = list_models(filter=t, search=query, limit=5, sort="downloads", direction=-1)
-                all_found.extend([m.id for m in models])
+                models = list_models(filter=t, search=query, limit=10, sort="downloads", direction=-1)
+                for m in models:
+                    all_results.append({
+                        'id': m.id,
+                        'task': t,
+                        'capability': huggingface_utils.get_model_capability(t)
+                    })
             
-            unique_ids = list(dict.fromkeys(all_found)) # Dedupe
+            # Deduplicate by ID, keeping the first task found
+            seen = set()
+            unique_results = []
+            for r in all_results:
+                if r['id'] not in seen:
+                    unique_results.append(r)
+                    seen.add(r['id'])
             
-            # Fetch sizes
-            results_with_size = []
-            for mid in unique_ids:
-                size_bytes = huggingface_utils.get_remote_model_size(mid)
-                size_str = huggingface_utils.format_size(size_bytes)
-                results_with_size.append((mid, size_str))
+            # Fetch sizes concurrently to avoid UI lag
+            from concurrent.futures import ThreadPoolExecutor
+            
+            def fetch_size(item):
+                mid = item['id']
+                try:
+                    size_bytes = huggingface_utils.get_remote_model_size(mid)
+                    item['size_str'] = huggingface_utils.format_size(size_bytes)
+                except Exception:
+                    item['size_str'] = "Unknown"
+                return item
 
-            self.after(0, lambda: self.show_search_results(results_with_size))
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results_with_details = list(executor.map(fetch_size, unique_results))
+
+            self.after(0, lambda: self.show_search_results(results_with_details))
         except Exception as e:
             error_msg = str(e)
             self.after(0, lambda: self.lbl_status.configure(text=f"Error: {error_msg}", text_color="red"))
 
     def show_search_results(self, results):
         self.lbl_status.configure(text=f"Found {len(results)} models.", text_color="gray")
+        for widget in self.results_frame.winfo_children():
+            widget.destroy()
+
+        # Re-add header
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Size':>10}"
+        ctk.CTkLabel(self.results_frame, text=header_text, font=("Courier New", 12, "bold"), text_color="gray", anchor="w").pack(fill="x", pady=(5, 10), padx=5)
+
         if not results:
              ctk.CTkLabel(self.results_frame, text="No models found matching your query.", text_color="gray").pack(pady=20)
              return
              
-        for mid, size_str in results:
-            self.add_result_item(mid, size_str)
+        for item in results:
+            self.add_result_item(item['id'], item['size_str'], item['capability'])
 
-    def add_result_item(self, model_id, size_str):
+    def add_result_item(self, model_id, size_str, capability):
         frame = ctk.CTkFrame(self.results_frame)
-        frame.pack(fill="x", pady=5, padx=5)
+        frame.pack(fill="x", pady=2, padx=5)
         
-        ctk.CTkLabel(frame, text=f"{model_id} ({size_str})", font=("Roboto", 12, "bold"), anchor="w").pack(side="left", padx=10, fill="x", expand=True)
+        # Consistent column-like look
+        display_text = f"{model_id:<40} | {capability:^15} | {size_str:>10}"
+        
+        ctk.CTkLabel(
+            frame, 
+            text=display_text, 
+            font=("Courier New", 12), 
+            anchor="w"
+        ).pack(side="left", padx=10, fill="x", expand=True)
         
         # Buttons
         btn_test = ctk.CTkButton(frame, text="Test via API", width=100, fg_color="#3B8ED0", 

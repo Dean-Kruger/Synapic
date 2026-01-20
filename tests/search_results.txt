@@ -1,0 +1,12 @@
+
+--- Searching for 'resnet' (Task: image-to-text) ---
+Found 2 models: ['theadityamittal/resnet50', 'Nebrass1/image_captioning_resnet_lstm']
+
+--- Searching for 'resnet' (Task: image-classification) ---
+Found 10 models: ['timm/resnet50.a1_in1k', 'timm/resnet18.a1_in1k', 'timm/wide_resnet50_2.racm_in1k', 'timm/resnet34.a1_in1k', 'microsoft/resnet-50', 'timm/resnet50.fb_swsl_ig1b_ft_in1k', 'microsoft/resnet-18', 'timm/resnet101.tv_in1k', 'timm/inception_resnet_v2.tf_in1k', 'timm/resnet18.fb_swsl_ig1b_ft_in1k']
+
+--- Searching for 'resnet' (Task: None) ---
+Found 10 models: ['pyannote/wespeaker-voxceleb-resnet34-LM', 'timm/resnet50.a1_in1k', 'timm/resnet18.a1_in1k', 'speechbrain/spkrec-resnet-voxceleb', 'facebook/detr-resnet-50', 'timm/wide_resnet50_2.racm_in1k', 'Revai/pyannote-wespeaker-voxceleb-resnet34-LM', 'timm/resnet34.a1_in1k', 'microsoft/resnet-50', 'timm/resnet50.fb_swsl_ig1b_ft_in1k']
+
+--- Searching for 'vit' (Task: None) ---
+Found 10 models: ['openai/clip-vit-base-patch32', 'openai/clip-vit-large-patch14', 'google/vit-base-patch16-224', 'hustvl/vitmatte-small-composition-1k', 'openai/clip-vit-large-patch14-336', 'laion/CLIP-ViT-B-32-DataComp.XL-s13B-b90K', 'openai/clip-vit-base-patch16', 'lpiccinelli/unidepth-v2-vitl14', 'usyd-community/vitpose-plus-base', 'laion/CLIP-ViT-B-32-laion2B-s34B-b79K']
