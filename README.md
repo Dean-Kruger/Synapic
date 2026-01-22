@@ -4,6 +4,42 @@
 
 Synapic automatically generates professional metadata (categories, keywords, and descriptions) for your image library using state-of-the-art AI models. Whether you're managing a personal photo collection or a professional DAM system, Synapic streamlines the tagging workflow with intelligent automation.
 
+### Getting Started
+
+Prerequisites
+- Python 3.8+ (Windows/macOS/Linux)
+- Optional GPU drivers if you plan to run local inference (CPU is supported)
+
+Installation
+- Create a virtual environment:
+  - Windows: python -m venv .venv
+  - macOS/Linux: python3 -m venv .venv
+- Activate the virtual environment:
+  - Windows: .\.venv\Scripts\activate
+  - macOS/Linux: source .venv/bin/activate
+- Install dependencies:
+  - pip install -r requirements.txt
+
+Run
+- Start the application:
+  - Windows: python main.py
+  - macOS/Linux: python3 main.py
+- The GUI will launch. Use the wizard to:
+  1) Select data source (local folder or Daminion DAM)
+  2) Configure tagging engine (model, device, thresholds)
+  3) Process images and view results
+
+Testing & Packaging
+- Run tests with pytest:
+  - pytest tests
+- Packaging with PyInstaller is supported via the main.spec file:
+  - pyinstaller main.spec
+- Note: Packaging artifacts (build/dist/release) are typically produced during the build process and should not be committed to source control.
+
+Notes
+- This repository uses a wizard-style UI built with CustomTkinter.
+- The project includes heavy ML dependencies; ensure you have sufficient RAM/CPU/GPU resources as appropriate.
+
 ## Features
 
 ### 🤖 **Multi-Engine AI Support**

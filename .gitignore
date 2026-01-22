@@ -8,5 +8,5 @@ logs/
 build/
 dist/
 # *.spec removed to allow tracking main.spec for CI/CD
-
+release/
 
