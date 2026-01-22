@@ -28,13 +28,119 @@ class Step2Tagging(ctk.CTkFrame):
         self.create_engine_card(self.cards_frame, "Hugging Face", "huggingface", 1)
         self.create_engine_card(self.cards_frame, "OpenRouter", "openrouter", 2)
 
-        # Configure Button
-        self.btn_config = ctk.CTkButton(self.container, text="Configure Selected Engine", command=self.open_config_dialog, width=250)
-        self.btn_config.grid(row=2, column=0, pady=30)
+        # Configure Button (renamed to "Select Engine")
+        self.btn_config = ctk.CTkButton(self.container, text="Select Engine", command=self.open_config_dialog, width=200)
+        self.btn_config.grid(row=2, column=0, pady=20)
+        
+        # === Model Info Section ===
+        model_info_frame = ctk.CTkFrame(self.container, fg_color="#2B2B2B", corner_radius=10)
+        model_info_frame.grid(row=3, column=0, pady=10, padx=40, sticky="ew")
+        model_info_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            model_info_frame,
+            text="Selected Model:",
+            font=("Roboto", 12, "bold")
+        ).grid(row=0, column=0, padx=15, pady=10, sticky="w")
+        
+        self.model_info_label = ctk.CTkLabel(
+            model_info_frame,
+            text=self._get_model_display_text(),
+            font=("Roboto", 12),
+            text_color="#2FA572",
+            anchor="w"
+        )
+        self.model_info_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        
+        # === Global Settings Section ===
+        settings_frame = ctk.CTkFrame(self.container, fg_color="#2B2B2B", corner_radius=10)
+        settings_frame.grid(row=4, column=0, pady=10, padx=40, sticky="ew")
+        
+        ctk.CTkLabel(
+            settings_frame,
+            text="Global Settings",
+            font=("Roboto", 14, "bold")
+        ).pack(pady=(15, 10))
+        
+        # Device Toggle
+        device_container = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        device_container.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(
+            device_container,
+            text="Inference Device:",
+            font=("Roboto", 12)
+        ).pack(side="left", padx=(0, 10))
+        
+        self.device_var = ctk.StringVar(value=self.controller.session.engine.device)
+        self.device_switch = ctk.CTkSegmentedButton(
+            device_container,
+            values=["cpu", "cuda"],
+            variable=self.device_var,
+            command=self.on_device_change,
+            width=140
+        )
+        self.device_switch.pack(side="left")
+        
+        # Confidence Threshold
+        threshold_label_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        threshold_label_frame.pack(fill="x", padx=20, pady=(10, 5))
+        
+        ctk.CTkLabel(
+            threshold_label_frame,
+            text="Confidence Threshold:",
+            font=("Roboto", 12, "bold")
+        ).pack(side="left", padx=(0, 5))
+        
+        self.threshold_value_label = ctk.CTkLabel(
+            threshold_label_frame,
+            text=f"{self.controller.session.engine.confidence_threshold}%",
+            font=("Roboto", 12),
+            text_color="#2FA572"
+        )
+        self.threshold_value_label.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(
+            threshold_label_frame,
+            text="(Filters out low-probability matches)",
+            font=("Roboto", 9),
+            text_color="gray"
+        ).pack(side="left", padx=10)
+        
+        # Slider with precision level labels
+        slider_container = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        slider_container.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Left label: Free
+        ctk.CTkLabel(
+            slider_container,
+            text="Free",
+            font=("Roboto", 10),
+            text_color="gray"
+        ).pack(side="left", padx=(0, 10))
+        
+        # Slider
+        self.threshold_slider = ctk.CTkSlider(
+            slider_container,
+            from_=1,
+            to=100,
+            number_of_steps=99,
+            command=self.on_threshold_change
+        )
+        self.threshold_slider.set(self.controller.session.engine.confidence_threshold)
+        self.threshold_slider.pack(side="left", fill="x", expand=True)
+        
+        # Right label: Strict
+        ctk.CTkLabel(
+            slider_container,
+            text="Strict",
+            font=("Roboto", 10),
+            text_color="gray"
+        ).pack(side="left", padx=(10, 0))
         
         # Navigation Buttons
         nav_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        nav_frame.grid(row=3, column=0, pady=20, sticky="ew")
+        nav_frame.grid(row=5, column=0, pady=20, sticky="ew")
         
         ctk.CTkButton(nav_frame, text="Previous", command=lambda: self.controller.show_step("Step1Datasource"), width=150, fg_color="gray").pack(side="left", padx=20)
         ctk.CTkButton(nav_frame, text="Next Step", command=self.next_step, width=200, height=40).pack(side="right", padx=20)
@@ -42,6 +148,38 @@ class Step2Tagging(ctk.CTkFrame):
         # Traces for color coding
         self.engine_var.trace_add("write", lambda *args: self.update_config_button_color())
         self.update_config_button_color()
+
+    def _get_model_display_text(self):
+        """Generate display text for selected model with capability info."""
+        session = self.controller.session
+        model_id = session.engine.model_id or "None"
+        task = session.engine.task or "unknown"
+        
+        # Map task to capability description
+        capability_map = {
+            "image-classification": "Keywords",
+            "zero-shot-image-classification": "Categories",
+            "image-to-text": "Description",
+            "image-text-to-text": "Multi-modal (Keywords, Categories, Description)"
+        }
+        
+        capability = capability_map.get(task, "Unknown capability")
+        
+        if model_id == "None" or not model_id:
+            return "No model selected"
+        
+        return f"{model_id} • {capability}"
+
+    def on_threshold_change(self, value):
+        """Update threshold value label and session when slider changes."""
+        threshold_int = int(value)
+        self.threshold_value_label.configure(text=f"{threshold_int}%")
+        self.controller.session.engine.confidence_threshold = threshold_int
+
+    def on_device_change(self, value):
+        """Update session device setting when toggle changes."""
+        self.controller.session.engine.device = value
+        print(f"Device changed to: {value}")
 
     def update_config_button_color(self):
         engine = self.engine_var.get()
@@ -75,6 +213,11 @@ class Step2Tagging(ctk.CTkFrame):
         dialog = ConfigDialog(self, self.controller.session, initial_tab=engine)
         self.wait_window(dialog)
         self.update_config_button_color()
+        self.update_model_info()
+        
+    def update_model_info(self):
+        """Update the model info label after configuration changes."""
+        self.model_info_label.configure(text=self._get_model_display_text())
         
     def next_step(self):
         # Update session
@@ -93,14 +236,20 @@ class Step2Tagging(ctk.CTkFrame):
 
     def refresh_stats(self): # Called by App.show_step
         self.update_config_button_color()
+        self.update_model_info()
+        # Update device and threshold from session
+        self.device_var.set(self.controller.session.engine.device)
+        self.threshold_slider.set(self.controller.session.engine.confidence_threshold)
+        self.threshold_value_label.configure(text=f"{self.controller.session.engine.confidence_threshold}%")
+
 
 
 class ConfigDialog(ctk.CTkToplevel):
     def __init__(self, parent, session, initial_tab="huggingface"):
         super().__init__(parent)
         self.session = session
-        self.title("Engine Configuration")
-        self.geometry("700x600")
+        self.title("Select Engine")
+        self.geometry("700x550")
         
         # Make modal
         self.transient(parent)
@@ -121,80 +270,9 @@ class ConfigDialog(ctk.CTkToplevel):
         self.init_hf_tab()
         self.init_or_tab()
         
-        # Common Settings Section (below tabs)
-        settings_frame = ctk.CTkFrame(self)
-        settings_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
-        
-        # Threshold Slider
-        threshold_label_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        threshold_label_frame.pack(fill="x", pady=5)
-        
-        ctk.CTkLabel(
-            threshold_label_frame, 
-            text="Confidence Threshold:", 
-            font=("Roboto", 13, "bold")
-        ).pack(side="left", padx=(10, 5))
-        
-        self.threshold_value_label = ctk.CTkLabel(
-            threshold_label_frame,
-            text=f"{session.engine.confidence_threshold}%",
-            font=("Roboto", 13),
-            text_color="#2FA572"
-        )
-        self.threshold_value_label.pack(side="left", padx=5)
-        
-        ctk.CTkLabel(
-            threshold_label_frame,
-            text="(Filters out low-probability category/keyword matches)",
-            font=("Roboto", 10),
-            text_color="gray"
-        ).pack(side="left", padx=10)
-        
-        # Slider with precision level labels
-        slider_container = ctk.CTkFrame(settings_frame, fg_color="transparent")
-        slider_container.pack(fill="x", padx=20, pady=(0, 10))
-        
-        # Left label: Free (low threshold = more permissive)
-        ctk.CTkLabel(
-            slider_container,
-            text="Free",
-            font=("Roboto", 10),
-            text_color="gray"
-        ).pack(side="left", padx=(0, 10))
-        
-        # Slider
-        self.threshold_slider = ctk.CTkSlider(
-            slider_container,
-            from_=1,
-            to=100,
-            number_of_steps=99,
-            command=self.on_threshold_change
-        )
-        self.threshold_slider.set(session.engine.confidence_threshold)
-        self.threshold_slider.pack(side="left", fill="x", expand=True)
-        
-        # Right label: Strict (high threshold = more restrictive)
-        ctk.CTkLabel(
-            slider_container,
-            text="Strict",
-            font=("Roboto", 10),
-            text_color="gray"
-        ).pack(side="left", padx=(10, 0))
-        
         # Select current
         map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter"}
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
-
-    def on_threshold_change(self, value):
-        """Update threshold value label and session when slider changes."""
-        threshold_int = int(value)
-        self.threshold_value_label.configure(text=f"{threshold_int}%")
-        self.session.engine.confidence_threshold = threshold_int
-
-    def on_device_change(self, value):
-        """Update session device setting when toggle changes."""
-        self.session.engine.device = value
-        print(f"Device changed to: {value}")
 
     def init_local_tab(self):
         self.tab_local.grid_columnconfigure(0, weight=1)
@@ -210,23 +288,6 @@ class ConfigDialog(ctk.CTkToplevel):
         self.cache_count_label = ctk.CTkLabel(header, text="(0 models)", 
                                               text_color="gray")
         self.cache_count_label.pack(side="left", padx=5)
-        
-        # Device selection toggle (CPU/GPU)
-        device_frame = ctk.CTkFrame(header, fg_color="transparent")
-        device_frame.pack(side="left", padx=20)
-        
-        ctk.CTkLabel(device_frame, text="Device:", 
-                     font=("Roboto", 12)).pack(side="left", padx=(0, 5))
-        
-        self.device_var = ctk.StringVar(value=self.session.engine.device)
-        self.device_switch = ctk.CTkSegmentedButton(
-            device_frame,
-            values=["cpu", "cuda"],
-            variable=self.device_var,
-            command=self.on_device_change,
-            width=140
-        )
-        self.device_switch.pack(side="left")
         
         ctk.CTkButton(header, text="+ Find & Download Models", 
                       command=self.open_download_manager, 
