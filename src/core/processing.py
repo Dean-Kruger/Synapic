@@ -1,3 +1,37 @@
+"""
+Processing Pipeline Module
+===========================
+
+This module implements the core processing pipeline that orchestrates the entire
+image tagging workflow. It manages the multi-threaded execution of AI model inference
+and metadata writing operations.
+
+Key Components:
+- ProcessingManager: Main orchestrator class that runs in a background thread
+- Item fetching: Retrieves images from local filesystem or Daminion
+- Model initialization: Loads AI models for local inference
+- Processing loop: Iterates through items, runs inference, writes metadata
+- Progress tracking: Reports status to UI via callbacks
+
+Threading Model:
+- Main thread: UI event loop
+- Background thread: Processing pipeline (created by ProcessingManager.start())
+- The background thread can be interrupted via stop_event
+
+Workflow Stages:
+1. Fetch items (local folder scan or Daminion query)
+2. Initialize model (if using local inference)
+3. Process each item:
+   a. Load image
+   b. Run AI inference
+   c. Extract tags from results
+   d. Write metadata (EXIF/IPTC or Daminion)
+   e. Verify metadata (optional)
+4. Update statistics and progress
+
+Author: Dean
+"""
+
 import logging
 import threading
 import time
@@ -5,13 +39,15 @@ from pathlib import Path
 from typing import Callable, Optional
 from PIL import Image
 
+# Internal modules
 from .session import Session
 from . import huggingface_utils
 from . import openrouter_utils
 from . import image_processing
 from . import config
 
-# Import verification test
+# Optional metadata verification (for testing/debugging)
+# This module may not be available in packaged distributions
 try:
     import tests.verify_metadata as verifier
 except ImportError:
@@ -19,68 +55,162 @@ except ImportError:
     verifier = None
 
 
+# ============================================================================
+# PROCESSING MANAGER
+# ============================================================================
+
 class ProcessingManager:
+    """
+    Main processing orchestrator that runs the AI tagging pipeline.
+    
+    This class manages the entire processing workflow in a background thread,
+    allowing the UI to remain responsive. It coordinates between:
+    - Data source (local files or Daminion)
+    - AI engine (local models or cloud APIs)
+    - Metadata writing (EXIF/IPTC or Daminion API)
+    
+    The processing runs asynchronously and can be aborted by the user at any time.
+    Progress and log messages are sent to the UI via callback functions.
+    
+    Attributes:
+        session: Session object containing all configuration and state
+        log: Callback function for sending log messages to UI
+        progress: Callback function for updating progress bar (percentage, current, total)
+        stop_event: Threading event used to signal abortion
+        thread: Background thread running the processing job
+        logger: Python logger for file-based logging
+        model: Loaded AI model (only for local inference)
+    
+    Example:
+        >>> manager = ProcessingManager(session, log_callback, progress_callback)
+        >>> manager.start()  # Starts background thread
+        >>> # ... user can abort ...
+        >>> manager.abort()  # Signals thread to stop
+    """
+    
     def __init__(self, session: Session, log_callback: Callable[[str], None], progress_callback: Callable[[float, int, int], None]):
+        """
+        Initialize the processing manager.
+        
+        Args:
+            session: Session object with datasource and engine configuration
+            log_callback: Function to call with log messages for UI display
+            progress_callback: Function to call with progress updates (percentage, current, total)
+        """
         self.session = session
-        self.log = log_callback
-        self.progress = progress_callback
-        self.stop_event = threading.Event()
-        self.thread = None
-        self.logger = logging.getLogger(__name__)
+        self.log = log_callback  # UI log callback
+        self.progress = progress_callback  # UI progress callback
+        self.stop_event = threading.Event()  # Signal for aborting
+        self.thread = None  # Background processing thread
+        self.logger = logging.getLogger(__name__)  # File logger
 
     def start(self):
+        """
+        Start the processing job in a background thread.
+        
+        This method creates and starts a daemon thread that runs the entire
+        processing pipeline. The thread will automatically terminate when the
+        main program exits.
+        
+        The processing workflow is:
+        1. Reset statistics
+        2. Fetch items from datasource
+        3. Initialize model (if local)
+        4. Process each item
+        5. Report completion
+        """
         self.logger.info("Starting processing job")
         self.logger.info(f"Datasource: {self.session.datasource.type}, Engine: {self.session.engine.provider}")
         self.logger.info(f"Model: {self.session.engine.model_id}, Task: {self.session.engine.task}")
         
+        # Clear any previous abort signal
         self.stop_event.clear()
+        
+        # Create and start background thread
+        # daemon=True ensures thread terminates when main program exits
         self.thread = threading.Thread(target=self._run_job, daemon=True)
         self.thread.start()
 
     def abort(self):
+        """
+        Request abortion of the current processing job.
+        
+        This method sets a flag that the background thread checks between
+        each item. The thread will stop processing new items but will
+        complete the current item before exiting.
+        
+        Note: This is a graceful shutdown - the current item will finish processing.
+        """
         self.logger.warning("Processing job abort requested")
-        self.stop_event.set()
+        self.stop_event.set()  # Signal the background thread to stop
         self.log("Stopping job... please wait.")
 
     def _run_job(self):
+        """
+        Main processing loop (runs in background thread).
+        
+        This method orchestrates the entire processing workflow:
+        1. Fetches items from the configured datasource
+        2. Initializes the AI model (if using local inference)
+        3. Processes each item sequentially
+        4. Updates progress after each item
+        5. Handles errors and abortion gracefully
+        
+        The method runs in a separate thread and communicates with the UI
+        via the log and progress callbacks.
+        """
         try:
             self.log("Job started.")
-            self.session.reset_stats()
+            self.session.reset_stats()  # Clear previous run statistics
 
-            # 1. Fetch Items
+            # ================================================================
+            # STAGE 1: FETCH ITEMS
+            # ================================================================
             items = self._fetch_items()
             if not items:
                 self.log("No items found to process.")
                 return
 
+            # Update session statistics
             self.session.total_items = len(items)
             self.logger.info(f"Processing job initialized - {len(items)} items queued")
             self.log(f"Found {len(items)} items to process.")
-            self.progress(0, 0, len(items))
+            self.progress(0, 0, len(items))  # Initialize progress bar
 
-            # 2. Initialize Engine (if Local)
+            # ================================================================
+            # STAGE 2: INITIALIZE MODEL (LOCAL ONLY)
+            # ================================================================
+            # For local inference, load the model into memory once
+            # For API-based inference, no initialization needed
             if self.session.engine.provider == "local":
                 self._init_local_model()
 
-            # 3. Process Loop
+            # ================================================================
+            # STAGE 3: PROCESS EACH ITEM
+            # ================================================================
             for i, item in enumerate(items):
+                # Check if user requested abortion
                 if self.stop_event.is_set():
                     self.logger.info(f"Job aborted by user after processing {i} items")
                     self.log("Job aborted by user.")
                     break
 
+                # Process this item (inference + metadata writing)
                 self._process_single_item(item)
                 
-                # Update progress
+                # Update progress tracking
                 self.session.processed_items += 1
                 pct = (i + 1) / len(items)
                 self.progress(pct, i + 1, len(items))
 
-            
+            # ================================================================
+            # STAGE 4: COMPLETION
+            # ================================================================
             self.logger.info(f"Processing job completed - Processed: {self.session.processed_items}, Failed: {self.session.failed_items}")
             self.log("Job finished.")
 
         except Exception as e:
+            # Catch any unexpected errors in the processing pipeline
             self.logger.exception("Processing job failed with exception")
             logging.exception("Processing failed")
             self.log(f"Error: {e}")
