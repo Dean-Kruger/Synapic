@@ -13,3 +13,4 @@ accelerate
 qwen-vl-utils
 protobuf
 sentencepiece
+pyinstaller

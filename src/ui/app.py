@@ -1,5 +1,7 @@
 import customtkinter as ctk
 import logging
+import os
+import sys
 
 class App(ctk.CTk):
     def __init__(self):
@@ -17,9 +19,14 @@ class App(ctk.CTk):
         self.logger.debug("UI theme configured: Dark mode with blue color theme")
 
         # Set Icon
-        import os
-        # Get the path to the icon file in the release folder
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # Handle path for PyInstaller bundle
+        if getattr(sys, 'frozen', False):
+            # Running in a bundle
+            base_dir = sys._MEIPASS
+        else:
+            # Running in normal python environment
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
         icon_path = os.path.join(base_dir, "release", "Icon.ico")
         if os.path.exists(icon_path):
             try:
