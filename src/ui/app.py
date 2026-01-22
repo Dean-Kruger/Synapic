@@ -1,9 +1,56 @@
+"""
+Main Application Window
+=======================
+
+This module defines the root CustomTkinter application window for Synapic.
+It manages the overall UI structure, session state, and wizard-style workflow.
+
+Architecture:
+The application uses a multi-step wizard interface:
+1. Step 1 (Datasource): Select images from folder or Daminion DAM
+2. Step 2 (Tagging): Configure AI model and processing parameters
+3. Step 3 (Process): Execute batch tagging with progress monitoring
+4. Step 4 (Results): Review, export, and manage processed metadata
+
+Key Responsibilities:
+- Window initialization and theme configuration
+- Session management (creating/loading/saving configuration)
+- Step container lifecycle (creating and destroying wizard steps)
+- Navigation between wizard steps
+- Resource loading (icon) for both development and bundled environments
+
+The App class coordinates between:
+- Session (src.core.session): Stores datasource and engine configuration
+- Step modules (src.ui.steps.*): Individual wizard pages
+- Config manager (src.utils.config_manager): Persistence layer
+
+Usage:
+    >>> app = App()
+    >>> app.mainloop()
+
+Author: Synapic Project
+"""
+
 import customtkinter as ctk
 import logging
 import os
 import sys
 
 class App(ctk.CTk):
+    """
+    Main application window and wizard coordinator.
+    
+    Manages the CustomTkinter root window, session state, and navigation
+    between wizard steps. Handles theme configuration, icon loading,
+    and configuration persistence.
+    
+    Attributes:
+        logger: Logger instance for this module
+        session: Session object containing datasource and engine config
+        current_step: Currently displayed wizard step container
+        save_config_callback: Function to persist configuration to disk
+    """
+    
     def __init__(self):
         super().__init__()
         
