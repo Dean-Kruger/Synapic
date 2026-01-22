@@ -217,41 +217,79 @@ class ProcessingManager:
             self.session.failed_items += 1
 
     def _fetch_items(self):
+        """
+        Fetch items to process from the configured datasource.
+        
+        This method handles two types of datasources:
+        1. Local filesystem - Scans a folder for image files
+        2. Daminion DAM - Queries the Daminion server for items
+        
+        For local sources, it scans for common image formats (.jpg, .jpeg, .png, .tif, .tiff)
+        either recursively or in a single directory.
+        
+        For Daminion sources, it builds a complex query based on:
+        - Scope (all items, saved search, collection, etc.)
+        - Status filter (approved, rejected, unassigned)
+        - Untagged fields filter (items missing keywords, categories, or descriptions)
+        - Search terms
+        - Maximum item limit
+        
+        Returns:
+            list: List of items to process. For local: list of Path objects.
+                  For Daminion: list of item dictionaries with metadata.
+        
+        Raises:
+            FileNotFoundError: If local path doesn't exist
+            ValueError: If Daminion client is not connected
+        """
         ds = self.session.datasource
+        
+        # ================================================================
+        # LOCAL FILESYSTEM SOURCE
+        # ================================================================
         if ds.type == "local":
             path = Path(ds.local_path)
             if not path.exists():
                 raise FileNotFoundError(f"Folder not found: {path}")
             
-            # Scan for images
+            # Define supported image file extensions
             exts = {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
             
+            # Scan directory (recursive or shallow)
             if ds.local_recursive:
                  self.logger.info(f"Performing recursive scan of {path}")
+                 # rglob("*") recursively finds all files in subdirectories
                  files = [p for p in path.rglob("*") if p.suffix.lower() in exts]
             else:
                  self.logger.info(f"Performing shallow scan of {path}")
+                 # iterdir() only scans the immediate directory
                  files = [p for p in path.iterdir() if p.suffix.lower() in exts]
             
             self.logger.info(f"Found {len(files)} image files in local folder: {path} (recursive={ds.local_recursive})")
             return files
 
+        # ================================================================
+        # DAMINION DAM SOURCE
+        # ================================================================
         elif ds.type == "daminion":
+            # Ensure Daminion client is connected
             if not self.session.daminion_client:
                 raise ValueError("Daminion client not connected")
             
             self.logger.info(f"Fetching items from Daminion - Scope: {ds.daminion_scope}, Status: {ds.status_filter}")
             self.log("Fetching items from Daminion...")
             
-            # Build untagged fields list
+            # Build list of fields to filter for untagged items
+            # Only items missing ALL selected fields will be included
             untagged_fields = []
             if ds.daminion_untagged_keywords: untagged_fields.append("Keywords")
             if ds.daminion_untagged_categories: untagged_fields.append("Category")
             if ds.daminion_untagged_description: untagged_fields.append("Description")
             
-            # Determine max items from config
+            # Determine maximum items to fetch (0 = unlimited)
             max_to_fetch = ds.max_items if ds.max_items > 0 else None
             
+            # Query Daminion with all configured filters
             items = self.session.daminion_client.get_items_filtered(
                 scope=ds.daminion_scope,
                 saved_search_id=ds.daminion_saved_search_id or ds.daminion_saved_search,
@@ -266,27 +304,56 @@ class ProcessingManager:
             self.log(f"Retrieved {len(items)} items from Daminion.")
             return items
         
+        # Unknown datasource type
         return []
 
     def _init_local_model(self):
+        """
+        Initialize and load the AI model for local inference.
+        
+        This method is only called when using local inference (not API-based).
+        It loads the model from Hugging Face's cache into memory and prepares
+        it for inference on the selected device (CPU or GPU).
+        
+        The method:
+        1. Converts device string ('cpu'/'cuda') to integer format for pipeline
+        2. Loads the model using huggingface_utils
+        3. Auto-detects and corrects the task if needed
+        4. Stores the model in self.model for reuse across all items
+        
+        Device mapping:
+        - 'cpu' -> -1 (use CPU for inference)
+        - 'cuda' -> 0 (use GPU device 0 for inference)
+        
+        Raises:
+            RuntimeError: If model loading fails
+        
+        Note:
+            The model is loaded once and reused for all items in the batch,
+            which is much more efficient than loading per-item.
+        """
         engine = self.session.engine
         self.logger.info(f"Initializing local model: {engine.model_id}")
         self.log(f"Loading local model: {engine.model_id}...")
         
-        # Convert device string to integer for pipeline
-        # -1 = CPU, 0 = CUDA device 0
+        # Convert device string to integer format expected by transformers pipeline
+        # -1 = CPU, 0 = CUDA device 0 (first GPU)
         device_int = -1 if engine.device == "cpu" else 0
         self.logger.info(f"Using device: {engine.device} (device_int={device_int})")
         
         try:
+            # Load model from Hugging Face cache
+            # This may download the model if not already cached
             self.model = huggingface_utils.load_model(
                 model_id=engine.model_id,
                 task=engine.task,
-                progress_queue=None,
+                progress_queue=None,  # No progress tracking for batch load
                 device=device_int
             )
             
-            # Sync task if it was auto-corrected by load_model
+            # Auto-detect actual task from loaded model
+            # Some models may have a different task than configured
+            # (e.g., VLMs use 'image-text-to-text' instead of 'image-to-text')
             actual_task = getattr(self.model, "task", None)
             if actual_task and actual_task != engine.task:
                 self.logger.info(f"Syncing session task from '{engine.task}' to actual pipeline task '{actual_task}'")
@@ -298,15 +365,49 @@ class ProcessingManager:
             raise RuntimeError(f"Failed to load model: {e}")
 
     def _process_single_item(self, item):
+        """
+        Process a single image item through the complete AI tagging pipeline.
+        
+        This method orchestrates the four-stage processing workflow:
+        1. **Image Loading**: Load from local file or download Daminion thumbnail
+        2. **AI Inference**: Run the image through the configured AI model
+        3. **Tag Extraction**: Parse model output and filter by confidence threshold
+        4. **Metadata Writing**: Write tags to EXIF/IPTC or update Daminion
+        
+        Args:
+            item: Either a Path object (local file) or dict (Daminion item with 'id', 'fileName')
+        
+        Processing Flow:
+            - Detects item type (local vs Daminion) and loads image accordingly
+            - Routes to appropriate inference method (local model vs API)
+            - Handles different model types (VLM, captioning, classification, zero-shot)
+            - Applies confidence threshold filtering to extracted tags
+            - Writes metadata to destination (file or Daminion)
+            - Optionally verifies Daminion metadata updates
+            - Updates session statistics and results
+        
+        Error Handling:
+            - Logs detailed error information for debugging
+            - Increments failed_items counter
+            - Continues processing remaining items (doesn't abort job)
+            - Cleans up temporary files even on failure
+        
+        Note:
+            For Daminion items, thumbnails are downloaded to temp files and
+            cleaned up after processing to avoid disk space issues.
+        """
         path = None
-        is_daminion = isinstance(item, dict)
+        is_daminion = isinstance(item, dict)  # Daminion items are dicts, local items are Path objects
         daminion_client = self.session.daminion_client
-        temp_thumb = None
+        temp_thumb = None  # Track temporary thumbnail file for cleanup
 
         try:
             engine = self.session.engine
             
-            # 1. Load Image
+            # ===============================================================
+            # STAGE 1: IMAGE LOADING
+            # ===============================================================
+            # Load the image from either local filesystem or Daminion server
             if is_daminion:
                 item_id = item.get('id')
                 filename = item.get('fileName') or f"Item {item_id}"
@@ -323,20 +424,33 @@ class ProcessingManager:
                 self.logger.debug(f"Processing local file: {path}")
                 self.log(f"Processing: {path.name}...")
 
-            # 2. Inference
+            # ===============================================================
+            # STAGE 2: AI INFERENCE
+            # ===============================================================
+            # Run the image through the AI model to generate tags
+            # The inference method depends on the configured provider:
+            # - 'local': Use locally loaded model (self.model)
+            # - 'huggingface'/'openrouter': Call API endpoint
             result = None
             
             if engine.provider == "local":
-                # Local Inference
-                # Simple dispatch for now
+                # ---------------------------------------------------------------
+                # LOCAL INFERENCE (Model loaded in memory)
+                # ---------------------------------------------------------------
+                # The model was loaded in _init_local_model() and is reused
+                # for all items in the batch for efficiency
+                
                 if engine.task in [config.MODEL_TASK_IMAGE_TO_TEXT, "image-text-to-text"]:
-                    # Captioning
+                    # Image Captioning / Vision-Language Models (VLMs)
+                    # Handles both standard captioning (BLIP, GIT) and modern VLMs (Qwen2-VL)
                     with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
                          
                          # Check if the pipeline is modern image-text-to-text (e.g. Qwen2-VL)
+                         # These models expect chat-style messages with structured prompts
                          if hasattr(self.model, "task") and self.model.task == "image-text-to-text":
                              # Construct chat-style prompt as expected by modern VLMs (Qwen2-VL, etc.)
+                             # The prompt requests structured JSON output for easier parsing
                              messages = [
                                  {
                                      "role": "user", 
@@ -354,29 +468,40 @@ class ProcessingManager:
                                  self.logger.error(f"VLM inference failed: {e}")
                                  raise
                          else:
-                             # Standard image-to-text (BLIP, GIT, etc.)
+                             # Standard image-to-text models (BLIP, GIT, etc.)
+                             # These models accept a simple prompt string
                              try:
                                  # Provide a default prompt and limit length
                                  result = self.model(img, prompt="Describe the image.", generate_kwargs={"max_new_tokens": 512})
                              except Exception as e:
+                                 # Some models don't accept prompts, fall back to simple call
                                  self.logger.debug(f"Prompted inference failed ({e}), falling back to simple call.")
                                  result = self.model(img)
+                                 
                 elif engine.task == config.MODEL_TASK_ZERO_SHOT:
-                    # Zero-Shot Classification
-                    # Requires candidate_labels
+                    # Zero-Shot Image Classification
+                    # Classifies image into one of the provided candidate labels
+                    # without requiring training on those specific categories
                     with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
                          result = self.model(img, candidate_labels=config.DEFAULT_CANDIDATE_LABELS)
+                         
                 else:
-                    # Classification
-                     with Image.open(path) as img:
+                    # Standard Image Classification
+                    # Uses pre-trained categories from the model's training
+                    with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
                          result = self.model(img)
 
             elif engine.provider in ["huggingface", "openrouter"]:
-                # API Inference
+                # ---------------------------------------------------------------
+                # API INFERENCE (Cloud-based)
+                # ---------------------------------------------------------------
+                # Send image to API endpoint for processing
+                # No local model loading required
                 provider_module = huggingface_utils if engine.provider == "huggingface" else openrouter_utils
                 
+                # Configure inference parameters
                 params = {"max_new_tokens": 512}
                 if engine.task == config.MODEL_TASK_ZERO_SHOT:
                     params["candidate_labels"] = config.DEFAULT_CANDIDATE_LABELS
@@ -389,14 +514,37 @@ class ProcessingManager:
                     parameters=params
                 )
 
-            # 3. Extract Tags
-            # Convert threshold from 1-100 scale to 0.0-1.0 scale
+            # ===============================================================
+            # STAGE 3: TAG EXTRACTION
+            # ===============================================================
+            # Parse the model's output and extract structured metadata
+            # The extraction logic handles different output formats:
+            # - JSON objects (from VLMs)
+            # - Classification results with scores
+            # - Plain text descriptions
+            
+            # Convert threshold from UI scale (1-100) to model scale (0.0-1.0)
+            # Tags with confidence scores below this threshold are filtered out
             threshold = engine.confidence_threshold / 100.0
+            
+            # Extract category, keywords, and description from model result
+            # The extract_tags_from_result function handles:
+            # - Parsing JSON from VLM responses
+            # - Filtering classification results by threshold
+            # - Extracting top predictions as keywords
             cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task, threshold=threshold)
             self.logger.debug(f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}")
             
-            # 4. Write Metadata
+            # ===============================================================
+            # STAGE 4: METADATA WRITING
+            # ===============================================================
+            # Write the extracted tags to the appropriate destination:
+            # - Daminion: Update item metadata via API
+            # - Local: Write to EXIF/IPTC metadata in image file
+            
             if is_daminion:
+                # Update Daminion item metadata via API
+                # This sends the tags to the Daminion server for storage
                 success = daminion_client.update_item_metadata(
                     item_id=item_id,
                     category=cat,
@@ -404,7 +552,8 @@ class ProcessingManager:
                     description=desc
                 )
                 
-                # Perform verification if update was successful
+                # Optional: Verify that the metadata was actually written
+                # This is useful for debugging API issues or data corruption
                 if success and verifier:
                     self.logger.info(f"Verifying metadata for Daminion item {item_id}...")
                     verified = verifier.verify_metadata_update(
@@ -421,9 +570,11 @@ class ProcessingManager:
                         self.logger.warning(f"Metadata verification failed for item {item_id}")
                         self.log(f"Verification: FAILED (Check details in log file)")
                         # We don't fail the whole item if verification fails, 
-                        # just log it as a warning.
+                        # just log it as a warning for manual review
 
             else:
+                # Write metadata to local image file (EXIF/IPTC)
+                # This embeds the tags directly in the image file
                 success = image_processing.write_metadata(
                     image_path=path,
                     category=cat,
@@ -431,11 +582,16 @@ class ProcessingManager:
                     description=desc
                 )
             
+            # ===============================================================
+            # RESULT TRACKING
+            # ===============================================================
+            # Log the processing result and add to session results
             status = "Success" if success else "Write Failed"
             tags_str = f"Cat: {cat}, Kws: {len(kws)}, Desc: {desc[:20]}..."
             self.logger.info(f"Item processed successfully - Status: {status}, Tags: {tags_str}")
             self.log(f"Result: {tags_str}")
             
+            # Store result for export/review in Step 4
             self.session.results.append({
                 "filename": filename if is_daminion else path.name,
                 "status": status,
@@ -443,17 +599,31 @@ class ProcessingManager:
             })
 
         except Exception as e:
+            # ===============================================================
+            # ERROR HANDLING
+            # ===============================================================
+            # Log detailed error information for debugging
+            # The job continues processing remaining items even if one fails
             name = item.get('fileName') if is_daminion else (item.name if isinstance(item, Path) else str(item))
             self.logger.error(f"Failed to process item '{name}': {type(e).__name__}: {str(e)}")
             self.logger.exception("Full traceback:")
             logging.error(f"Failed to process {name}: {e}")
+            
+            # Update failure statistics
             self.session.failed_items += 1
             self.log(f"Failed: {e}")
+            
         finally:
-            # Cleanup temp thumbnail if it was created
+            # ===============================================================
+            # CLEANUP
+            # ===============================================================
+            # Always clean up temporary files, even if processing failed
+            # This prevents disk space issues when processing large batches
             if temp_thumb and temp_thumb.exists():
                 try:
                     import os
                     os.remove(temp_thumb)
+                    self.logger.debug(f"Cleaned up temporary thumbnail: {temp_thumb}")
                 except Exception:
+                    # Ignore cleanup errors - not critical
                     pass
