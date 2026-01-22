@@ -1,7 +1,41 @@
 """
-Functions for processing images and writing metadata.
-Enhanced with type hints, validation, and error handling.
+Image Processing and Metadata Management
+========================================
+
+This module handles all image processing operations, including:
+- Image validation and safety checks
+- AI model result parsing and tag extraction
+- EXIF and IPTC metadata writing
+- File system metadata persistence
+
+The module supports three primary AI model tasks:
+1. Image Classification: Generates keyword tags automatically
+2. Zero-Shot Classification: Matches images to user-defined categories
+3. Image-to-Text: Generates descriptive captions
+
+Key Components:
+- validate_image(): Pre-processing safety checks for image files
+- extract_tags_from_result(): Parses AI model outputs into structured tags
+- write_metadata(): Writes tags to image EXIF/IPTC fields
+- write_metadata_with_retry(): Wrapper with retry logic for reliability
+
+Metadata Formats:
+- IPTC: Keywords written to 2:25 (Keywords) field
+- EXIF: Description written to UserComment field
+- Category: Written to both IPTC 2:15 (Category) and ObjectName
+
+Dependencies:
+- PIL (Pillow): Image loading and validation
+- piexif: EXIF metadata manipulation
+- iptcinfo3: IPTC metadata manipulation
+- src.core.config: Application constants and thresholds
+
+Author: Dean
 """
+
+# ============================================================================
+# IMPORTS
+# ============================================================================
 
 import logging
 import time
@@ -14,9 +48,17 @@ from iptcinfo3 import IPTCInfo
 
 from src.core import config
 
+# ============================================================================
+# CUSTOM EXCEPTIONS
+# ============================================================================
+
 class ImageValidationError(Exception):
     """Raised when image validation fails."""
     pass
+
+# ============================================================================
+# IMAGE VALIDATION
+# ============================================================================
 
 def validate_image(image_path: Path) -> Tuple[bool, Optional[str]]:
     """
@@ -61,6 +103,10 @@ def validate_image(image_path: Path) -> Tuple[bool, Optional[str]]:
     except Exception as e:
         return False, f"Validation failed: {str(e)}"
 
+# ============================================================================
+# METADATA WRITING
+# ============================================================================
+
 def write_metadata_with_retry(
     image_path: Path,
     category: str,
@@ -99,6 +145,36 @@ def write_metadata_with_retry(
 def write_metadata(image_path: Path, category: str, keywords: List[str], description: str, q: Optional[Queue] = None) -> bool:
     """
     Write category, keywords, and description to the image's IPTC and EXIF metadata.
+    
+    This function writes AI-generated tags to both IPTC and EXIF metadata fields for
+    maximum compatibility across different platforms and applications:
+    
+    IPTC Fields:
+    - Object Name (2:05): Category/label
+    - Caption/Abstract (2:120): Description text  
+    - Keywords (2:25): List of keyword tags
+    
+    EXIF Fields:
+    - XPTitle/XPSubject: Category (Windows-compatible)
+    - ImageDescription: Description (cross-platform)
+    - XPComment: Description (Windows-compatible)
+    - XPKeywords: Semicolon-separated keywords (Windows-compatible)
+    
+    Args:
+        image_path: Path to the image file to write metadata to
+        category: Category or label text (empty string = no category)
+        keywords: List of keyword strings to add (merges with existing)
+        description: Descriptive caption text (empty string = no description)
+        q: Optional queue for logging progress messages
+    
+    Returns:
+        True if at least one metadata format (IPTC or EXIF) was written successfully,
+        False if both formats failed
+    
+    Note:
+        - Existing keywords are preserved and merged with new ones (no duplicates)
+        - Temporary files created by iptcinfo3 are cleaned up automatically
+        - Failures in one format don't prevent writing to the other
     """
     iptc_success = False
     exif_success = False
@@ -203,6 +279,10 @@ def process_single_image(
     return False, "Function deprecated in favor of batch pipeline"
 
 
+# ============================================================================
+# AI MODEL RESULT PARSING
+# ============================================================================
+
 def extract_tags_from_result(
     result: Any,
     model_task: str,
@@ -210,16 +290,42 @@ def extract_tags_from_result(
     stop_words: Optional[List[str]] = None
 ) -> Tuple[str, List[str], str]:
     """
-    Extract category, keywords, and description from a single model result.
-
+    Extract category, keywords, and description from AI model output.
+    
+    This function parses the raw output from different types of AI models and converts
+    it into structured metadata tags. It handles three main model types:
+    
+    1. Image Classification: Extracts top-N keyword labels with confidence scores
+    2. Zero-Shot Classification: Finds the best matching category from user-defined options
+    3. Image-to-Text: Parses generated captions and extracts JSON-structured metadata
+    
+    The function includes special handling for:
+    - Vision-Language Models (VLMs) that output structured JSON
+    - Multi-modal models that combine text generation with image understanding
+    - Confidence threshold filtering to ensure quality
+    - Stop word filtering for generated text
+    
     Args:
-        result: The output from the pipeline for a single item
-        model_task: Task type
-        threshold: Confidence threshold
-        stop_words: List of words to ignore (for image-to-text)
-
+        result: The raw output from the AI pipeline. Format varies by task:
+                - Classification: List[Dict] with 'label' and 'score' keys
+                - Zero-Shot: List[Dict] with 'label' and 'score' keys (pre-sorted)
+                - Image-to-Text: List[Dict] or Dict with 'generated_text' key
+        model_task: The AI task type (from config.MODEL_TASK_* constants)
+        threshold: Minimum confidence score (0.0-1.0) for including results.
+                   Default 0.0 means no filtering by confidence.
+        stop_words: Optional list of words to exclude from extracted keywords.
+                    Primarily used for image-to-text tasks.
+    
     Returns:
-        Tuple of (category, keywords, description)
+        Tuple of (category, keywords, description) where:
+        - category: Single best category label (str, may be empty)
+        - keywords: List of keyword tags (List[str], may be empty)
+        - description: Descriptive caption text (str, may be empty)
+    
+    Note:
+        - For VLMs, attempts to parse JSON from generated text first
+        - Falls back to plain text extraction if JSON parsing fails
+        - Applies config.MAX_KEYWORDS_PER_IMAGE limit to prevent tag spam
     """
     category = ""
     keywords = []
