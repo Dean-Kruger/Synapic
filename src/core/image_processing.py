@@ -319,81 +319,116 @@ def extract_tags_from_result(
                 elif isinstance(raw_gen, str):
                     text = raw_gen
                 
+                # Try to extract JSON from the text (robust approach)
                 if text:
-                    # Check if the text itself is a JSON string (VLM outputting raw JSON string)
                     import json
-                    try:
-                        # Attempt to strip markdown code blocks if present
-                        import re
-                        clean_text = re.sub(r'^```json\s*|\s*```$', '', text).strip()
-                        data = json.loads(clean_text)
-                        if isinstance(data, dict):
-                            description = data.get('description') or data.get('generated_text') or data.get('text') or description
-                            category = data.get('category', category)
-                            keywords_raw = data.get('keywords', keywords)
+                    import re
+                    
+                    json_extracted = False
+                    
+                    # Method 1: Try to extract JSON from markdown code blocks
+                    # Match ```json ... ``` or ``` ... ``` with multiline support
+                    json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+                    if json_match:
+                        try:
+                            json_str = json_match.group(1).strip()
+                            data = json.loads(json_str)
+                            if isinstance(data, dict):
+                                description = data.get('description', '')
+                                category = data.get('category', '')
+                                keywords_raw = data.get('keywords', [])
+                                
+                                if isinstance(keywords_raw, str):
+                                    keywords = [k.strip() for k in keywords_raw.split(',')]
+                                elif isinstance(keywords_raw, list):
+                                    keywords = []
+                                    for k in keywords_raw:
+                                        if isinstance(k, str):
+                                            keywords.extend([part.strip() for part in k.split(',')])
+                                        else:
+                                            keywords.append(str(k))
+                                
+                                json_extracted = True
+                                logging.info(f"Successfully extracted JSON from markdown code block")
+                        except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                            logging.debug(f"Failed to parse JSON from markdown block: {e}")
+                    
+                    # Method 2: Try to find raw JSON object in text (without code blocks)
+                    if not json_extracted:
+                        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+                        if json_match:
+                            try:
+                                json_str = json_match.group(0).strip()
+                                data = json.loads(json_str)
+                                if isinstance(data, dict):
+                                    description = data.get('description', '')
+                                    category = data.get('category', '')
+                                    keywords_raw = data.get('keywords', [])
+                                    
+                                    if isinstance(keywords_raw, str):
+                                        keywords = [k.strip() for k in keywords_raw.split(',')]
+                                    elif isinstance(keywords_raw, list):
+                                        keywords = []
+                                        for k in keywords_raw:
+                                            if isinstance(k, str):
+                                                keywords.extend([part.strip() for part in k.split(',')])
+                                            else:
+                                                keywords.append(str(k))
+                                    
+                                    json_extracted = True
+                                    logging.info(f"Successfully extracted raw JSON object from text")
+                            except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                                logging.debug(f"Failed to parse raw JSON object: {e}")
+                    
+                    # Method 3: Fallback - treat entire text as plain description (only if JSON extraction failed)
+                    if not json_extracted:
+                        logging.warning(f"Could not extract JSON from model response, using text as plain description")
+                        description = text.strip()
+                        
+                        # Cleanup: remove common prompt prefixes and structural artifacts
+                        prefixes_to_strip = [
+                            "Describe the image.", "Describe this image.", "Caption:", "Description:",
+                            "The image shows", "This image shows", "An image of", "A picture of",
+                            "generated_text:", "Output:", "Response:", "Analysing the image:",
+                            "Analysis:", "Here is the JSON object:", "```json", "```"
+                        ]
+                        
+                        # Case-insensitive prefix stripping loop
+                        still_stripping = True
+                        while still_stripping:
+                            original = description
+                            for prefix in prefixes_to_strip:
+                                if description.lower().startswith(prefix.lower()):
+                                    description = description[len(prefix):].strip()
                             
-                            if isinstance(keywords_raw, str):
-                                keywords = [k.strip() for k in keywords_raw.split(',')]
-                            elif isinstance(keywords_raw, list):
-                                keywords = []
-                                for k in keywords_raw:
-                                    if isinstance(k, str):
-                                        keywords.extend([part.strip() for part in k.split(',')])
-                                    else:
-                                        keywords.append(str(k))
-                            # If we successfully parsed JSON, don't fallback to treating whole text as description
-                            text = "" 
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                            # Strip common VLM artifacts like 's' at the start followed by comma (often from 'Image shows...')
+                            # or other rogue leading characters
+                            if description.lower().startswith("s, "):
+                                 description = description[3:].strip()
+                            elif description.lower().startswith("s "):
+                                 description = description[2:].strip()
+                            
+                            # Strip leading punctuation/symbols often left by prefix removal
+                            description = description.lstrip(":.,- ")
+                            
+                            if description == original:
+                                still_stripping = False
 
-                if text:
-                    # Fallback: The text IS the description.
-                    description = text.strip()
-                    
-                    # Cleanup: remove common prompt prefixes and structural artifacts
-                    prefixes_to_strip = [
-                        "Describe the image.", "Describe this image.", "Caption:", "Description:",
-                        "The image shows", "This image shows", "An image of", "A picture of",
-                        "generated_text:", "Output:", "Response:", "Analysing the image:",
-                        "Analysis:", "Here is the JSON object:"
-                    ]
-                    
-                    # Case-insensitive prefix stripping loop
-                    still_stripping = True
-                    while still_stripping:
-                        original = description
-                        for prefix in prefixes_to_strip:
-                            if description.lower().startswith(prefix.lower()):
-                                description = description[len(prefix):].strip()
+                        # Final polish
+                        description = description.strip()
                         
-                        # Strip common VLM artifacts like 's' at the start followed by comma (often from 'Image shows...')
-                        # or other rogue leading characters
-                        if description.lower().startswith("s, "):
-                             description = description[3:].strip()
-                        elif description.lower().startswith("s "):
-                             description = description[2:].strip()
-                        
-                        # Strip leading punctuation/symbols often left by prefix removal
-                        description = description.lstrip(":.,- ")
-                        
-                        if description == original:
-                            still_stripping = False
+                        # If description is just a single character (like 'S'), it's likely a failure or artifact
+                        if len(description) <= 1:
+                            logging.warning(f"Extracted description too short ('{description}'). Setting to empty.")
+                            description = ""
 
-                    # Final polish
-                    description = description.strip()
-                    
-                    # If description is just a single character (like 'S'), it's likely a failure or artifact
-                    if len(description) <= 1:
-                        logging.warning(f"Extracted description too short ('{description}'). Setting to empty.")
-                        description = ""
-
-                    if description and not description[0].isupper():
-                        description = description[0].upper() + description[1:]
-                    
-                    # We do NOT extract keywords from caption anymore.
-                    # Unless they were extracted via JSON above.
-                    if not keywords:
-                        keywords = []
+                        if description and not description[0].isupper():
+                            description = description[0].upper() + description[1:]
+                        
+                        # We do NOT extract keywords from caption anymore.
+                        # Unless they were extracted via JSON above.
+                        if not keywords:
+                            keywords = []
 
         # Deduplicate keywords
         if keywords:
