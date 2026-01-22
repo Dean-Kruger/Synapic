@@ -1,8 +1,35 @@
 """
-Daminion DAMS API Client - Updated to use new DaminionAPI
+Daminion Client - High-Level DAM Integration
+============================================
 
-This is a compatibility wrapper that maintains the old DaminionClient interface
-while using the new, robust DaminionAPI implementation internally.
+This module provides a high-level client interface for the Synapic application
+to interact with Daminion Digital Asset Management (DAM) systems.
+
+Architecture:
+- Wraps the low-level DaminionAPI for backward compatibility
+- Adds application-specific business logic and convenience methods
+- Handles tag schema caching and name/ID mapping
+- Provides filtering and search functionality aligned with Synapic's workflow
+
+Key Responsibilities:
+- Scope Management: Catalog-wide, Saved Searches, Shared Collections
+- Item Retrieval: With filtering by status, untagged fields, and keywords
+- Metadata Updates: Tag value creation and item metadata writing
+- Thumbnail Management: Download and caching of preview images
+
+The client abstracts complexity from the UI layer by:
+- Maintaining tag schema cache (avoiding repeated API calls)
+- Implementing client-side filtering when server-side isn't available
+- Providing progress callbacks for long-running operations
+- Handling pagination transparently
+
+Usage:
+    >>> with DaminionClient(url, user, password) as client:
+    ...     items = client.get_items_filtered(scope='all', max_items=100)
+    ...     for item in items:
+    ...         client.update_item_metadata(item['id'], category='Vacation', keywords=['beach'])
+
+Author: Synapic Project
 """
 
 import logging
