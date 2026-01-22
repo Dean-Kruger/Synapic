@@ -150,16 +150,36 @@ class ConfigDialog(ctk.CTkToplevel):
             text_color="gray"
         ).pack(side="left", padx=10)
         
+        # Slider with precision level labels
+        slider_container = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        slider_container.pack(fill="x", padx=20, pady=(0, 10))
+        
+        # Left label: Free (low threshold = more permissive)
+        ctk.CTkLabel(
+            slider_container,
+            text="Free",
+            font=("Roboto", 10),
+            text_color="gray"
+        ).pack(side="left", padx=(0, 10))
+        
         # Slider
         self.threshold_slider = ctk.CTkSlider(
-            settings_frame,
+            slider_container,
             from_=1,
             to=100,
             number_of_steps=99,
             command=self.on_threshold_change
         )
         self.threshold_slider.set(session.engine.confidence_threshold)
-        self.threshold_slider.pack(fill="x", padx=20, pady=(0, 10))
+        self.threshold_slider.pack(side="left", fill="x", expand=True)
+        
+        # Right label: Strict (high threshold = more restrictive)
+        ctk.CTkLabel(
+            slider_container,
+            text="Strict",
+            font=("Roboto", 10),
+            text_color="gray"
+        ).pack(side="left", padx=(10, 0))
         
         # Select current
         map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter"}
