@@ -143,11 +143,17 @@ class ProcessingManager:
         self.logger.info(f"Initializing local model: {engine.model_id}")
         self.log(f"Loading local model: {engine.model_id}...")
         
+        # Convert device string to integer for pipeline
+        # -1 = CPU, 0 = CUDA device 0
+        device_int = -1 if engine.device == "cpu" else 0
+        self.logger.info(f"Using device: {engine.device} (device_int={device_int})")
+        
         try:
             self.model = huggingface_utils.load_model(
                 model_id=engine.model_id,
                 task=engine.task,
-                progress_queue=None
+                progress_queue=None,
+                device=device_int
             )
             
             # Sync task if it was auto-corrected by load_model
@@ -156,8 +162,8 @@ class ProcessingManager:
                 self.logger.info(f"Syncing session task from '{engine.task}' to actual pipeline task '{actual_task}'")
                 engine.task = actual_task
 
-            self.logger.info(f"Local model loaded successfully: {engine.model_id} (Task: {engine.task})")
-            self.log(f"Model loaded successfully (Task: {engine.task}).")
+            self.logger.info(f"Local model loaded successfully: {engine.model_id} (Task: {engine.task}, Device: {engine.device})")
+            self.log(f"Model loaded successfully (Task: {engine.task}, Device: {engine.device}).")
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
 

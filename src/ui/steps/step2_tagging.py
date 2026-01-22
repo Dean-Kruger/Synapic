@@ -171,6 +171,11 @@ class ConfigDialog(ctk.CTkToplevel):
         self.threshold_value_label.configure(text=f"{threshold_int}%")
         self.session.engine.confidence_threshold = threshold_int
 
+    def on_device_change(self, value):
+        """Update session device setting when toggle changes."""
+        self.session.engine.device = value
+        print(f"Device changed to: {value}")
+
     def init_local_tab(self):
         self.tab_local.grid_columnconfigure(0, weight=1)
         self.tab_local.grid_rowconfigure(1, weight=1)  # List area grows
@@ -185,6 +190,23 @@ class ConfigDialog(ctk.CTkToplevel):
         self.cache_count_label = ctk.CTkLabel(header, text="(0 models)", 
                                               text_color="gray")
         self.cache_count_label.pack(side="left", padx=5)
+        
+        # Device selection toggle (CPU/GPU)
+        device_frame = ctk.CTkFrame(header, fg_color="transparent")
+        device_frame.pack(side="left", padx=20)
+        
+        ctk.CTkLabel(device_frame, text="Device:", 
+                     font=("Roboto", 12)).pack(side="left", padx=(0, 5))
+        
+        self.device_var = ctk.StringVar(value=self.session.engine.device)
+        self.device_switch = ctk.CTkSegmentedButton(
+            device_frame,
+            values=["cpu", "cuda"],
+            variable=self.device_var,
+            command=self.on_device_change,
+            width=140
+        )
+        self.device_switch.pack(side="left")
         
         ctk.CTkButton(header, text="+ Find & Download Models", 
                       command=self.open_download_manager, 
