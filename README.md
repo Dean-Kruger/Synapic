@@ -155,12 +155,13 @@ The GitHub Actions workflow automatically builds executables on every push to `m
 
 ## Documentation
 
-Comprehensive code documentation is available in the source:
-- Module docstrings explain architecture and design decisions
-- Function/class docstrings follow Google style
-- Inline comments clarify complex logic
+Comprehensive documentation is available in the repository:
+- **[DEVELOPER_GUIDE.md](docs/developer/DEVELOPER_GUIDE.md)**: Technical architecture, tagging pipeline, and integration patterns.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Coding standards, documentation requirements, and submission process.
+- **[Features Directory](docs/features/)**: Detailed guides for specific features like confidence thresholds.
+- **[API Directory](docs/api/)**: Debugging and reference info for DAM integrations.
 
-Key modules:
+### Key Modules:
 - `src/core/processing.py` - Main tagging pipeline
 - `src/core/image_processing.py` - Metadata extraction and writing
 - `src/core/daminion_client.py` - DAM integration
@@ -169,7 +170,7 @@ Key modules:
 
 ## Contributing
 
-This is a proprietary project by Dean. For feature requests or bug reports, please open an issue on GitHub.
+Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) for details on our coding standards and how to submit pull requests.
 
 ## License
 
@@ -178,11 +179,6 @@ Proprietary. All rights reserved.
 ## Credits
 
 Developed by **Dean** for professional digital asset management workflows.
-
-Powered by:
-- [Hugging Face](https://huggingface.co) - Open-source AI models
-- [OpenRouter](https://openrouter.ai) - Unified AI API platform
-- [Daminion](https://daminion.net) - Digital Asset Management system
 
 ---
 
