@@ -56,8 +56,8 @@ from typing import List, Tuple, Optional, Any
 from src.core import config
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
-SITE_URL = "https://github.com/deanable/hugging-juice-face"
-SITE_NAME = "Hugging Juice Face"
+SITE_URL = "https://github.com/deanable/Synapic"
+SITE_NAME = "Synapic"
 
 # Whitelist of known free vision models that support system messages
 # These models have been verified to work with developer instructions

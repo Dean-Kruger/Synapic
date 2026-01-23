@@ -1,3 +1,5 @@
+"""UI steps for the Synapic wizard."""
+
 from .step1_datasource import Step1Datasource
 from .step2_tagging import Step2Tagging
 from .step3_process import Step3Process

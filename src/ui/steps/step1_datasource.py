@@ -1,8 +1,33 @@
+"""
+Step 1: Datasource Selection
+============================
+
+This module defines the UI for selecting the source of images to be tagged.
+Users can choose between a local folder or a Daminion Server catalog.
+"""
+
 import customtkinter as ctk
 import logging
 from tkinter import messagebox
 
 class Step1Datasource(ctk.CTkFrame):
+    """
+    UI component for the first step of the tagging wizard.
+    
+    This frame allows users to:
+    - Choose between 'Local Folder' and 'Daminion Server' as the data source.
+    - Select a local directory and toggle recursive scanning.
+    - Connect to and browse a Daminion catalog, including views for:
+        - Catalog (filtered by keywords, status, etc.)
+        - Shared Collections
+        - Saved Searches
+    - View item counts and status updates from the DAM.
+    
+    Attributes:
+        controller: The main App instance managing the wizard flow.
+        session: Global application state and configuration.
+        logger: Logger instance for debugging and error reporting.
+    """
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller

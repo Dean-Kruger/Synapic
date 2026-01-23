@@ -1,6 +1,28 @@
+"""
+Step 2: Tagging Engine Configuration
+====================================
+
+This module defines the UI for configuring the AI tagging engine.
+Users can select the engine provider (Local, Hugging Face, or OpenRouter)
+and fine-tune model-specific settings and global processing parameters.
+"""
+
 import customtkinter as ctk
 
 class Step2Tagging(ctk.CTkFrame):
+    """
+    UI component for the second step of the tagging wizard.
+    
+    This frame allows users to:
+    - Select an AI engine provider (Local, Hugging Face Hub, or OpenRouter API).
+    - Configure model-specific parameters via a pop-up dialog.
+    - Set global settings like inference device (CPU/CUDA) and confidence threshold.
+    - View information about the currently selected model and its capabilities.
+    
+    Attributes:
+        controller: The main App instance managing the wizard flow.
+        session: Global application state and configuration.
+    """
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
