@@ -1,6 +1,27 @@
+"""
+Step 3: Processing Execution
+============================
+
+This module defines the UI for monitoring the batch tagging process.
+It provides real-time updates on progress, status, and execution logs.
+"""
+
 import customtkinter as ctk
 
 class Step3Process(ctk.CTkFrame):
+    """
+    UI component for the third step of the tagging wizard.
+    
+    This frame allows users to:
+    - Start and abort the batch tagging process.
+    - Monitor progress via a progress bar and item counter.
+    - View a detailed execution log in real-time.
+    - Navigate to the final results step upon completion.
+    
+    Attributes:
+        controller: The main App instance managing the wizard flow.
+        manager: The ProcessingManager instance handling the background tasks.
+    """
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller

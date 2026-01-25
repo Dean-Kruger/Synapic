@@ -1,3 +1,13 @@
+"""
+Configuration Manager
+=====================
+
+This module handles the persistence of application configuration to disk.
+It uses a JSON file in the user's home directory to store datasource and 
+engine settings across sessions. Sensitive data is automatically masked 
+during logging.
+"""
+
 import json
 import logging
 from pathlib import Path
@@ -9,7 +19,16 @@ from src.utils.logger import log_config
 CONFIG_PATH = Path.home() / ".synapic_v2_config.json"
 
 def save_config(session: Session):
-    """Save session configuration to disk with logging."""
+    """
+    Save session configuration to disk with logging.
+    
+    Converts the datasource and engine configuration to dictionaries
+    and writes them to a JSON file in the user's home directory.
+    Uses the logger to record the action, masking sensitive fields.
+    
+    Args:
+        session: The Session object containing the configuration to save.
+    """
     logger = logging.getLogger(__name__)
     
     try:

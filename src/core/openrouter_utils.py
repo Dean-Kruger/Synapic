@@ -1,9 +1,53 @@
-"""Minimal OpenRouter utilities.
+"""
+OpenRouter API Integration
+===========================
 
-Provides model listing (filtered for image-capable models) and a stub for inference.
-This implementation attempts to call the OpenRouter public models endpoint and filter
-models that declare image/vision modalities. It gracefully handles network errors
-and returns an empty list on failure.
+This module provides client utilities for the OpenRouter unified API platform,
+which aggregates access to multiple AI model providers (OpenAI, Anthropic, Google, etc.)
+with a consistent interface.
+
+Key Features:
+- Model Discovery: Search for free,vision-capable models with system message support
+- API Inference: Send images to OpenRouter models for classification/captioning
+- Multi-Provider: Access models from Google Gemini, Qwen, Nvidia, and more
+- Free Tier: Filters to only show genuinely free models (no per-token charges)
+- Structured Output: Requests JSON-formatted responses for easy parsing
+
+Model Filtering:
+The module applies strict filtering to ensure quality and compatibility:
+1. Vision-Capable: Only shows models that support image inputs
+2. Free Tier: No cost per token (avoids unexpected charges)
+3. System Messages: Supports developer instructions for consistent output format
+4. Whitelist: Known-working models are explicitly whitelisted for reliability
+
+API Workflow:
+1. find_models_by_task() - Discover compatible models
+2. run_inference_api() - Send image + prompt to model
+3. Response normalization - Convert API output to standard format
+
+Request Structure:
+- Uses OpenAI-compatible chat/completions endpoint
+- Images sent as base64-encoded data URLs
+- System messages define expected output schema (JSON)
+- Fallback to multipart upload for legacy compatibility
+
+Response Handling:
+- Extracts generated text from chat completion responses
+- Attempts to parse JSON from model output
+- Normalizes to common format for downstream processing
+- Gracefully handles various response structures
+
+Usage:
+    >>> models, _ = find_models_by_task('image-to-text', token=api_key)
+    >>> result = run_inference_api(models[0], '/path/to/image.jpg', 'image-to-text', token=api_key)
+
+Whitelisted Models:
+- google/gemini-2.0-flash-exp:free
+- google/gemini-flash-1.5-exp
+- nvidia/nemotron-nano-2-vl:free
+- qwen/qwen-2.5-vl-3b-instruct:free
+
+Author: Synapic Project
 """
 
 import logging
@@ -12,8 +56,8 @@ from typing import List, Tuple, Optional, Any
 from src.core import config
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
-SITE_URL = "https://github.com/deanable/hugging-juice-face"
-SITE_NAME = "Hugging Juice Face"
+SITE_URL = "https://github.com/deanable/Synapic"
+SITE_NAME = "Synapic"
 
 # Whitelist of known free vision models that support system messages
 # These models have been verified to work with developer instructions

@@ -1,5 +1,6 @@
 """
 Daminion Server Web API Client
+===============================
 
 A comprehensive, production-ready client for the Daminion Server Web API.
 Based on official API documentation: https://marketing.daminion.net/APIHelp
@@ -7,9 +8,44 @@ Based on official API documentation: https://marketing.daminion.net/APIHelp
 This module provides a clean, intuitive interface to all major Daminion API endpoints
 with proper error handling, type hints, and session management.
 
+Key Features:
+- Full CRUD operations for media items and metadata
+- Tag schema querying and value management
+- Shared collection management
+- Advanced search with filters and pagination
+- Automatic authentication and session handling
+- Rate limiting to prevent server overload
+- Context manager support for resource cleanup
+
+Main Components:
+- DaminionAPI: Main client class with all API methods
+- Exception Hierarchy: Custom exceptions for different error types
+- Data Classes: Type-safe representations of API responses (MediaItem, TagInfo, etc.)
+- Enums: Constants for sort orders and filter operators
+
+Common Usage Patterns:
+    # Basic authentication and item retrieval
+    >>> with DaminionAPI(url, user, password) as api:
+    ...     items = api.get_items_by_ids([123, 456])
+    ...     for item in items:
+    ...         print(item.filename)
+    
+    # Search with filters
+    >>> api = DaminionAPI(url, user, password)
+    >>> api.authenticate()
+    >>> results = api.search_items(keywords=['vacation', 'beach'], limit=50)
+    >>> api.logout()
+
+API Structure:
+- Authentication: /api/Authentication/*
+- Media Items: /api/MediaItems/*
+- Tags: /api/Tags/*
+- Tag Values: /api/IndexedTagValues/*
+- Shared Collections: /api/SharedCollections/*
+
 Author: Synapic Project
 Version: 2.0.0
-Last Updated: 2026-01-18
+Last Updated: 2026-01-22
 """
 
 import logging
@@ -26,6 +62,8 @@ from enum import Enum
 # ============================================================================
 # EXCEPTIONS
 # ============================================================================
+# Custom exception hierarchy for granular error handling.
+# All inherit from DaminionAPIError for blanket exception catching.
 
 class DaminionAPIError(Exception):
     """Base exception for all Daminion API errors."""
@@ -33,50 +71,70 @@ class DaminionAPIError(Exception):
 
 
 class DaminionAuthenticationError(DaminionAPIError):
-    """Raised when authentication fails."""
+    """Raised when authentication fails (e.g., invalid username/password)."""
     pass
 
 
 class DaminionNetworkError(DaminionAPIError):
-    """Raised when network operations fail."""
+    """Raised when network operations fail (e.g., connection timeout, DNS failure)."""
     pass
 
 
 class DaminionRateLimitError(DaminionAPIError):
-    """Raised when rate limit is exceeded."""
+    """Raised when too many requests are made in a short period (429 status)."""
     pass
 
 
 class DaminionNotFoundError(DaminionAPIError):
-    """Raised when a resource is not found (404)."""
+    """Raised when a requested resource doesn't exist (404 status)."""
     pass
 
 
 class DaminionPermissionError(DaminionAPIError):
-    """Raised when user lacks permissions for an operation."""
+    """Raised when user lacks permissions for an operation (403 status)."""
     pass
 
 
 # ============================================================================
 # ENUMS & DATA CLASSES
 # ============================================================================
+# Type-safe data structures for API requests and responses.
 
 class SortOrder(Enum):
-    """Sort order enumeration."""
-    ASCENDING = "asc"
-    DESCENDING = "desc"
+    """Sort order enumeration for query results."""
+    ASCENDING = "asc"   # A-Z, oldest first
+    DESCENDING = "desc"  # Z-A, newest first
 
 
 class FilterOperator(Enum):
-    """Filter operators for tag queries."""
-    ANY = "any"  # Match any of the values
-    ALL = "all"  # Match all values
-    NONE = "none"  # Match none of the values
+    """
+    Filter operators for tag-based queries.
+    
+    Controls how multiple tag values are combined in searches:
+    - ANY: Match items with at least one of the specified values (OR logic)
+    - ALL: Match only items with all specified values (AND logic)
+    - NONE: Exclude items with any of the specified values (NOT logic)
+    """
+    ANY = "any"   # Match any of the values (OR)
+    ALL = "all"   # Match all values (AND)
+    NONE = "none"  # Match none of the values (NOT)
 
 
 @dataclass
 class TagInfo:
-    """Information about a Daminion tag."""
+    """
+    Metadata about a Daminion tag field.
+    
+    Represents a tag schema definition (e.g., "Keywords", "Rating", "Camera Model").
+    Tags can be indexed (hierarchical, dropdown values) or free-text.
+    
+    Attributes:
+        id: Numeric tag identifier
+        guid: Globally unique identifier for the tag
+        name: Human-readable tag name (e.g., "Keywords", "Categories")
+        type: Data type (e.g., "String", "Int", "DateTime")
+        indexed: True if tag has predefined values, False for free-text
+    """
     id: int
     guid: str
     name: str
@@ -86,7 +144,18 @@ class TagInfo:
 
 @dataclass
 class TagValue:
-    """A value for an indexed tag."""
+    """
+    A specific value for an indexed tag.
+    
+    Represents a keyword, category, or other predefined tag value.
+    Tag values can be hierarchical (parent_id links to parent value).
+    
+    Attributes:
+        id: Numeric value identifier
+        text: The actual tag text (e.g., "Vacation", "Beach")
+        count: Number of items with this value (for statistics)
+        parent_id: ID of parent value for hierarchical tags (None for top-level)
+    """
     id: int
     text: str
     count: int = 0
@@ -95,7 +164,19 @@ class TagValue:
 
 @dataclass
 class MediaItem:
-    """Represents a media item in Daminion."""
+    """
+    Represents a media file (image, video, audio) in the Daminion catalog.
+    
+    Contains core identification and all associated metadata tags.
+    The properties dict holds all tag values keyed by tag name.
+    
+    Attributes:
+        id: Numeric item identifier (database ID)
+        guid: Globally unique identifier
+        filename: Original filename (e.g., "IMG_1234.JPG")
+        path: Full file path on the server or network
+        properties: Dict of tag names to values (e.g., {"Keywords": ["beach"], "Rating": 5})
+    """
     id: int
     guid: str
     filename: str
@@ -105,7 +186,20 @@ class MediaItem:
 
 @dataclass
 class SharedCollection:
-    """Represents a shared collection."""
+    """
+    Represents a shared collection (public link) in Daminion.
+    
+    Shared collections allow external users to view/download media without
+    logging in to the system.
+    
+    Attributes:
+        id: Collection identifier
+        name: Collection name
+        code: Access code for the shared link
+        item_count: Number of items in the collection
+        created: Creation timestamp (ISO format)
+        modified: Last modification timestamp (ISO format)
+    """
     id: int
     name: str
     code: str

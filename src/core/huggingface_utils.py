@@ -1,4 +1,44 @@
-"""Utilities for interacting with the Hugging Face Hub."""
+"""
+Hugging Face Hub Integration Utilities
+======================================
+
+This module provides utilities for discovering, downloading, and loading AI models
+from the Hugging Face Model Hub. It serves as the bridge between Synapic and the
+Hugging Face ecosystem.
+
+Key Features:
+- Model Discovery: Search for models by task type with filtering
+- Model Management: Download, cache, and track locally available models
+- Progress Tracking: Custom tqdm integration for download/load progress
+- Device Detection: Auto-detect CUDA/CPU capabilities for optimal performance
+- Pipeline Loading: Unified interface for loading transformers pipelines
+- API Inference: Support for serverless Hugging Face Inference API
+
+Main Components:
+- TqdmToQueue: Custom progress tracker that routes to UI queues
+- Model Discovery: find_models_by_task(), find_local_models()
+- Model Downloads: download_model_worker(), with accurate progress reporting
+- Model Loading: load_model(), load_model_with_progress()
+- Size Utilities: get_remote_model_size(), format_size()
+- Device Info: get_device_info() for hardware capabilities
+
+Common Tasks:
+    # Find and download a model
+    >>> models, downloaded = find_models_by_task('image-classification')
+    >>> download_model_worker('google/vit-base', progress_queue)
+    
+    # Load a model for inference
+    >>> pipe = load_model('google/vit-base', 'image-classification', device=0)
+    >>> results = pipe(image)
+
+Architecture:
+- All I/O operations run in worker threads to keep UI responsive
+- Progress is communicated via Queue messages (type, data)
+- Model caching uses Hugging Face's standard cache (~/.cache/huggingface)
+- Supports both local inference and remote API calls
+
+Author: Synapic Project
+"""
 
 import logging
 import time

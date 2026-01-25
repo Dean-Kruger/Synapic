@@ -1,3 +1,11 @@
+"""
+Step 4: Results and Review
+==========================
+
+This module defines the UI for reviewing the results of the tagging process.
+It provides success/failure metrics and a detailed list of processed items.
+"""
+
 import customtkinter as ctk
 import os
 import subprocess
@@ -5,6 +13,19 @@ import platform
 from pathlib import Path
 
 class Step4Results(ctk.CTkFrame):
+    """
+    UI component for the fourth and final step of the tagging wizard.
+    
+    This frame allows users to:
+    - View high-level metrics (Total, Successful, Failed).
+    - Review a detailed list of processed filenames and their status/tags.
+    - Open the session log file for deep inspection.
+    - Export a CSV report of the session (stub).
+    - Start a new session from Step 1.
+    
+    Attributes:
+        controller: The main App instance managing the wizard flow.
+    """
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
