@@ -117,16 +117,23 @@ Configure in the application settings or via environment variables.
 ## Supported AI Models
 
 ### Local Models (via Hugging Face)
-- Image classification (e.g., `google/vit-base-patch16-224`)
-- Image captioning (e.g., `Salesforce/blip-image-captioning-base`)
-- Zero-shot classification (e.g., `openai/clip-vit-base-patch32`)
-- Multi-modal VLMs (e.g., `Qwen/Qwen2.5-VL-3B-Instruct`)
+### Recommended Models (Tested & Verified)
+
+For the best results, we recommend downloading the following models for local use:
+
+| Task | Recommended Model | Description | Size |
+| :--- | :--- | :--- | :--- |
+| **Description** | `Salesforce/blip-image-captioning-base` | Best general-purpose captioning. Good balance of speed and detail. | ~1GB |
+| **Description** | `Salesforce/blip-image-captioning-large` | Higher quality descriptions at the cost of being slower. | ~2GB |
+| **Keywords** | `google/vit-base-patch16-224` | Excellent for tagging objects and scenes (ImageNet-21k classes). | ~340MB |
+| **Keywords** | `microsoft/resnet-50` | Faster, lightweight alternative for standard object tagging. | ~100MB |
+| **Categorization** | `openai/clip-vit-base-patch32` | Zero-shot classification. Matches images to your *exact* category names. | ~600MB |
+| **Categorization** | `openai/clip-vit-large-patch14` | Higher accuracy zero-shot classification for nuanced categories. | ~1.7GB |
 
 ### Cloud Models (via OpenRouter)
-- Google Gemini 2.0 Flash (free)
-- Qwen VL series (free)
-- Nvidia Nemotron Vision (free)
-- And more...
+- **Google Gemini 2.0 Flash**: Fast, free, and multimodal.
+- **Qwen VL Max**: State-of-the-art open visual language model.
+- **Nvidia Nemotron Vision**: Optimized for high-fidelity visual understanding.
 
 ## Technology Stack
 
