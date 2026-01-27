@@ -10,7 +10,17 @@ Prerequisites
 - Python 3.8+ (Windows/macOS/Linux)
 - Optional GPU drivers if you plan to run local inference (CPU is supported)
 
-Installation
+### Automatic Launcher (Recommended for Windows)
+
+The easiest way to run Synapic from source is using the included launcher script:
+1.  Double-click `start_synapic.bat` in the root directory.
+2.  The script will automatically:
+    -   Check for Python (and offer to install it via Winget if missing).
+    -   Create a virtual environment (`.venv`).
+    -   Install/Update all dependencies from `requirements.txt`.
+    -   Launch the application.
+
+### Manual Installation
 - Create a virtual environment:
   - Windows: python -m venv .venv
   - macOS/Linux: python3 -m venv .venv
