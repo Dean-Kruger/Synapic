@@ -659,6 +659,10 @@ class ConfigDialog(ctk.CTkToplevel):
         row2.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
         ctk.CTkButton(row2, text="Fetch Available Models", command=self.fetch_or_models).pack(side="left")
         
+        self.var_show_paid = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(row2, text="Show Paid Models", variable=self.var_show_paid, 
+                        command=self.fetch_or_models).pack(side="left", padx=10)
+        
         # List
         self.or_list = ctk.CTkScrollableFrame(self.tab_or, label_text="OpenRouter Vision Models")
         self.or_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
@@ -680,7 +684,11 @@ class ConfigDialog(ctk.CTkToplevel):
             try:
                 from src.core import openrouter_utils
                 # We can't really filter by 'task' in the same way, but OR utils handles 'image' modality check
-                models, _ = openrouter_utils.find_models_by_task("image-to-text", limit=100)
+                models, _ = openrouter_utils.find_models_by_task(
+                    "image-to-text", 
+                    limit=100,
+                    include_paid=self.var_show_paid.get()
+                )
                 self.after(0, lambda: self.show_or_results(models) if self.winfo_exists() else None)
             except Exception as e:
                 error_msg = str(e)
@@ -727,7 +735,18 @@ class ConfigDialog(ctk.CTkToplevel):
         self.destroy()
 
     def save_or(self):
-        model_id = self.or_model.get()
+        model_id = self.or_model.get().strip()
+        
+        # Validation
+        from src.core import openrouter_utils
+        if not openrouter_utils.validate_model_id(model_id):
+            import tkinter.messagebox as mb
+            if not mb.askyesno("Invalid Model ID", 
+                               f"The model ID '{model_id}' was not found in the OpenRouter registry.\n\n"
+                               "If this is a new model, you can proceed, but it may fail.\n"
+                               "Do you want to proceed anyway?"):
+                return
+
         if not self.validate_model_id(model_id, "openrouter"):
             return
 

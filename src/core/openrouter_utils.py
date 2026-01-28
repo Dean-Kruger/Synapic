@@ -68,7 +68,66 @@ FREE_VISION_MODELS_WITH_SYSTEM_SUPPORT = [
     "qwen/qwen-2.5-vl-3b-instruct:free",
 ]
 
+# Cache for models to avoid spamming the API
+_CACHED_ALL_MODELS = []
+_CACHE_TIMESTAMP = 0
+CACHE_TTL = 300  # 5 minutes
 
+def fetch_all_models(token: Optional[str] = None, force_refresh: bool = False) -> List[dict]:
+    """Fetch all available models from OpenRouter with caching."""
+    global _CACHED_ALL_MODELS, _CACHE_TIMESTAMP
+    import time
+    
+    current_time = time.time()
+    if _CACHED_ALL_MODELS and not force_refresh and (current_time - _CACHE_TIMESTAMP < CACHE_TTL):
+        return _CACHED_ALL_MODELS
+
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    headers["HTTP-Referer"] = SITE_URL
+    headers["X-Title"] = SITE_NAME
+
+    try:
+        logging.info(f"Fetching full model list from {OPENROUTER_MODELS_URL}...")
+        r = requests.get(OPENROUTER_MODELS_URL, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        models = _extract_models_from_response(data)
+        
+        # Cache standard dicts
+        _CACHED_ALL_MODELS = [m for m in models if isinstance(m, dict)]
+        _CACHE_TIMESTAMP = current_time
+        logging.info(f"Successfully cached {len(_CACHED_ALL_MODELS)} OpenRouter models.")
+        return _CACHED_ALL_MODELS
+    except Exception as e:
+        logging.warning(f"Failed to fetch OpenRouter models: {e}")
+        # Return cache if available even if expired, as fallback
+        if _CACHED_ALL_MODELS:
+            logging.info("Returning stale cache.")
+            return _CACHED_ALL_MODELS
+        return []
+
+def validate_model_id(model_id: str, token: Optional[str] = None) -> bool:
+    """Check if a model ID exists in the OpenRouter registry."""
+    if not model_id:
+        return False
+        
+    models = fetch_all_models(token=token)
+    
+    # 1. Exact match
+    for m in models:
+        mid = m.get("id") or m.get("model") or m.get("name")
+        if mid == model_id:
+            return True
+            
+    # 2. Check cached valid IDs if we just fetched
+    # (The loop above essentially covers this, but explicit check handles edge cases)
+    valid_ids = {m.get("id") for m in models if m.get("id")}
+    if model_id in valid_ids:
+        return True
+        
+    return False
 def _extract_models_from_response(resp_json):
     # Support list, dict with 'models', and dict with 'data'
     if isinstance(resp_json, dict):
@@ -171,14 +230,14 @@ def _supports_system_messages(model_meta: dict) -> bool:
     return False
 
 
-def find_models_by_task(task: str, token: Optional[str] = None, limit: int = 50) -> Tuple[List[str], List[str]]:
+def find_models_by_task(task: str, token: Optional[str] = None, limit: int = 100, include_paid: bool = False) -> Tuple[List[str], List[str]]:
     """Return (model_ids, downloaded_models)
 
     For OpenRouter there is no local download concept here, so downloaded_models is an empty list.
     
     Filters models to only include:
     - Image-capable models (vision/multimodal)
-    - Free models (no cost per token)
+    - Free models (unless include_paid is True)
     - Models that support system messages (developer instructions)
     """
     headers = {}
@@ -187,34 +246,35 @@ def find_models_by_task(task: str, token: Optional[str] = None, limit: int = 50)
     headers["HTTP-Referer"] = SITE_URL
     headers["X-Title"] = SITE_NAME
 
-    try:
-        r = requests.get(OPENROUTER_MODELS_URL, headers=headers, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        models = _extract_models_from_response(data)
-        
-        # Filter for image-capable models
-        image_models = [m for m in models if isinstance(m, dict) and _is_image_model(m)]
-        
-        # Further filter for free models with system message support
-        compatible_models = [
-            m for m in image_models 
-            if _is_free_model(m) and _supports_system_messages(m)
-        ]
-        
-        model_ids = [m.get("id") or m.get("model") or m.get("name") for m in compatible_models]
-        # Remove None and take unique
-        model_ids = [m for m in model_ids if m]
-        
-        # Log the filtering results
-        logging.info(f"OpenRouter model discovery: {len(models)} total, {len(image_models)} vision, {len(compatible_models)} free+system-msg")
-        
-        # Limit
-        model_ids = model_ids[:limit]
-        return model_ids, []
-    except Exception as e:
-        logging.warning(f"OpenRouter model discovery failed: {e}")
-        return [], []
+    # Use the centralized fetcher
+    models = fetch_all_models(token=token)
+    
+    # Filter for image-capable models
+    image_models = [m for m in models if isinstance(m, dict) and _is_image_model(m)]
+    
+    # Further filter
+    compatible_models = []
+    for m in image_models:
+        # 1. System Message Support (Critical for structured output)
+        if not _supports_system_messages(m):
+            continue
+            
+        # 2. Paid vs Free
+        if not include_paid and not _is_free_model(m):
+            continue
+            
+        compatible_models.append(m)
+    
+    model_ids = [m.get("id") or m.get("model") or m.get("name") for m in compatible_models]
+    # Remove None and take unique
+    model_ids = [m for m in model_ids if m]
+    
+    # Log the filtering results
+    logging.info(f"OpenRouter model discovery: {len(models)} total, {len(image_models)} vision, {len(compatible_models)} free+system-msg")
+    
+    # Limit
+    model_ids = model_ids[:limit]
+    return model_ids, []
 
 
 def find_models_by_name(search_query: Optional[str], task: str, token: Optional[str] = None, limit: int = 50) -> Tuple[List[str], List[str]]:
