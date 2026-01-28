@@ -141,9 +141,27 @@ class ProcessingManager:
         
         Note: This is a graceful shutdown - the current item will finish processing.
         """
+        if self.stop_event.is_set():
+            return
+            
         self.logger.warning("Processing job abort requested")
         self.stop_event.set()  # Signal the background thread to stop
         self.log("Stopping job... please wait.")
+
+    def shutdown(self, timeout=2.0):
+        """
+        Ensure the processing manager shuts down completely.
+        Called during application exit.
+        
+        Args:
+            timeout: Maximum time to wait for the thread to join
+        """
+        if self.thread and self.thread.is_alive():
+            self.logger.info("ProcessingManager shutdown initiated")
+            self.abort()
+            self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                self.logger.warning(f"Processing thread did not terminate within {timeout}s - proceeding anyway")
 
     def _run_job(self):
         """

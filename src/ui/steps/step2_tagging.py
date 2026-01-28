@@ -597,10 +597,10 @@ class ConfigDialog(ctk.CTkToplevel):
                     item['size_str'] = huggingface_utils.format_size(size_bytes)
                     results_with_details.append(item)
 
-                self.after(0, lambda: self.show_hf_results(results_with_details))
+                self.after(0, lambda: self.show_hf_results(results_with_details) if self.winfo_exists() else None)
             except Exception as e:
                 error_msg = str(e)
-                self.after(0, lambda: self.show_hf_results([], error=error_msg))
+                self.after(0, lambda: self.show_hf_results([], error=error_msg) if self.winfo_exists() else None)
         
         import threading
         threading.Thread(target=worker, daemon=True).start()
@@ -681,10 +681,10 @@ class ConfigDialog(ctk.CTkToplevel):
                 from src.core import openrouter_utils
                 # We can't really filter by 'task' in the same way, but OR utils handles 'image' modality check
                 models, _ = openrouter_utils.find_models_by_task("image-to-text", limit=100)
-                self.after(0, lambda: self.show_or_results(models))
+                self.after(0, lambda: self.show_or_results(models) if self.winfo_exists() else None)
             except Exception as e:
                 error_msg = str(e)
-                self.after(0, lambda: self.show_or_results([], error=error_msg))
+                self.after(0, lambda: self.show_or_results([], error=error_msg) if self.winfo_exists() else None)
                 
         import threading
         threading.Thread(target=worker, daemon=True).start()
@@ -854,10 +854,10 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             with ThreadPoolExecutor(max_workers=5) as executor:
                 results_with_details = list(executor.map(fetch_size, unique_results))
 
-            self.after(0, lambda: self.show_search_results(results_with_details))
+            self.after(0, lambda: self.show_search_results(results_with_details) if self.winfo_exists() else None)
         except Exception as e:
             error_msg = str(e)
-            self.after(0, lambda: self.lbl_status.configure(text=f"Error: {error_msg}", text_color="red"))
+            self.after(0, lambda: self.lbl_status.configure(text=f"Error: {error_msg}", text_color="red") if self.winfo_exists() else None)
 
     def show_search_results(self, results):
         self.lbl_status.configure(text=f"Found {len(results)} models.", text_color="gray")

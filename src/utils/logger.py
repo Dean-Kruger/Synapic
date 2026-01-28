@@ -166,42 +166,50 @@ class StreamToLogger:
         """Background thread that processes queued log messages."""
         while self.running:
             try:
-                # Wait for messages with timeout to allow checking running flag
-                buf = self.queue.get(timeout=0.1)
+                # Wait for messages with a short timeout to check self.running frequently
+                buf = self.queue.get(timeout=0.05)
                 
                 # Log each line separately
                 for line in buf.rstrip().splitlines():
-                    if line.strip():  # Only log non-empty lines
+                    if line.strip():
                         self.logger.log(self.log_level, line.rstrip())
+                
+                # Mark as done to allow join() to work correctly if used with task_done()
+                self.queue.task_done()
                         
             except queue.Empty:
                 continue
-            except Exception as e:
-                # Log errors in the logging system itself (to file only)
-                try:
-                    self.logger.error(f"Error in logging thread: {e}")
-                except Exception:
-                    pass
+            except Exception:
+                # Avoid logging to the same system if it's failing
+                pass
     
     def shutdown(self):
         """Stop the background thread and flush remaining messages."""
+        if not self.running:
+            return
+            
         self.running = False
         
-        # Process any remaining messages in the queue
-        while not self.queue.empty():
-            try:
-                buf = self.queue.get_nowait()
-                for line in buf.rstrip().splitlines():
-                    if line.strip():
-                        self.logger.log(self.log_level, line.rstrip())
-            except queue.Empty:
-                break
-            except Exception:
-                pass
+        # Process any remaining messages in the queue (graceful flush)
+        try:
+            while not self.queue.empty():
+                try:
+                    buf = self.queue.get_nowait()
+                    for line in buf.rstrip().splitlines():
+                        if line.strip():
+                            self.logger.log(self.log_level, line.rstrip())
+                    self.queue.task_done()
+                except (queue.Empty, ValueError):
+                    break
+        except Exception:
+            pass
         
         # Wait for thread to finish
-        if self.thread.is_alive():
-            self.thread.join(timeout=1.0)
+        if self.thread and self.thread.is_alive():
+            try:
+                self.thread.join(timeout=0.5)
+            except Exception:
+                pass
 
 
 def setup_logging(

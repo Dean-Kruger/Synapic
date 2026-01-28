@@ -129,10 +129,27 @@ class App(ctk.CTk):
              frame.refresh_stats()
 
     def on_close(self):
-        self.logger.info("Application close requested - saving configuration")
-        from src.utils.config_manager import save_config
-        save_config(self.session)
-        self.logger.info("Configuration saved, destroying window")
+        self.logger.info("Application close requested - starting shutdown sequence")
+        
+        # 1. Shutdown all steps (e.g., stop processing threads)
+        for name, step in self.steps.items():
+            if hasattr(step, 'shutdown'):
+                self.logger.debug(f"Shutting down step: {name}")
+                try:
+                    step.shutdown()
+                except Exception as e:
+                    self.logger.error(f"Error shutting down step {name}: {e}")
+
+        # 2. Save configuration
+        try:
+            from src.utils.config_manager import save_config
+            save_config(self.session)
+            self.logger.info("Configuration saved")
+        except Exception as e:
+            self.logger.error(f"Failed to save configuration: {e}")
+
+        # 3. Final cleanup and destruction
+        self.logger.info("Destroying window and exiting")
         self.destroy()
 
 if __name__ == "__main__":

@@ -105,6 +105,8 @@ class TqdmToQueue(tqdm):
     _overall_total_size = 0
     _overall_downloaded_bytes = 0
 
+    _last_queued_bytes = 0
+
     def __init__(self, *args, **kwargs):
         if 'q' in kwargs:
             TqdmToQueue._q = kwargs.pop('q')
@@ -123,11 +125,23 @@ class TqdmToQueue(tqdm):
         
         with TqdmToQueue._lock:
             TqdmToQueue._overall_downloaded_bytes += n
+            
             if TqdmToQueue._q and TqdmToQueue._update_type:
-                # Log occasionally to avoid flooding but show it's working
-                if TqdmToQueue._overall_downloaded_bytes % (1024 * 1024) == 0: # every MB
+                # Log occasionally to avoid flooding (approx every 5MB)
+                # Note: using modulo on bytes is imprecise but sufficient for logging
+                if TqdmToQueue._overall_downloaded_bytes % (5 * 1024 * 1024) < n: 
                      logging.debug(f"Progress Update: {TqdmToQueue._overall_downloaded_bytes}/{TqdmToQueue._overall_total_size}")
-                TqdmToQueue._q.put((TqdmToQueue._update_type, (TqdmToQueue._overall_downloaded_bytes, TqdmToQueue._overall_total_size)))
+                
+                # Throttle UI updates: Only update if changed by > 0.5% or > 1MB, or completed
+                # This prevents flooding the UI queue with millions of tiny 8KB chunk updates
+                threshold = max(int(TqdmToQueue._overall_total_size * 0.005), 1024 * 1024)
+                
+                diff = TqdmToQueue._overall_downloaded_bytes - TqdmToQueue._last_queued_bytes
+                is_complete = (TqdmToQueue._overall_downloaded_bytes >= TqdmToQueue._overall_total_size) and (TqdmToQueue._overall_total_size > 0)
+                
+                if diff >= threshold or is_complete:
+                    TqdmToQueue._q.put((TqdmToQueue._update_type, (TqdmToQueue._overall_downloaded_bytes, TqdmToQueue._overall_total_size)))
+                    TqdmToQueue._last_queued_bytes = TqdmToQueue._overall_downloaded_bytes
 
     def close(self):
         super().close()

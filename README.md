@@ -189,6 +189,17 @@ Comprehensive documentation is available in the repository:
 
 Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) for details on our coding standards and how to submit pull requests.
 
+## Version History
+
+### [1.1.0] - 2026-01-28
+#### Added
+- **Automatic Process Termination**: Added robust logic to ensure all Python processes are killed when the GUI is closed.
+  - Implemented `ProcessingManager.shutdown()` for graceful background thread termination.
+  - Added `Step3Process.shutdown()` to UI wizard steps.
+  - Enhanced `App.on_close()` to orchestrate a clean shutdown sequence.
+  - Added explicit `sys.exit(0)` to `main.py` to prevent zombie processes.
+- **GitHub Download Support**: Added capability to download the repository directly from the launcher.
+
 ## License
 
 Proprietary. All rights reserved.

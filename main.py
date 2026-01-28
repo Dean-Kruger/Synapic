@@ -83,6 +83,10 @@ def main():
         logger.info("Application shutdown")
         from src.utils.logger import shutdown_logging
         shutdown_logging()
+        
+        # Explicitly exit to ensure all threads/processes are terminated
+        # This is especially important for Windows where pythonw can sometimes hang
+        sys.exit(0)
 
 # ============================================================================
 # APPLICATION ENTRY POINT

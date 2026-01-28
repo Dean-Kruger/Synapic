@@ -101,6 +101,11 @@ class Step3Process(ctk.CTkFrame):
         self.btn_stop.configure(state="disabled")
         self.lbl_status.configure(text="Stopping...")
 
+    def shutdown(self):
+        """Clean up resources on application exit."""
+        if hasattr(self, 'manager') and self.manager:
+            self.manager.shutdown()
+
     def safe_log(self, message):
         self.after(0, lambda: self.log(message))
 

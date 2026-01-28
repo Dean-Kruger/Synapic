@@ -216,9 +216,12 @@ class Step1Datasource(ctk.CTkFrame):
         ds.daminion_pass = pwd
         ds.type = "daminion" # Ensure type is set explicitly before connecting
         
+        if not self.winfo_exists(): return
+        
         def _bg_connect():
             success = self.controller.session.connect_daminion()
-            self.after(0, lambda: self._on_connected(success))
+            if self.winfo_exists():
+                self.after(0, lambda: self._on_connected(success))
             
         import threading
         threading.Thread(target=_bg_connect, daemon=True).start()
@@ -403,6 +406,8 @@ class Step1Datasource(ctk.CTkFrame):
             col_names = sorted(list(self._col_map.keys())) if self._col_map else []
             
             def _update_ui():
+                if not self.winfo_exists(): return
+                
                 if hasattr(self, 'ss_dropdown'):
                     self.ss_dropdown.configure(values=ss_names if ss_names else ["No Saved Searches found"])
                     if ss_names: 
@@ -447,7 +452,8 @@ class Step1Datasource(ctk.CTkFrame):
             is_typing = True
         
         delay = 500 if is_typing else 100
-        self._debounce_timer = self.after(delay, self._update_count_actual)
+        if self.winfo_exists():
+            self._debounce_timer = self.after(delay, self._update_count_actual)
 
     def _update_count_actual(self):
         self.lbl_total_count.configure(text="Counting...")
@@ -528,6 +534,8 @@ class Step1Datasource(ctk.CTkFrame):
                 
                 # Update UI and Toggle Visibility
                 def _update_ui():
+                    if not self.winfo_exists(): return
+                    
                     self.lbl_total_count.configure(text=f"Records: {final_count}{suffix}")
                     # Show toggle if records > 500 (or unknown)
                     if final_count > 500 or suffix == "+":
