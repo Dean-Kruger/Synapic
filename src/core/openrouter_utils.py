@@ -1,51 +1,20 @@
 """
 OpenRouter API Integration
-===========================
+==========================
 
 This module provides client utilities for the OpenRouter unified API platform,
-which aggregates access to multiple AI model providers (OpenAI, Anthropic, Google, etc.)
-with a consistent interface.
+which aggregates access to multiple AI model providers (OpenAI, Anthropic, 
+Google, etc.) with a consistent interface.
 
-Key Features:
-- Model Discovery: Search for free,vision-capable models with system message support
-- API Inference: Send images to OpenRouter models for classification/captioning
-- Multi-Provider: Access models from Google Gemini, Qwen, Nvidia, and more
-- Free Tier: Filters to only show genuinely free models (no per-token charges)
-- Structured Output: Requests JSON-formatted responses for easy parsing
+Key Components:
+- Model Discovery: Functions to fetch and filter vision-capable models.
+- Inference Engine: Logic for sending images and structured prompts to the API.
+- Normalization: Code to translate disparate model responses into Synapic's 
+  standard tag format.
 
-Model Filtering:
-The module applies strict filtering to ensure quality and compatibility:
-1. Vision-Capable: Only shows models that support image inputs
-2. Free Tier: No cost per token (avoids unexpected charges)
-3. System Messages: Supports developer instructions for consistent output format
-4. Whitelist: Known-working models are explicitly whitelisted for reliability
-
-API Workflow:
-1. find_models_by_task() - Discover compatible models
-2. run_inference_api() - Send image + prompt to model
-3. Response normalization - Convert API output to standard format
-
-Request Structure:
-- Uses OpenAI-compatible chat/completions endpoint
-- Images sent as base64-encoded data URLs
-- System messages define expected output schema (JSON)
-- Fallback to multipart upload for legacy compatibility
-
-Response Handling:
-- Extracts generated text from chat completion responses
-- Attempts to parse JSON from model output
-- Normalizes to common format for downstream processing
-- Gracefully handles various response structures
-
-Usage:
-    >>> models, _ = find_models_by_task('image-to-text', token=api_key)
-    >>> result = run_inference_api(models[0], '/path/to/image.jpg', 'image-to-text', token=api_key)
-
-Whitelisted Models:
-- google/gemini-2.0-flash-exp:free
-- google/gemini-flash-1.5-exp
-- nvidia/nemotron-nano-2-vl:free
-- qwen/qwen-2.5-vl-3b-instruct:free
+Dependencies:
+- requests: Used for REST communication with OpenRouter.
+- src.core.config: Accesses application-wide model task constants.
 
 Author: Synapic Project
 """
@@ -286,16 +255,33 @@ def find_models_by_name(search_query: Optional[str], task: str, token: Optional[
     return model_ids[:limit], []
 
 
-def run_inference_api(model_id: str, image_path: str, task: str, token: Optional[str] = None, parameters: Optional[dict] = None) -> Any:
-    """Run inference against OpenRouter for a single image.
-
-    Preferred method: use the chat/completions endpoint and pass the image as a
-    base64 `image_url` content part, because this matches the OpenRouter API
-    request schema for multimodal models. If that fails or the response shape is
-    unexpected, fall back to the older model outputs endpoint (multipart upload).
-
-    Returns a normalized structure similar to the Hugging Face adapter so the
-    rest of the application can process it transparently.
+def run_inference_api(
+    model_id: str,
+    image_path: str,
+    task: str,
+    token: Optional[str] = None,
+    parameters: Optional[Dict] = None
+) -> Any:
+    """
+    Execute multimodal AI inference using the OpenRouter API.
+    
+    This function prepares a base64-encoded image and constructs a detailed
+    system prompt based on the requested task (classification vs. captioning).
+    It primarily uses the OpenAI-compatible chat/completions endpoint.
+    
+    Args:
+        model_id: The OpenRouter model identifier (e.g., 'google/gemini-flash').
+        image_path: Absolute path to the local image file.
+        task: The desired AI task (image-to-text, classification, etc.).
+        token: OpenRouter API key.
+        parameters: Optional dictionary of inference parameters (max_tokens, etc.).
+        
+    Returns:
+        A normalized result dictionary containing the model's output.
+        
+    Raises:
+        FileNotFoundError: If the image path is invalid.
+        requests.RequestException: If the API call fails.
     """
     import base64
     import json

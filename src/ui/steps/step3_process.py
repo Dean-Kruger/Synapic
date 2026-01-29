@@ -1,9 +1,21 @@
 """
-Step 3: Processing Execution
-============================
+Step 3: Processing Execution UI
+===============================
 
-This module defines the UI for monitoring the batch tagging process.
-It provides real-time updates on progress, status, and execution logs.
+This module provides the interface for executing and monitoring the batch 
+tagging process. It acts as the UI frontend for the `ProcessingManager`, 
+routing log messages and progress updates from background worker threads
+to the user interface.
+
+Key Responsibilities:
+---------------------
+- Lifecycle Management: Starting and aborting the background tagging worker.
+- Progress Visualization: Real-time progress bar and item counter updates.
+- Execution Logging: Capturing and displaying technical logs from the engine.
+- Thread Safety: Ensuring all background callbacks are safely marshaled to 
+  the main Tkinter thread.
+
+Author: Synapic Project
 """
 
 import customtkinter as ctk
@@ -12,15 +24,12 @@ class Step3Process(ctk.CTkFrame):
     """
     UI component for the third step of the tagging wizard.
     
-    This frame allows users to:
-    - Start and abort the batch tagging process.
-    - Monitor progress via a progress bar and item counter.
-    - View a detailed execution log in real-time.
-    - Navigate to the final results step upon completion.
+    This frame manages the active processing phase. It initializes the
+    `ProcessingManager` with the current session state and provides buttons
+    to control the execution lifecycle.
     
     Attributes:
-        controller: The main App instance managing the wizard flow.
-        manager: The ProcessingManager instance handling the background tasks.
+        manager: The backend orchestrator (ProcessingManager) for the tagging task.
     """
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -79,6 +88,13 @@ class Step3Process(ctk.CTkFrame):
         ctk.CTkButton(nav_frame, text="View Results", command=lambda: self.controller.show_step("Step4Results"), width=200, height=40).pack(side="right", padx=20)
 
     def start_process(self):
+        """
+        Initialize and launch the background processing task.
+        
+        Disables navigation/start buttons and spawns a `ProcessingManager` 
+        to handle the heavy lifting (IO, AI Inference, DAM Writes) on 
+        separate threads.
+        """
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
         self.lbl_status.configure(text="Initializing...")
@@ -94,6 +110,12 @@ class Step3Process(ctk.CTkFrame):
         self.manager.start()
 
     def stop_process(self):
+        """
+        Signal the background manager to stop processing immediately.
+        
+        Note: Termination might not be instantaneous as it waits for the 
+        current item to finish processing to prevent catalog corruption.
+        """
         if hasattr(self, 'manager'):
             self.manager.abort()
         

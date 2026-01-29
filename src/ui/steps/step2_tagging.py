@@ -1,10 +1,27 @@
 """
-Step 2: Tagging Engine Configuration
-====================================
+Step 2: Tagging Engine Configuration UI
+=======================================
 
-This module defines the UI for configuring the AI tagging engine.
-Users can select the engine provider (Local, Hugging Face, or OpenRouter)
-and fine-tune model-specific settings and global processing parameters.
+This module defines the UI for selecting and configuring the AI engine used 
+for image processing. It supports a unified interface for three distinct 
+processing targets:
+
+1. Local Inference: Uses on-device hardware (CPU/GPU) to run cached models.
+2. Hugging Face API: Serverless inference via the Hugging Face Hub (requires Internet).
+3. OpenRouter API: Access to multimodal models via a unified gateway (requires Internet).
+
+The UI manages model discovery (searching the Hub), cache management (downloading 
+models for offline use), and global inference parameters like confidence 
+thresholds and device selection.
+
+Key Components:
+---------------
+- Engine Cards: Visual selection of the processing provider.
+- Config Dialog: Modal interface for model selection and API key management.
+- Download Manager: Integrated downloader with real-time progress for local models.
+- Global Settings: Threshold sliders and device toggles (CPU vs. CUDA).
+
+Author: Synapic Project
 """
 
 import customtkinter as ctk
@@ -13,11 +30,9 @@ class Step2Tagging(ctk.CTkFrame):
     """
     UI component for the second step of the tagging wizard.
     
-    This frame allows users to:
-    - Select an AI engine provider (Local, Hugging Face Hub, or OpenRouter API).
-    - Configure model-specific parameters via a pop-up dialog.
-    - Set global settings like inference device (CPU/CUDA) and confidence threshold.
-    - View information about the currently selected model and its capabilities.
+    This frame serves as the hub for AI configuration. It coordinates between
+    local model caching and remote API settings, ensuring the 'EngineConfig'
+    is fully populated before moving to the execution phase.
     
     Attributes:
         controller: The main App instance managing the wizard flow.
@@ -230,6 +245,12 @@ class Step2Tagging(ctk.CTkFrame):
         card.grid(row=0, column=col, padx=20, pady=20)
         
     def open_config_dialog(self):
+        """
+        Open the modal configuration dialog.
+        
+        The dialog content dynamically changes based on the currently selected 
+        engine provider (Local, HF, or OpenRouter).
+        """
         engine = self.engine_var.get()
         # Pass session to dialog
         dialog = ConfigDialog(self, self.controller.session, initial_tab=engine)
@@ -256,7 +277,13 @@ class Step2Tagging(ctk.CTkFrame):
         print(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
 
-    def refresh_stats(self): # Called by App.show_step
+    def refresh_stats(self):
+        """
+        Synchronize the UI elements with the current Session state.
+        
+        Called by the App coordinator whenever the user navigates to this step
+        to ensure all inputs accurately reflect the persisted configuration.
+        """
         self.update_config_button_color()
         self.update_model_info()
         # Update device and threshold from session
@@ -267,6 +294,13 @@ class Step2Tagging(ctk.CTkFrame):
 
 
 class ConfigDialog(ctk.CTkToplevel):
+    """
+    Modal dialog for detailed AI engine configuration.
+    
+    Contains tabs for Local model selection, Hugging Face API setup, and 
+    OpenRouter gateway settings. It allows users to browseHub, test APIs,
+    and persist credentials to the session.
+    """
     def __init__(self, parent, session, initial_tab="huggingface"):
         super().__init__(parent)
         self.session = session
@@ -759,6 +793,13 @@ class ConfigDialog(ctk.CTkToplevel):
         self.destroy()
 
 class DownloadManagerDialog(ctk.CTkToplevel):
+    """
+    Dedicated modal for browsing and downloading models for local use.
+    
+    This dialog interfaces with both the Hugging Face Hub (search) and the
+    local filesystem (model caching). It provides real-time download progress
+    via a background worker.
+    """
     """Separate dialog for browsing Hub and downloading models."""
     
     def __init__(self, parent, session):

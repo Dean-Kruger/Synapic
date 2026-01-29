@@ -1,6 +1,23 @@
 """
-Enhanced progress tracking with granular stages and true progress indication.
-This module provides detailed progress reporting for model downloads and image processing.
+Granular Progress Orchestration
+===============================
+
+This module provides an advanced progress tracking system that goes beyond 
+simple integer counters. It supports multi-stage operations (e.g., download 
+-> load -> process) with weighted contributions to the overall progress bar.
+
+Key Features:
+-------------
+- Stage-Based Reporting: Tracks distinct phases like 'DOWNLOADING_MODEL' or 
+  'APPLYING_TAGS'.
+- Weighted Accumulation: Allows different stages to contribute differently 
+  to the visual progress (e.g., 90% of the bar is reserved for processing).
+- Predictive Estimation: Calculates time-to-completion based on historical 
+  processing speed per item.
+- Thread-Safe Singleton: Designed to be accessed globally for easy 
+  instrumentation of IO-bound and CPU-bound tasks.
+
+Author: Synapic Project
 """
 
 import logging
@@ -12,7 +29,13 @@ import threading
 
 
 class ProgressStage(Enum):
-    """Enumeration of progress stages."""
+    """
+    State-machine enumeration for the processing lifecycle.
+    
+    Each stage represents a distinct block of work. The `EnhancedProgressTracker`
+    uses these to determine which progress calculation logic (time-based vs. 
+    item-based) to apply.
+    """
     IDLE = "idle"
     CONNECTING = "connecting"
     DOWNLOADING_MODEL = "downloading_model"
@@ -29,7 +52,13 @@ class ProgressStage(Enum):
 
 @dataclass
 class GranularProgress:
-    """Detailed progress information with multiple metrics."""
+    """
+    Immutable snapshot of current progress metrics.
+    
+    This object is designed for consumption by the UI. It provides pre-calculated 
+    percentages and human-readable messages, shielding the display layer 
+    from the complexities of weighted averaging.
+    """
     stage: ProgressStage
     sub_stage: str
     current: int
@@ -60,7 +89,14 @@ class GranularProgress:
 
 
 class EnhancedProgressTracker:
-    """Enhanced progress tracker with granular stage-based reporting."""
+    """
+    Unified engine for tracking multi-stage task progress.
+    
+    This tracker maintains internal state for current items, total counts, 
+    and byte transfers. It handles the 'weighted' logic where specifically 
+    designated stages (usually `PROCESSING_IMAGES`) take up the lion's 
+    share of the visual progress bar.
+    """
     
     def __init__(self):
         self.start_time: Optional[float] = None
@@ -155,7 +191,17 @@ class EnhancedProgressTracker:
             self.set_stage(ProgressStage.PROCESSING_IMAGES, sub_stage="Processing images")
     
     def get_granular_progress(self) -> GranularProgress:
-        """Get current granular progress information."""
+        """
+        Generate a comprehensive progress snapshot.
+        
+        Calculates:
+        1. Overall weighted percentage.
+        2. Average processing speed (items/sec or bytes/sec).
+        3. Estimated time of arrival (ETA) based on average latency.
+        
+        Returns:
+            GranularProgress: A UI-ready package of metrics.
+        """
         if not self.start_time:
             return GranularProgress(
                 stage=self.current_stage,

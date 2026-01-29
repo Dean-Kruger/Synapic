@@ -1,51 +1,23 @@
 """
-Daminion Server Web API Client
-===============================
+Daminion Web API Wrapper
+========================
 
-A comprehensive, production-ready client for the Daminion Server Web API.
-Based on official API documentation: https://marketing.daminion.net/APIHelp
+This module provides a low-level Python wrapper for the Daminion Server Web API.
+It serves as the foundation for all DAM (Digital Asset Management) interactions,
+providing type-safe access to media items, tags, collections, and metadata.
 
-This module provides a clean, intuitive interface to all major Daminion API endpoints
-with proper error handling, type hints, and session management.
+Key Components:
+- DaminionAPI: Main entry point and orchestrator for all API calls.
+- Sub-API Classes: Specialized classes for MediaItems, Tags, Collections, etc.
+- Exception Hierarchy: Custom exceptions for granular error handling.
+- Data Classes: Type-safe representations of Daminion objects (MediaItem, TagInfo).
 
-Key Features:
-- Full CRUD operations for media items and metadata
-- Tag schema querying and value management
-- Shared collection management
-- Advanced search with filters and pagination
-- Automatic authentication and session handling
-- Rate limiting to prevent server overload
-- Context manager support for resource cleanup
-
-Main Components:
-- DaminionAPI: Main client class with all API methods
-- Exception Hierarchy: Custom exceptions for different error types
-- Data Classes: Type-safe representations of API responses (MediaItem, TagInfo, etc.)
-- Enums: Constants for sort orders and filter operators
-
-Common Usage Patterns:
-    # Basic authentication and item retrieval
-    >>> with DaminionAPI(url, user, password) as api:
-    ...     items = api.get_items_by_ids([123, 456])
-    ...     for item in items:
-    ...         print(item.filename)
-    
-    # Search with filters
-    >>> api = DaminionAPI(url, user, password)
-    >>> api.authenticate()
-    >>> results = api.search_items(keywords=['vacation', 'beach'], limit=50)
-    >>> api.logout()
-
-API Structure:
-- Authentication: /api/Authentication/*
-- Media Items: /api/MediaItems/*
-- Tags: /api/Tags/*
-- Tag Values: /api/IndexedTagValues/*
-- Shared Collections: /api/SharedCollections/*
+Dependencies:
+- requests: Used for all synchronous HTTP communication.
+- urllib.parse: Used for safe URL construction and parameter encoding.
+- dataclasses: Used for lightweight data structures.
 
 Author: Synapic Project
-Version: 2.0.0
-Last Updated: 2026-01-22
 """
 
 import logging
@@ -216,36 +188,30 @@ class DaminionAPI:
     """
     Comprehensive Daminion Server Web API Client.
     
-    Provides access to all major Daminion API endpoints with a clean,
-    intuitive interface. Handles authentication, rate limiting, and
-    error management automatically.
-    
-    Usage:
-        ```python
-        # Context manager (recommended)
-        with DaminionAPI(server_url, username, password) as api:
-            items = api.media_items.search(query="city")
-            collections = api.collections.get_all()
-        
-        # Manual resource management
-        api = DaminionAPI(server_url, username, password)
-        api.authenticate()
-        try:
-            items = api.media_items.search(query="city")
-        finally:
-            api.logout()
-        ```
+    This class orchestrates all communication with the Daminion server. It manages
+    the authentication session, handles rate limiting to prevent server stress,
+    and provides access to specialized sub-APIs for organized operations.
     
     Attributes:
-        media_items: MediaItemsAPI - Media item operations
-        tags: TagsAPI - Tag and tag value operations
-        collections: CollectionsAPI - Shared collections operations
-        item_data: ItemDataAPI - Item metadata operations
-        settings: SettingsAPI - Server settings and configuration
-        thumbnails: ThumbnailsAPI - Thumbnail and preview operations
-        downloads: DownloadsAPI - File download and export operations
-        imports: ImportsAPI - File import operations
-        user_manager: UserManagerAPI - User and role management
+        base_url: The root URL of the Daminion server (e.g., "http://dam.local").
+        username: The Daminion user ID for authentication.
+        password: The password for the specified user.
+        session: Persistent requests.Session for connection pooling.
+        media_items: Sub-API for item search and retrieval.
+        tags: Sub-API for tag schema management.
+        indexed_tag_values: Sub-API for managing list-based tag values.
+        collections: Sub-API for shared collection management.
+        item_data: Sub-API for metadata updates.
+        settings: Sub-API for server configuration.
+        thumbnails: Sub-API for image visualization.
+        downloads: Sub-API for file retrieval.
+        imports: Sub-API for importing files.
+        user_manager: Sub-API for user/role management.
+    
+    Example:
+        >>> with DaminionAPI("http://server", "admin", "p@ss") as api:
+        ...     info = api.settings.get_version()
+        ...     print(f"Connected to Daminion v{info}")
     """
     
     def __init__(
@@ -502,6 +468,9 @@ class DaminionAPI:
 # SUB-API CLASSES
 # ============================================================================
 
+# ============================================================================
+# BASE API CLIENT
+# ============================================================================
 class BaseAPI:
     """Base class for sub-API implementations."""
     
@@ -512,6 +481,10 @@ class BaseAPI:
         """Shortcut to client._make_request()"""
         return self.client._make_request(*args, **kwargs)
 
+
+# ============================================================================
+# SUB-API IMPLEMENTATIONS
+# ============================================================================
 
 class MediaItemsAPI(BaseAPI):
     """

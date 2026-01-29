@@ -1,9 +1,25 @@
 """
-Step 1: Datasource Selection
-============================
+Step 1: Datasource Selection UI
+===============================
 
-This module defines the UI for selecting the source of images to be tagged.
-Users can choose between a local folder or a Daminion Server catalog.
+This module provides the interface for selecting the image source for the 
+tagging process. It supports two primary modes:
+1. Local Filesystem: Scanning directories with recursive support.
+2. Daminion DAM: Connecting to a Daminion Server to process items within a 
+   specific scope (Catalog, Collections, or Saved Searches).
+
+The UI handles credentials storage, background connection validation, and 
+real-time item counting based on applied filters.
+
+Key Components:
+---------------
+- Source Selection: Radio buttons to toggle between Local and Daminion modes.
+- Local Config: Path browser and recursive scanning options.
+- Daminion Config: Server URL, credentials, and connection management.
+- Scope Selector: Tabbed interface for Daminion-specific data scopes.
+- Filtering: Status-based (Flagged, Rejected) and Metadata-based (Untagged) filters.
+
+Author: Synapic Project
 """
 
 import customtkinter as ctk
@@ -90,6 +106,7 @@ class Step1Datasource(ctk.CTkFrame):
 
         # Debounce timer for search
         self._debounce_timer = None
+        self._current_total_count = 0
 
     def init_local_frame(self):
         ds = self.controller.session.datasource
@@ -132,6 +149,12 @@ class Step1Datasource(ctk.CTkFrame):
         self.chk_tiff.pack(side="left", padx=20)
 
     def init_daminion_frame(self):
+        """
+        Initialize the Daminion Server configuration and filtering UI.
+        
+        This method builds the connection configuration area (URL/Credentials)
+        and the placeholder for the scope filtering tabs.
+        """
         ds = self.controller.session.datasource
         self.daminion_frame = ctk.CTkFrame(self.content_area)
         
@@ -179,6 +202,12 @@ class Step1Datasource(ctk.CTkFrame):
              ctk.CTkLabel(self.filters_container, text="Connect to see filtering options", text_color="gray", font=("Roboto", 12, "italic")).pack(pady=20)
 
     def toggle_source_view(self):
+        """
+        Switch between Local Folder and Daminion Server views.
+        
+        Updates the session datasource type and refreshes the displayed 
+        configuration frame.
+        """
         # Clear content area
         for widget in self.content_area.winfo_children():
             widget.pack_forget()
@@ -199,6 +228,12 @@ class Step1Datasource(ctk.CTkFrame):
             self.path_entry.insert(0, directory)
 
     def connect_daminion(self):
+        """
+        Validate and initialize the Daminion Server connection.
+        
+        Displays immediate UI feedback and spawns a background thread to 
+        perform the actual authentication to avoid UI freezing.
+        """
         host = self.entry_host.get()
         user = self.entry_user.get()
         pwd = self.entry_pass.get()
@@ -363,19 +398,22 @@ class Step1Datasource(ctk.CTkFrame):
         if ds.daminion_untagged_description: self.chk_untagged_desc.select()
         self.chk_untagged_desc.pack(side="left", padx=20)
 
-        # Limit Control (Toggle - hidden by default)
+        # Limit Control (Slider - hidden by default)
         self.limit_toggle_frame = ctk.CTkFrame(self.filters_container, fg_color="#1a1a1a")
         # Managed in update_count
         
         limit_container = ctk.CTkFrame(self.limit_toggle_frame, fg_color="transparent")
-        limit_container.pack(pady=10, padx=20)
+        limit_container.pack(pady=10, padx=20, fill="x")
         
-        ctk.CTkLabel(limit_container, text="High record count detected:", font=("Roboto", 14, "bold"), text_color="#ffcc00").pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(limit_container, text="Process Limit:", font=("Roboto", 14, "bold"), text_color="#ffcc00").pack(side="left", padx=(0, 20))
         
-        self.limit_var = ctk.StringVar(value="500")
+        # Slider from 1% (0.01) to 100% (1.0)
+        self.limit_slider = ctk.CTkSlider(limit_container, from_=0.01, to=1.0, number_of_steps=99, command=self.on_slider_change)
+        self.limit_slider.set(1.0) # Default to all
+        self.limit_slider.pack(side="left", fill="x", expand=True, padx=10)
         
-        ctk.CTkRadioButton(limit_container, text="Only process 500", variable=self.limit_var, value="500").pack(side="left", padx=10)
-        ctk.CTkRadioButton(limit_container, text="Process all", variable=self.limit_var, value="all").pack(side="left", padx=10)
+        self.lbl_limit_value = ctk.CTkLabel(limit_container, text="All", font=("Roboto", 14, "bold"), width=150)
+        self.lbl_limit_value.pack(side="right", padx=10)
 
         # Background Fetching for dropdowns
         self._load_daminion_data()
@@ -438,6 +476,12 @@ class Step1Datasource(ctk.CTkFrame):
         self.update_count()
 
     def update_count(self, *args):
+        """
+        Trigger a background recount of target items based on current filters.
+        
+        Implements a debouncing mechanism (500ms for typing, 100ms for clicks)
+        to prevent excessive API requests during rapid UI interaction.
+        """
         if not self.controller.session.daminion_client or not self.controller.session.daminion_client.authenticated:
             self.lbl_total_count.configure(text="")
             return
@@ -454,6 +498,16 @@ class Step1Datasource(ctk.CTkFrame):
         delay = 500 if is_typing else 100
         if self.winfo_exists():
             self._debounce_timer = self.after(delay, self._update_count_actual)
+
+    def on_slider_change(self, value):
+        if value >= 1.0:
+            self.lbl_limit_value.configure(text="All")
+        else:
+            pct = int(value * 100)
+            count = int(self._current_total_count * value)
+            if count == 0 and self._current_total_count > 0:
+                count = 1
+            self.lbl_limit_value.configure(text=f"{pct}% ({count:,} records)")
 
     def _update_count_actual(self):
         self.lbl_total_count.configure(text="Counting...")
@@ -537,6 +591,11 @@ class Step1Datasource(ctk.CTkFrame):
                     if not self.winfo_exists(): return
                     
                     self.lbl_total_count.configure(text=f"Records: {final_count}{suffix}")
+                    self._current_total_count = final_count
+                    
+                    # Update slider display
+                    self.on_slider_change(self.limit_slider.get())
+                    
                     # Show toggle if records > 500 (or unknown)
                     if final_count > 500 or suffix == "+":
                          if hasattr(self, 'metadata_frame'):
@@ -593,10 +652,15 @@ class Step1Datasource(ctk.CTkFrame):
             ds.daminion_untagged_categories = self.chk_untagged_cats.get()
             ds.daminion_untagged_description = self.chk_untagged_desc.get()
             
-            # Apply limit from toggle if visible
+            # Apply limit from slider if visible
             if self.limit_toggle_frame.winfo_manager(): # Check if packed/grid
-                 val = self.limit_var.get()
-                 ds.max_items = 500 if val == "500" else 0 # 0 means unlimited
+                 val = self.limit_slider.get()
+                 if val >= 1.0:
+                     ds.max_items = 0 # 0 means unlimited
+                 else:
+                     ds.max_items = int(self._current_total_count * val)
+                     if ds.max_items == 0 and self._current_total_count > 0:
+                         ds.max_items = 1
             else:
                  ds.max_items = 0
         

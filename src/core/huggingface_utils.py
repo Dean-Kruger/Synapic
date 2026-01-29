@@ -4,7 +4,7 @@ Hugging Face Hub Integration Utilities
 
 This module provides utilities for discovering, downloading, and loading AI models
 from the Hugging Face Model Hub. It serves as the bridge between Synapic and the
-Hugging Face ecosystem.
+Hugging Face ecosystem, handling both local inference and remote API calls.
 
 Key Features:
 - Model Discovery: Search for models by task type with filtering
@@ -61,9 +61,16 @@ import platform
 import torch
 from typing import Optional
 
-def get_device_info():
+def get_device_info() -> Dict[str, Any]:
     """
-    Returns a dictionary containing detailed information about available compute devices.
+    Get detailed information about available compute devices (CPU, CUDA, MPS).
+    
+    This function probes the system using PyTorch to determine the best available
+    hardware accelerator. It returns a dictionary containing a list of devices,
+     the recommended default, and detailed debugging info.
+    
+    Returns:
+        A dictionary with "devices" (list), "default" (string), and "debug_info" (dict).
     """
     info = {
         "devices": ["CPU"],
@@ -320,12 +327,17 @@ def get_model_capability(task: str) -> str:
     """Returns a human-readable capability string for a given task."""
     return config.CAPABILITY_MAP.get(task, "Unknown")
 
-def find_local_models() -> dict[str, dict]:
+def find_local_models() -> Dict[str, Dict[str, Any]]:
     """
-    Finds all locally cached models by scanning the cache.
-
+    Scan the local Hugging Face cache for previously downloaded models.
+    
+    This function parses the standard Hugging Face cache structure, extracts
+    model configuration (task, capability), and calculates on-disk size for
+    each identified model.
+    
     Returns:
-        A dictionary of model information, with model_id as key.
+        A dictionary mapping model IDs to a metadata dict containing:
+        'config', 'path', 'size_bytes', 'size_str', 'suggested_task', and 'capability'.
     """
     local_models = {}
     cache_path = Path(HUGGINGFACE_HUB_CACHE)
@@ -528,10 +540,19 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
         q.put(("error", f"Failed to load model: {e}"))
 
 
-def find_models_by_task(task):
-    """Synchronous helper to find models for a given task.
-
-    Returns a tuple: (model_ids, downloaded_models)
+def find_models_by_task(task: str) -> Tuple[List[str], List[str]]:
+    """
+    Search the Hugging Face Hub for models supporting a specific task.
+    
+    This function retrieves the most popular models for the given task, 
+    filtered to those compatible with the 'transformers' library. It also
+    identifies which of the found models are already available in the local cache.
+    
+    Args:
+        task: The technical task identifier (e.g., 'image-classification').
+        
+    Returns:
+        A tuple containing (all_model_ids, downloaded_model_ids).
     """
     logging.info(f"Searching for models (sync) with task: '{task}'")
     try:
@@ -558,12 +579,38 @@ def get_model_info(model_id):
         return f"Could not retrieve README for {model_id}.\n\n{e}"
 
 
-def load_model(model_id, task, progress_queue=None, token=None, device=-1):
-    """Synchronous model loader that mirrors the behavior of the worker version.
-
-    If `progress_queue` is provided, status updates will be posted to it using
-    the same message types the GUI expects.
-    Returns the initialized pipeline object.
+def load_model(
+    model_id: str,
+    task: str,
+    progress_queue: Optional[Any] = None,
+    token: Optional[str] = None,
+    device: int = -1
+) -> Any:
+    """
+    Synchronously load a Hugging Face model and initialize a pipeline.
+    
+    This function handles the end-to-end model loading process:
+    1. Checking the local cache.
+    2. Downloading model snapshot if missing.
+    3. Auto-detecting the optimal pipeline task (e.g., handles VLMs).
+    4. Initializing the transformers pipeline with appropriate processors.
+    
+    Args:
+        model_id: The Hugging Face repository ID (e.g., 'google/vit-base').
+        task: The intended model task (e.g., 'image-classification').
+        progress_queue: Optional queue for status and percentage updates.
+        token: Optional Hugging Face API token for private/gated models.
+        device: Device ID to load onto (-1 for CPU, 0+ for CUDA/MPS).
+        
+    Returns:
+        The initialized transformers Pipeline object.
+        
+    Raises:
+        Exception: Various errors if downloading or initialization fails.
+        
+    Note:
+        Modern Multi-modal models (like Qwen2-VL) will automatically be routed
+        to the 'image-text-to-text' pipeline regardless of the input 'task'.
     """
     logging.info(f"Starting synchronous model load for: {model_id} on device {device}")
     try:

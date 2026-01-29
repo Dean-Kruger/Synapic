@@ -1,8 +1,27 @@
 """
-Windows Registry-based credential storage for Synapic.
+Windows Registry Credential Storage
+===================================
 
-Stores sensitive credentials (URLs, usernames, passwords) in the Windows Registry
-to keep them out of version control.
+This module provides a secure mechanism for storing sensitive application 
+credentials (URLs, usernames, and passwords) within the Windows Registry.
+
+By utilizing the Registry (`HKEY_CURRENT_USER\SOFTWARE\Synapic`), we ensure 
+that:
+1. Credentials are kept out of the application's local configuration files.
+2. Sensitive data is never accidentally committed to version control.
+3. Access is restricted to the current Windows user profile.
+
+Architecture:
+-------------
+- Root Key: `HKEY_CURRENT_USER\SOFTWARE\Synapic`
+- Daminion Subkey: `SOFTWARE\Synapic\Daminion` (Stores DAM credentials)
+
+Note:
+-----
+This module is Windows-specific and depends on the `winreg` standard library. 
+It should only be used in environments where the Windows OS is present.
+
+Author: Synapic Project
 """
 import winreg
 import logging
@@ -25,15 +44,18 @@ def _get_or_create_key(key_path: str) -> winreg.HKEYType:
 
 def save_daminion_credentials(url: str, username: str, password: str) -> bool:
     """
-    Save Daminion credentials to Windows Registry.
+    Persist Daminion server credentials to the Windows Registry.
+    
+    This function creates or opens the Synapic subkey and saves the 
+    URL, username, and password as string values (`REG_SZ`).
     
     Args:
-        url: Daminion server URL (e.g., http://damserver.local/daminion)
-        username: Daminion username
-        password: Daminion password
+        url: The full Daminion server endpoint (e.g., http://dam.local/daminion).
+        username: The account username for authentication.
+        password: The account password (stored in plain text within the Registry).
         
     Returns:
-        True if saved successfully, False otherwise
+        bool: True if the operation succeeded, False otherwise.
     """
     try:
         with _get_or_create_key(DAMINION_SUBKEY) as key:
@@ -51,10 +73,14 @@ def save_daminion_credentials(url: str, username: str, password: str) -> bool:
 
 def load_daminion_credentials() -> Optional[Dict[str, str]]:
     """
-    Load Daminion credentials from Windows Registry.
+    Retrieve stored Daminion credentials from the Windows Registry.
+    
+    Attempts to read the Synapic subkey. If the key or values are missing,
+    it returns None instead of raising an error.
     
     Returns:
-        Dictionary with 'url', 'username', 'password' keys, or None if not found
+        Optional[Dict]: A dictionary containing 'url', 'username', and 
+                        'password', or None if not found.
     """
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, DAMINION_SUBKEY, 0, winreg.KEY_READ) as key:
@@ -78,10 +104,13 @@ def load_daminion_credentials() -> Optional[Dict[str, str]]:
 
 def delete_daminion_credentials() -> bool:
     """
-    Delete Daminion credentials from Windows Registry.
+    Purge Daminion credentials from the Windows Registry.
+    
+    Removes the entire Daminion subkey. This is typically used when the 
+    user wants to disconnect or clear their local session data.
     
     Returns:
-        True if deleted successfully, False otherwise
+        bool: True if the key was deleted (or didn't exist), False on error.
     """
     try:
         winreg.DeleteKey(winreg.HKEY_CURRENT_USER, DAMINION_SUBKEY)
@@ -96,7 +125,12 @@ def delete_daminion_credentials() -> bool:
 
 
 def credentials_exist() -> bool:
-    """Check if Daminion credentials exist in the registry."""
+    """
+    Check if Daminion credentials are currently stored in the Registry.
+    
+    Returns:
+        bool: True if the Daminion subkey can be opened for reading.
+    """
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, DAMINION_SUBKEY, 0, winreg.KEY_READ):
             return True

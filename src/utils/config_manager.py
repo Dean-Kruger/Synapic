@@ -1,11 +1,22 @@
 """
-Configuration Manager
-=====================
+Application Configuration Persistence
+======================================
 
-This module handles the persistence of application configuration to disk.
-It uses a JSON file in the user's home directory to store datasource and 
-engine settings across sessions. Sensitive data is automatically masked 
-during logging.
+This module manages the serialization and deserialization of the Synapic 
+application state. It ensures that user preferences, such as selected 
+datasource paths, AI engine providers, and API keys, are preserved between 
+application restarts.
+
+Key Responsibilities:
+---------------------
+- File-System Persistence: Stores config in a hidden JSON file in the 
+  user's home directory (`~/.synapic_v2_config.json`).
+- State Synchronization: Maps JSON keys to the attributes of the `Session`, 
+  `DatasourceConfig`, and `EngineConfig` dataclasses.
+- Security Logging: Interfaces with the logger to record save/load events 
+  while automatically redacting sensitive fields.
+
+Author: Synapic Project
 """
 
 import json
@@ -20,14 +31,14 @@ CONFIG_PATH = Path.home() / ".synapic_v2_config.json"
 
 def save_config(session: Session):
     """
-    Save session configuration to disk with logging.
+    Persist the current session state to the configuration file.
     
-    Converts the datasource and engine configuration to dictionaries
-    and writes them to a JSON file in the user's home directory.
-    Uses the logger to record the action, masking sensitive fields.
+    This function extracts the `DatasourceConfig` and `EngineConfig` from the 
+    global session, converts them to primitive dictionaries, and writes 
+    them to disk as a pretty-printed JSON file.
     
     Args:
-        session: The Session object containing the configuration to save.
+        session: The active Session object containing the state to be saved.
     """
     logger = logging.getLogger(__name__)
     
@@ -49,7 +60,17 @@ def save_config(session: Session):
         logger.error(f"Failed to save configuration: {e}", exc_info=True)
 
 def load_config(session: Session):
-    """Load session configuration from disk with logging."""
+    """
+    Load and apply configuration from the hidden JSON file.
+    
+    If a configuration file exists, this function parses it and updates the 
+    attributes of the provided `Session` object. It uses a field-by-field 
+    mapping approach to ensure that only valid configuration keys are 
+    applied, avoiding the overwriting of any Session logic or methods.
+    
+    Args:
+        session: The Session object to be populated with loaded data.
+    """
     logger = logging.getLogger(__name__)
     
     if not CONFIG_PATH.exists():

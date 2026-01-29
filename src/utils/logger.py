@@ -1,11 +1,30 @@
 """
-Centralized logging configuration and utilities for the Synapic application.
+Centralized Logging and Security Filtering
+==========================================
 
-Provides:
-- Automatic log file creation with timestamps
-- Sensitive data masking (API keys, passwords, tokens)
-- Structured logging for configuration and API calls
-- Both file and console logging handlers
+This module provides a robust logging infrastructure for the Synapic 
+application, with a heavy emphasis on security and thread-safety. It 
+centralizes all diagnostic output while ensuring that PII (Personally 
+Identifiable Information) and credentials never reach the log files.
+
+Key Features:
+-------------
+- Sensitive Data Masking: Automatic redaction of API keys, passwords, and 
+  tokens using regex and recursive dictionary filtering.
+- Thread-Safe Redirection: Captures stdout/stderr via a background queue 
+  to prevent UI freezes and log interleaving.
+- API Instrumentation: Decorators and helpers for logging REST requests/responses 
+  with automatic timing and status tracking.
+- Contextual Logging: Specialized formatting including timestamps, module 
+  origin, and line numbers.
+
+Dependencies:
+-------------
+- logging: Standard library for output routing.
+- re: Used for pattern-based masking of sensitive strings.
+- threading: Orchestrates background flush operations for captured streams.
+
+Author: Synapic Project
 """
 
 import logging
@@ -42,7 +61,14 @@ SENSITIVE_PATTERNS = [
 
 
 class SensitiveDataFilter(logging.Filter):
-    """Filter that masks sensitive data in log records."""
+    """
+    Filtering hook to intercept and redact sensitive information.
+    
+    This filter is attached to both file and console handlers. It scans
+    log records for patterns matching credentials (API keys, Bearer tokens,
+    passwords) and replaces them with masks (e.g., '***' or '***4a1b') 
+    before the data is persisted or displayed.
+    """
     
     def filter(self, record: logging.LogRecord) -> bool:
         """Mask sensitive data in the log message."""
@@ -73,14 +99,19 @@ class SensitiveDataFilter(logging.Filter):
 
 def mask_sensitive_data(data: Any, mask_value: str = "***") -> Any:
     """
-    Recursively mask sensitive data in dictionaries, lists, and strings.
+    Recursively redact sensitive fields from complex data structures.
+    
+    This function traverses dictionaries and lists, identifying keys that 
+    correspond to known credential labels (e.g., 'password', 'api_key'). 
+    It also performs string-level regex matching for discovered URIs or 
+    standalone keys.
     
     Args:
-        data: Data to mask (dict, list, str, or other)
-        mask_value: Value to use for masking
+        data: The input data structure (dict, list, str, etc.) to be scrubbed.
+        mask_value: The string used to replace sensitive content.
         
     Returns:
-        Masked copy of the data
+        A copy of the input data with sensitive values masked.
     """
     if isinstance(data, dict):
         masked = {}
@@ -123,8 +154,12 @@ def mask_sensitive_data(data: Any, mask_value: str = "***") -> Any:
 
 class StreamToLogger:
     """
-    Thread-safe file-like stream object that redirects writes to a logger instance.
-    Uses a queue and background thread to prevent race conditions and garbled output.
+    Proxy object to redirect standard system streams to the logging engine.
+    
+    It intercepts `sys.stdout` and `sys.stderr` and routes them through 
+    a non-blocking background queue. This prevents the application from 
+    deadlocking during heavy terminal output and ensures logs are 
+    serialized correctly across multiple threads.
     """
     def __init__(self, logger: logging.Logger, log_level: int, original_stream):
         self.logger = logger
@@ -218,16 +253,21 @@ def setup_logging(
     log_format: Optional[str] = None
 ) -> Path:
     """
-    Initialize the logging system with file and console handlers.
-    Also redirects stdout/stderr to capture all terminal output.
+    Initialize the application-wide logging singleton.
+    
+    Configs include:
+    - Root Logger: Set to DEBUG to capture all system events.
+    - File Handler: Persists detailed DEBUG logs to 'logs/synapic.log'.
+    - Console Handler: Displays human-readable INFO logs to terminal.
+    - System Redirection: Hooks sys.stdout/stderr into the log stream.
     
     Args:
-        log_level: Logging level for file handler (default: DEBUG)
-        console_level: Logging level for console handler (default: INFO)
-        log_format: Custom log format string (optional)
+        log_level: Granularity for the persistent log file.
+        console_level: Granularity for the terminal output.
+        log_format: Optional custom formatting string.
         
     Returns:
-        Path to the log file
+        Path: The absolute path to the generated log file.
     """
     # Use a single log file that overwrites on each run
     log_file = LOG_DIR / "synapic.log"
@@ -336,18 +376,17 @@ def log_config(config_name: str, config_data: Dict[str, Any], logger: Optional[l
 
 def log_api_call(func: Optional[Callable] = None, *, api_name: str = "API"):
     """
-    Decorator to log API calls with request/response details and timing.
+    Decorator for automated instrumentation of REST/API methods.
     
-    Can be used with or without parameters:
-        @log_api_call
-        def my_function(): ...
-        
-        @log_api_call(api_name="Daminion")
-        def my_function(): ...
+    Wraps a function to automatically log:
+    1. The entry point and sanitized arguments.
+    2. The execution status (Success/Failure) upon completion.
+    3. Total turnaround time (latency) in seconds.
+    4. Full stack traces for any unhandled exceptions.
     
     Args:
-        func: Function to decorate (when used without parameters)
-        api_name: Name of the API for logging context
+        func: The API function to be instrumented.
+        api_name: Context label for the log entry (e.g., 'Daminion').
     """
     def decorator(f: Callable) -> Callable:
         @wraps(f)

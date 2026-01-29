@@ -170,20 +170,36 @@ pyinstaller main.spec
 
 The GitHub Actions workflow automatically builds executables on every push to `main`.
 
+## Philosophy & Workflow
+
+Synapic iterates on traditional tagging workflows by providing a linear, 4-step "Wizard" experience:
+
+1.  **🚀 Step 1: Datasource**: Connect to your Daminion server or a local image folder. Supports advanced filtering by status (flags), untagged fields, and specific catalog scopes.
+2.  **🤖 Step 2: Tagging Engine**: Choose your intelligence. Run local models via Hugging Face for privacy, or use cloud-based VLMs via OpenRouter for state-of-the-art accuracy.
+3.  **⚙️ Step 3: Process**: Execute the batch job with real-time feedback, multithreaded logging, and granular progress monitoring.
+4.  **📊 Step 4: Results**: Review your new metadata, verify successful writes to the DAM, and export session reports.
+
+## Technology Stack
+
+- **UI Framework**: `CustomTkinter` (Modern, responsive, dark-mode first aesthetic)
+- **Concurrency**: Multi-threaded backend with `ProcessingManager` loop orchestration
+- **API Interaction**: Official Daminion REST implementation with robust retry/masking logic
+- **AI Integration**: `Hugging Face Transformers` & `OpenRouter` REST Gateway
+- **Metadata Standard**: IPTC (Keywords/Caption) & EXIF (XPSubject/XPKeywords)
+
 ## Documentation
 
-Comprehensive documentation is available in the repository:
-- **[DEVELOPER_GUIDE.md](docs/developer/DEVELOPER_GUIDE.md)**: Technical architecture, tagging pipeline, and integration patterns.
-- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Coding standards, documentation requirements, and submission process.
-- **[Features Directory](docs/features/)**: Detailed guides for specific features like confidence thresholds.
-- **[API Directory](docs/api/)**: Debugging and reference info for DAM integrations.
+Comprehensive documentation is available for both users and developers:
+- **[DEVELOPER_GUIDE.md](docs/developer/DEVELOPER_GUIDE.md)**: Technical architecture and subsystem overview.
+- **[CHANGELOG.md](CHANGELOG.md)**: Detailed version history and fix summaries.
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Standards for code, documentation, and PRs.
 
-### Key Modules:
-- `src/core/processing.py` - Main tagging pipeline
-- `src/core/image_processing.py` - Metadata extraction and writing
-- `src/core/daminion_client.py` - DAM integration
-- `src/core/huggingface_utils.py` - Local model management
-- `src/core/openrouter_utils.py` - Cloud API integration
+### Knowledge Base (docs/)
+- **[Threshold Features](docs/features/THRESHOLD_FEATURE.md)**: Tuning AI confidence levels.
+- **[Daminion API Detail](docs/api/DAMINION_API_REFERENCE.md)**: Complete method reference.
+- **[Daminion API Guide](docs/api/DAMINION_API_GUIDE.md)**: Logic and migration guide.
+- **[Daminion API Quick Ref](docs/api/DAMINION_API_QUICK_REFERENCE.md)**: Common code snippets.
+- **[Daminion Debugging](docs/api/DAMINION_API_DEBUGGING.md)**: Troubleshooting connection issues.
 
 ## Contributing
 

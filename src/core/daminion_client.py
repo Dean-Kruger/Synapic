@@ -1,33 +1,24 @@
 """
-Daminion Client - High-Level DAM Integration
-============================================
+High-Level Daminion DAM Integration
+===================================
 
 This module provides a high-level client interface for the Synapic application
-to interact with Daminion Digital Asset Management (DAM) systems.
+to interact with Daminion Digital Asset Management (DAM) systems. It abstracts
+low-level API calls into business-oriented operations like "fetch untagged items".
+
+Key Components:
+- DaminionClient: The primary interface for DAM operations in Synapic.
+- Scope Management: Functions to handle different data scopes (Saved Searches, Shared Collections).
+- Metadata Flow: Logic for mapping AI-generated tags to Daminion's internal tag schema.
 
 Architecture:
-- Wraps the low-level DaminionAPI for backward compatibility
-- Adds application-specific business logic and convenience methods
-- Handles tag schema caching and name/ID mapping
-- Provides filtering and search functionality aligned with Synapic's workflow
+- Wraps the low-level DaminionAPI for robust communication.
+- Maintains a local cache of the tag schema to minimize redundant network traffic.
+- Implements client-side filtering for complex status and metadata queries.
 
-Key Responsibilities:
-- Scope Management: Catalog-wide, Saved Searches, Shared Collections
-- Item Retrieval: With filtering by status, untagged fields, and keywords
-- Metadata Updates: Tag value creation and item metadata writing
-- Thumbnail Management: Download and caching of preview images
-
-The client abstracts complexity from the UI layer by:
-- Maintaining tag schema cache (avoiding repeated API calls)
-- Implementing client-side filtering when server-side isn't available
-- Providing progress callbacks for long-running operations
-- Handling pagination transparently
-
-Usage:
-    >>> with DaminionClient(url, user, password) as client:
-    ...     items = client.get_items_filtered(scope='all', max_items=100)
-    ...     for item in items:
-    ...         client.update_item_metadata(item['id'], category='Vacation', keywords=['beach'])
+Dependencies:
+- .daminion_api: Provides the low-level REST communication layer.
+- tempfile & pathlib: Used for managing local thumbnail caches.
 
 Author: Synapic Project
 """
@@ -55,10 +46,22 @@ logger = logging.getLogger(__name__)
 
 class DaminionClient:
     """
-    Compatibility wrapper for DaminionAPI.
+    High-level integration client for Daminion DAM.
     
-    Maintains the old DaminionClient interface while using the new
-    DaminionAPI implementation internally for better reliability.
+    This class provides a simplified interface for common operations such as
+    searching for specific item sets, retrieving thumbnails, and writing back
+    AI-generated metadata. It handles tag name-to-ID mappings and session state.
+    
+    Attributes:
+        base_url (str): The Daminion server endpoint.
+        username (str): Authentication user ID.
+        temp_dir (Path): Local filesystem path for caching thumbnails.
+        _api (DaminionAPI): The underlying low-level API client.
+        
+    Example:
+        >>> client = DaminionClient("http://dam.local", "admin", "admin")
+        >>> count = client.get_filtered_item_count(scope='untagged')
+        >>> print(f"Found {count} untagged items.")
     """
     
     def __init__(self, base_url: str, username: str, password: str, rate_limit: float = 0.1):

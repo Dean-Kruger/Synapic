@@ -1,9 +1,21 @@
 """
-Step 4: Results and Review
-==========================
+Step 4: Results and Review UI
+=============================
 
-This module defines the UI for reviewing the results of the tagging process.
-It provides success/failure metrics and a detailed list of processed items.
+This module defines the final step of the tagging wizard, providing a 
+comprehensive review of the processing session. It displays aggregate 
+metrics and a granular list of every processed item.
+
+Key Responsibilities:
+---------------------
+- Metrics Dashboard: Visualizing Success vs. Failure counts.
+- Session History: Displaying a list of processed files with their status.
+- External Integration: Opening the technical log file in the system default 
+  text editor.
+- Data Reset: Providing an entry point to restart the wizard and begin a 
+  new session.
+
+Author: Synapic Project
 """
 
 import customtkinter as ctk
@@ -16,12 +28,9 @@ class Step4Results(ctk.CTkFrame):
     """
     UI component for the fourth and final step of the tagging wizard.
     
-    This frame allows users to:
-    - View high-level metrics (Total, Successful, Failed).
-    - Review a detailed list of processed filenames and their status/tags.
-    - Open the session log file for deep inspection.
-    - Export a CSV report of the session (stub).
-    - Start a new session from Step 1.
+    This frame serves as the post-mortem view of the tagging operations. It 
+    extracts the final results from the `Session` object and presents them 
+    in a human-readable format.
     
     Attributes:
         controller: The main App instance managing the wizard flow.
@@ -63,6 +72,12 @@ class Step4Results(ctk.CTkFrame):
         self.refresh_stats()
 
     def refresh_stats(self):
+        """
+        Synchronize the results UI with the final data stored in the Session.
+        
+        This method is called every time the frame is shown (tkraise) to ensure 
+        the results list is fully populated with the latest processing data.
+        """
         s = self.controller.session
         
         # Update metrics
@@ -90,7 +105,17 @@ class Step4Results(ctk.CTkFrame):
         ctk.CTkButton(action_frame, text="Export CSV", command=self.export_report).pack(side="left", padx=20)
         ctk.CTkButton(action_frame, text="New Session", command=self.new_session, fg_color="green", width=200).pack(side="right", padx=20)
 
-    def create_metric(self, parent, label, value, col, color="white"):
+    def create_metric(self, parent, label: str, value: str, col: int, color: str = "white"):
+        """
+        Create a styled metric card.
+        
+        Args:
+            parent: The frame to place the metric in.
+            label: Text description of the metric.
+            value: The numeric value to display in large font.
+            col: Grid column index.
+            color: Font color for the value text.
+        """
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.grid(row=0, column=col, padx=10, pady=10, sticky="ew")
         parent.grid_columnconfigure(col, weight=1)

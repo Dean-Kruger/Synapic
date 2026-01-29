@@ -1,30 +1,31 @@
 """
-Main Application Window
-=======================
+Synapic Main Application Window
+===============================
 
-This module defines the root CustomTkinter application window for Synapic.
-It manages the overall UI structure, session state, and wizard-style workflow.
+This module defines the root CustomTkinter application window for the Synapic
+tagging application. It manages the overall UI structure, global session state,
+and the wizard-style navigation between processing steps.
 
 Architecture:
-The application uses a multi-step wizard interface:
-1. Step 1 (Datasource): Select images from folder or Daminion DAM
-2. Step 2 (Tagging): Configure AI model and processing parameters
-3. Step 3 (Process): Execute batch tagging with progress monitoring
-4. Step 4 (Results): Review, export, and manage processed metadata
+-------------
+The application implements a "one-window" wizard interface where different
+'Steps' are swapped in and out of a central container.
+- Step 1 (Datasource): Image selection and DAM connection.
+- Step 2 (Tagging): AI model selection and parameter tuning.
+- Step 3 (Process): Real-time processing and logging.
+- Step 4 (Results): Reviewing and managing outcomes.
 
 Key Responsibilities:
-- Window initialization and theme configuration
-- Session management (creating/loading/saving configuration)
-- Step container lifecycle (creating and destroying wizard steps)
-- Navigation between wizard steps
-- Resource loading (icon) for both development and bundled environments
-
-The App class coordinates between:
-- Session (src.core.session): Stores datasource and engine configuration
-- Step modules (src.ui.steps.*): Individual wizard pages
-- Config manager (src.utils.config_manager): Persistence layer
+---------------------
+- Root window initialization and theme (Dark Mode) orchestration.
+- Global Session lifecycle management (Creation -> Load -> Save).
+- Navigation logic (tkraise) between wizard steps.
+- Asset management (application icon) with PyInstaller compatibility.
+- Graceful shutdown and configuration persistence.
 
 Usage:
+------
+    >>> from src.ui.app import App
     >>> app = App()
     >>> app.mainloop()
 
@@ -40,15 +41,13 @@ class App(ctk.CTk):
     """
     Main application window and wizard coordinator.
     
-    Manages the CustomTkinter root window, session state, and navigation
-    between wizard steps. Handles theme configuration, icon loading,
-    and configuration persistence.
+    This class is the central orchestrator for the Synapic UI. It maintains
+    the persistent 'Session' state that is shared across all wizard steps.
     
     Attributes:
-        logger: Logger instance for this module
-        session: Session object containing datasource and engine config
-        current_step: Currently displayed wizard step container
-        save_config_callback: Function to persist configuration to disk
+        session: The global Session object containing all user configuration.
+        steps (dict): Dictionary mapping step names to their respective UI frames.
+        container (ctk.CTkFrame): The main container where steps are displayed.
     """
     
     def __init__(self):
@@ -120,7 +119,16 @@ class App(ctk.CTk):
         self.logger.info("Showing initial step: Step1Datasource")
         self.show_step("Step1Datasource")
 
-    def show_step(self, page_name):
+    def show_step(self, page_name: str):
+        """
+        Navigate to a specific wizard step.
+        
+        This method brings the requested step frame to the top of the container
+        stack and triggers any necessary data refreshes.
+        
+        Args:
+            page_name: The class name of the step to show (e.g., "Step1Datasource").
+        """
         self.logger.info(f"Navigating to step: {page_name}")
         frame = self.steps[page_name]
         frame.tkraise()
@@ -129,6 +137,14 @@ class App(ctk.CTk):
              frame.refresh_stats()
 
     def on_close(self):
+        """
+        Handle application shutdown.
+        
+        Executes an orderly shutdown sequence that:
+        1. Triggers shutdown hooks on all individual wizard steps.
+        2. Persists the current session configuration to disk.
+        3. Destroys the main window and terminates the event loop.
+        """
         self.logger.info("Application close requested - starting shutdown sequence")
         
         # 1. Shutdown all steps (e.g., stop processing threads)
