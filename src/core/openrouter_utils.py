@@ -21,7 +21,7 @@ Author: Synapic Project
 
 import logging
 import requests
-from typing import List, Tuple, Optional, Any
+from typing import List, Tuple, Optional, Any, Dict
 from src.core import config
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
