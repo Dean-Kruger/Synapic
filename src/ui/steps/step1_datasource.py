@@ -572,6 +572,7 @@ class Step1Datasource(ctk.CTkFrame):
                 if count == -1:
                     # Fallback to fetching items with a cap to Estimate
                     limit_fallback = 1000 # Increased for better estimation
+                    logging.info(f"[COUNT DEBUG] get_filtered_item_count returned -1, falling back to get_items_filtered with limit={limit_fallback}")
                     items = self.controller.session.daminion_client.get_items_filtered(
                         scope=scope,
                         saved_search_id=ss_id,
@@ -579,10 +580,10 @@ class Step1Datasource(ctk.CTkFrame):
                         search_term=search_term if scope == "search" else None,
                         untagged_fields=untagged,
                         status_filter=status,
-                        max_items=limit_fallback,
-                        force_refresh=True
+                        max_items=limit_fallback
                     )
                     final_count = len(items)
+                    logging.info(f"[COUNT DEBUG] Fallback returned {final_count} items")
                     if final_count >= limit_fallback:
                         suffix = "+"
                 
@@ -653,15 +654,26 @@ class Step1Datasource(ctk.CTkFrame):
             ds.daminion_untagged_description = self.chk_untagged_desc.get()
             
             # Apply limit from slider if visible
-            if self.limit_toggle_frame.winfo_manager(): # Check if packed/grid
-                 val = self.limit_slider.get()
-                 if val >= 1.0:
+            slider_visible = bool(self.limit_toggle_frame.winfo_manager())
+            slider_value = self.limit_slider.get()
+            total_count = getattr(self, '_current_total_count', 0)
+            
+            self.logger.info(f"[LIMIT DEBUG] Scope: {ds.daminion_scope}, Tab: {tab}")
+            self.logger.info(f"[LIMIT DEBUG] Slider visible: {slider_visible}, Slider value: {slider_value:.2f}, Total count: {total_count}")
+            
+            if slider_visible:
+                 if slider_value >= 1.0:
                      ds.max_items = 0 # 0 means unlimited
+                     self.logger.info(f"[LIMIT DEBUG] Slider at 100% -> max_items=0 (unlimited)")
                  else:
-                     ds.max_items = int(self._current_total_count * val)
-                     if ds.max_items == 0 and self._current_total_count > 0:
+                     ds.max_items = int(total_count * slider_value)
+                     if ds.max_items == 0 and total_count > 0:
                          ds.max_items = 1
+                     self.logger.info(f"[LIMIT DEBUG] Slider at {slider_value*100:.0f}% of {total_count} -> max_items={ds.max_items}")
             else:
                  ds.max_items = 0
+                 self.logger.info(f"[LIMIT DEBUG] Slider hidden -> max_items=0 (unlimited)")
+            
+            self.logger.info(f"[LIMIT DEBUG] Final ds.max_items = {ds.max_items}")
         
         self.controller.show_step("Step2Tagging")

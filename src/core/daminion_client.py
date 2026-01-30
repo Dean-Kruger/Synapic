@@ -363,11 +363,14 @@ class DaminionClient:
                  total_catalog = self._api.media_items.get_count()
                  if count >= total_catalog:
                       logger.warning(f"Count {count} likely incorrect (matches total). Trying fallback search...")
+                      # Use maxItemsCount to get accurate totalCount from the API
+                      # The API may limit totalCount to the maxItemsCount value
                       _, count = self._api.media_items.search(
                           query=combined_search, 
                           query_line=q_line,
                           operators=ops,
                           page_size=1, 
+                          max_items_count=100000,  # Request high limit to get accurate total
                           include_total=True
                       )
                       logger.info(f"Fallback search returned totalCount={count}")
@@ -409,6 +412,9 @@ class DaminionClient:
             batch_size = 500 if limit > 500 else int(limit)
             current_index = 0
             
+            logger.info(f"[FETCH DEBUG] get_items_filtered called: scope={scope}, max_items={max_items}, limit={limit}, batch_size={batch_size}")
+            logger.info(f"[FETCH DEBUG] saved_search_id={saved_search_id}, collection_id={collection_id}, search_term={search_term}")
+            
             # 1. Build text-based search components
             search_parts = []
             sf = (status_filter or "all").lower()
@@ -429,24 +435,44 @@ class DaminionClient:
                 if combined_search:
                     final_search += f" {combined_search}"
                 
+                batch_num = 0
                 while len(items) < limit:
-                    batch = self._api.media_items.search(query=final_search, index=current_index, page_size=batch_size)
-                    if not batch: break
+                    batch_num += 1
+                    logger.debug(f"[FETCH DEBUG] Keyword Search batch #{batch_num}: fetching from index {current_index}, page_size={batch_size}, query='{final_search}'")
+                    batch = self._api.media_items.search(query=final_search, index=current_index, page_size=batch_size, max_items_count=100000)
+                    batch_len = len(batch) if batch else 0
+                    logger.debug(f"[FETCH DEBUG] Keyword Search batch #{batch_num}: received {batch_len} items")
+                    if not batch: 
+                        logger.debug(f"[FETCH DEBUG] Keyword Search: breaking - empty batch")
+                        break
                     items.extend(batch)
                     current_index += len(batch)
                     if progress_callback: progress_callback(len(items))
-                    if len(batch) < batch_size: break
+                    if len(batch) < batch_size: 
+                        logger.debug(f"[FETCH DEBUG] Keyword Search: breaking - batch size {len(batch)} < {batch_size}")
+                        break
+                    logger.debug(f"[FETCH DEBUG] Keyword Search: collected {len(items)} so far, limit={limit}")
             
             # Scope: Global Scan
             elif scope == "all":
+                batch_num = 0
                 while len(items) < limit:
+                    batch_num += 1
                     query = combined_search or "*"
-                    batch = self._api.media_items.search(query=query, index=current_index, page_size=batch_size)
-                    if not batch: break
+                    logger.debug(f"[FETCH DEBUG] Global Scan batch #{batch_num}: fetching from index {current_index}, page_size={batch_size}, query='{query}'")
+                    batch = self._api.media_items.search(query=query, index=current_index, page_size=batch_size, max_items_count=100000)
+                    batch_len = len(batch) if batch else 0
+                    logger.debug(f"[FETCH DEBUG] Global Scan batch #{batch_num}: received {batch_len} items")
+                    if not batch: 
+                        logger.debug(f"[FETCH DEBUG] Global Scan: breaking - empty batch")
+                        break
                     items.extend(batch)
                     current_index += len(batch)
                     if progress_callback: progress_callback(len(items))
-                    if len(batch) < batch_size: break
+                    if len(batch) < batch_size: 
+                        logger.debug(f"[FETCH DEBUG] Global Scan: breaking - batch size {len(batch)} < {batch_size}")
+                        break
+                    logger.debug(f"[FETCH DEBUG] Global Scan: collected {len(items)} so far, limit={limit}")
             
             # Scope: Shared Collection
             elif scope == "collection" and collection_id:
@@ -467,17 +493,28 @@ class DaminionClient:
             elif scope == "saved_search" and saved_search_id:
                 # Saved searches often need structured query
                 tag_id = self._get_tag_id("saved searches") or 39
+                batch_num = 0
                 while len(items) < limit:
+                    batch_num += 1
+                    logger.debug(f"[FETCH DEBUG] Saved Search batch #{batch_num}: fetching from index {current_index}, page_size={batch_size}")
                     batch = self._api.media_items.search(
                         query_line=f"{tag_id},{saved_search_id}",
                         operators=f"{tag_id},any",
                         index=current_index,
-                        page_size=batch_size
+                        page_size=batch_size,
+                        max_items_count=100000
                     )
-                    if not batch: break
+                    batch_len = len(batch) if batch else 0
+                    logger.debug(f"[FETCH DEBUG] Saved Search batch #{batch_num}: received {batch_len} items")
+                    if not batch: 
+                        logger.debug(f"[FETCH DEBUG] Saved Search: breaking - empty batch")
+                        break
                     items.extend(batch)
                     current_index += len(batch)
-                    if len(batch) < batch_size: break
+                    if len(batch) < batch_size: 
+                        logger.debug(f"[FETCH DEBUG] Saved Search: breaking - batch size {len(batch)} < {batch_size}")
+                        break
+                    logger.debug(f"[FETCH DEBUG] Saved Search: collected {len(items)} so far, limit={limit}")
                 
                 # Apply filters client-side
                 if sf != "all" or untagged_fields:
@@ -485,6 +522,8 @@ class DaminionClient:
                     items = [it for it in original_items if self._passes_filters(it, status_filter, untagged_fields)]
                     if progress_callback: progress_callback(len(items))
 
+            result_count = len(items[:int(limit)] if limit != float('inf') else items)
+            logger.info(f"[FETCH DEBUG] Returning {result_count} items (collected {len(items)}, limit={limit})")
             return items[:int(limit)] if limit != float('inf') else items
                 
         except Exception as e:

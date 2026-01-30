@@ -506,6 +506,7 @@ class MediaItemsAPI(BaseAPI):
         operators: Optional[str] = None,
         index: int = 0,
         page_size: int = 500,
+        max_items_count: Optional[int] = None,
         sort_tag: Optional[int] = None,
         ascending: bool = True,
         include_total: bool = False
@@ -519,6 +520,7 @@ class MediaItemsAPI(BaseAPI):
             operators: Operators for each tag (e.g., "13,any")
             index: Starting index for pagination (default: 0)
             page_size: Number of items per page (default: 500)
+            max_items_count: Maximum total items to retrieve (default: API default ~500)
             sort_tag: Optional tag ID to sort by
             ascending: Sort order (default: True)
             
@@ -539,6 +541,10 @@ class MediaItemsAPI(BaseAPI):
             "index": index,
             "size": page_size
         }
+        
+        # Allow requesting more items than the default API limit
+        if max_items_count is not None and max_items_count > 0:
+            params["maxItemsCount"] = max_items_count
         
         if query:
             params["search"] = query
