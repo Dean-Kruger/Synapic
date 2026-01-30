@@ -569,6 +569,11 @@ class Step1Datasource(ctk.CTkFrame):
                 
                 suffix = ""
                 final_count = count
+                api_limited = False
+                
+                # Detect if this scope uses text-based filters (API limited to ~500 items)
+                uses_text_filters = (scope in ("all", "search")) and untagged
+                
                 if count == -1:
                     # Fallback to fetching items with a cap to Estimate
                     limit_fallback = 1000 # Increased for better estimation
@@ -587,11 +592,27 @@ class Step1Datasource(ctk.CTkFrame):
                     if final_count >= limit_fallback:
                         suffix = "+"
                 
+                # Check for API limitation signature:
+                # - Text-based scope with untagged filters
+                # - Count of exactly 200 (API limit on totalCount)
+                # - Or count doesn't match expectations
+                if uses_text_filters and count == 200:
+                    # API returned the hardcoded limit - actual count is likely 500 (max fetchable)
+                    final_count = 500
+                    api_limited = True
+                    suffix = "*"
+                    logging.info(f"[COUNT DEBUG] Detected API limitation (count=200 for text filter). Showing 500* as max fetchable.")
+                
                 # Update UI and Toggle Visibility
                 def _update_ui():
                     if not self.winfo_exists(): return
                     
-                    self.lbl_total_count.configure(text=f"Records: {final_count}{suffix}")
+                    if api_limited:
+                        # Show limited count with asterisk and note
+                        self.lbl_total_count.configure(text=f"Records: {final_count}{suffix} (API limit)")
+                    else:
+                        self.lbl_total_count.configure(text=f"Records: {final_count}{suffix}")
+                    
                     self._current_total_count = final_count
                     
                     # Update slider display
