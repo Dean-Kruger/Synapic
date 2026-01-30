@@ -310,8 +310,12 @@ def setup_logging(
     console_handler.addFilter(SensitiveDataFilter())
     root_logger.addHandler(console_handler)
     
+    # Store original streams before redirection (for restoration during shutdown)
+    global _stdout_logger, _stderr_logger, _original_stdout, _original_stderr
+    _original_stdout = sys.stdout
+    _original_stderr = sys.stderr
+    
     # Redirect stdout and stderr to also write to log file
-    global _stdout_logger, _stderr_logger
     _stdout_logger = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO, sys.stdout)
     _stderr_logger = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR, sys.stderr)
     sys.stdout = _stdout_logger
@@ -325,29 +329,62 @@ def setup_logging(
     return log_file
 
 
-# Global references to logger instances for cleanup
+# Global references to logger instances and original streams for cleanup
 _stdout_logger: Optional[StreamToLogger] = None
 _stderr_logger: Optional[StreamToLogger] = None
+_original_stdout = None
+_original_stderr = None
 
 
 def shutdown_logging():
     """
     Shutdown the logging system and cleanup background threads.
     Should be called before application exit.
-    """
-    global _stdout_logger, _stderr_logger
     
+    CRITICAL: This function must restore original stdout/stderr BEFORE
+    removing handlers to prevent infinite error loops when the logging
+    system tries to write to streams that are being shut down.
+    """
+    global _stdout_logger, _stderr_logger, _original_stdout, _original_stderr
+    
+    # Step 1: Restore original stdout/stderr FIRST to prevent circular logging errors
+    # This ensures any subsequent logging doesn't try to write to our StreamToLogger
+    # instances which may have threads that are shutting down
+    if _original_stdout is not None:
+        sys.stdout = _original_stdout
+    if _original_stderr is not None:
+        sys.stderr = _original_stderr
+    
+    # Step 2: Remove console handler that references the old stdout
+    # This prevents "NoneType has no attribute 'write'" errors
+    root_logger = logging.getLogger()
+    handlers_to_remove = []
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handlers_to_remove.append(handler)
+    
+    for handler in handlers_to_remove:
+        handler.flush()
+        root_logger.removeHandler(handler)
+        handler.close()
+    
+    # Step 3: Log shutdown message (only to file now)
     logging.info("Shutting down logging system...")
     
-    # Shutdown stream loggers
+    # Step 4: Shutdown stream loggers (stop their background threads)
     if _stdout_logger:
         _stdout_logger.shutdown()
+        _stdout_logger = None
     if _stderr_logger:
         _stderr_logger.shutdown()
+        _stderr_logger = None
     
-    # Flush all handlers
+    # Step 5: Flush remaining handlers (file handler)
     for handler in logging.root.handlers:
-        handler.flush()
+        try:
+            handler.flush()
+        except Exception:
+            pass
     
     logging.info("Logging system shutdown complete")
 
