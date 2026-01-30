@@ -174,29 +174,30 @@ def _is_free_model(model_meta: dict) -> bool:
 
 
 def _supports_system_messages(model_meta: dict) -> bool:
-    """Check if a model supports system messages (developer instructions)."""
-    # First check our whitelist of known compatible models
+    """Check if a model supports system messages (developer instructions).
+    
+    Most chat/vision models DO support system messages, so we default to True
+    and only exclude models that explicitly declare no support or are known
+    to have issues (e.g., Gemma).
+    """
     model_id = model_meta.get("id") or model_meta.get("model") or model_meta.get("name") or ""
-    if any(known in model_id for known in FREE_VISION_MODELS_WITH_SYSTEM_SUPPORT):
-        return True
     
-    # Check if model metadata explicitly states system message support
-    if model_meta.get("supports_system_message") is True:
-        return True
+    # Check if model metadata explicitly states NO system message support
+    if model_meta.get("supports_system_message") is False:
+        return False
     
-    # Check architecture for system message support indicators
+    # Check architecture for explicit lack of support
     arch = model_meta.get("architecture") or {}
     if isinstance(arch, dict):
-        if arch.get("supports_system_message") is True:
-            return True
+        if arch.get("supports_system_message") is False:
+            return False
     
-    # Gemma models generally don't support system messages
+    # Gemma models are known to not support system messages
     if "gemma" in model_id.lower():
         return False
     
-    # For safety, if we can't determine support, exclude it
-    # (better to show fewer models than to show broken ones)
-    return False
+    # Most chat/vision models support system messages, so default to True
+    return True
 
 
 def find_models_by_task(task: str, token: Optional[str] = None, limit: int = 100, include_paid: bool = False) -> Tuple[List[str], List[str]]:
@@ -322,14 +323,20 @@ def run_inference_api(
         system_msg = None
         if task == config.MODEL_TASK_IMAGE_TO_TEXT:
             # Ask for a structured JSON object with description, category, and keywords
+            # Include explicit JSON schema example to enforce proper formatting
             system_msg = {
                 "role": "system", 
                 "content": (
-                    "You are an expert media archivist. Analyze the image and return a JSON object with these keys:\n"
-                    "- 'description': A detailed caption of the image.\n"
-                    "- 'category': A single broad category (e.g., 'Landscape', 'Portrait', 'Event').\n"
-                    "- 'keywords': A list of 5-10 descriptive tags.\n"
-                    "Do NOT include markdown formatting (like ```json). Return ONLY the raw JSON string."
+                    "You are an expert media archivist. Analyze the image and return ONLY a valid JSON object.\n\n"
+                    "REQUIRED FORMAT (use double quotes, not single quotes):\n"
+                    '{"description": "A detailed caption of the image", "category": "Category", "keywords": ["tag1", "tag2", "tag3"]}\n\n'
+                    "Rules:\n"
+                    "- 'description': A detailed caption of the image (1-3 sentences).\n"
+                    "- 'category': A single broad category (e.g., 'Landscape', 'Portrait', 'Cityscape', 'Nature', 'Event').\n"
+                    "- 'keywords': A list of 5-10 descriptive tags as strings.\n"
+                    "- Use DOUBLE QUOTES for all strings, not single quotes.\n"
+                    "- Do NOT include markdown formatting (no ```json blocks).\n"
+                    "- Return ONLY the JSON object, no other text."
                 )
             }
             user_msg = {"role": "user", "content": [image_part]}
@@ -368,8 +375,6 @@ def run_inference_api(
 
         headers_json = headers.copy()
         headers_json["Content-Type"] = "application/json"
-
-        logger.debug(f"OpenRouter Request Body for {model_id}: {json.dumps(body)}")
         
         log_api_request(logger, "POST", chat_url, headers=headers_json, data=body)
         

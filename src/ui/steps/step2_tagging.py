@@ -24,6 +24,7 @@ Key Components:
 Author: Synapic Project
 """
 
+import queue
 import customtkinter as ctk
 
 class Step2Tagging(ctk.CTkFrame):
@@ -972,7 +973,6 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.lbl_status.configure(text=f"Downloading {model_id}...", text_color="gray")
         self.progress.set(0)
         
-        import queue
         from src.core import huggingface_utils
         
         self.download_queue = queue.Queue()

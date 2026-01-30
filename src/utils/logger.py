@@ -152,6 +152,45 @@ def mask_sensitive_data(data: Any, mask_value: str = "***") -> Any:
         return data
 
 
+def _truncate_base64_data(data: Any) -> Any:
+    """
+    Recursively truncate base64 image data URLs to prevent massive log entries.
+    
+    Replaces data URLs like 'data:image/jpeg;base64,/9j/4AAQ...' with 
+    '[base64 image: image/jpeg]' to keep logs readable.
+    
+    Args:
+        data: The input data structure to process.
+        
+    Returns:
+        A copy of the input data with base64 URLs truncated.
+    """
+    if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            result[key] = _truncate_base64_data(value)
+        return result
+    
+    elif isinstance(data, (list, tuple)):
+        result_list = [_truncate_base64_data(item) for item in data]
+        return type(data)(result_list)
+    
+    elif isinstance(data, str):
+        # Check for base64 data URLs
+        if data.startswith("data:") and ";base64," in data:
+            # Extract the mime type for context
+            try:
+                mime_end = data.index(";base64,")
+                mime_type = data[5:mime_end]  # Skip "data:"
+                return f"[base64 image: {mime_type}]"
+            except (ValueError, IndexError):
+                return "[base64 data truncated]"
+        return data
+    
+    else:
+        return data
+
+
 class StreamToLogger:
     """
     Proxy object to redirect standard system streams to the logging engine.
@@ -503,6 +542,8 @@ def log_api_request(
     
     if data:
         masked_data = mask_sensitive_data(data)
+        # Truncate base64 image data to prevent massive log entries
+        masked_data = _truncate_base64_data(masked_data)
         logger.debug(f"Request body: {json.dumps(masked_data, indent=2, default=str)}")
 
 
