@@ -165,6 +165,7 @@ class TqdmToQueue(tqdm):
     def reset_overall_progress(cls):
         with cls._lock:
             cls._overall_downloaded_bytes = 0
+            cls._last_queued_bytes = 0  # CRITICAL: Must reset to ensure progress updates work
 
     @classmethod
     def set_overall_total_size(cls, size):
