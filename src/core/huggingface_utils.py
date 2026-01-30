@@ -59,7 +59,7 @@ import json
 import sys
 import platform
 import torch
-from typing import Optional
+from typing import Optional, Dict, Any, List, Tuple
 
 def get_device_info() -> Dict[str, Any]:
     """
@@ -134,10 +134,13 @@ class TqdmToQueue(tqdm):
             TqdmToQueue._overall_downloaded_bytes += n
             
             if TqdmToQueue._q and TqdmToQueue._update_type:
+                # Calculate progress percentage
+                progress_pct = (TqdmToQueue._overall_downloaded_bytes / TqdmToQueue._overall_total_size * 100) if TqdmToQueue._overall_total_size > 0 else 0
+                
                 # Log occasionally to avoid flooding (approx every 5MB)
                 # Note: using modulo on bytes is imprecise but sufficient for logging
                 if TqdmToQueue._overall_downloaded_bytes % (5 * 1024 * 1024) < n: 
-                     logging.debug(f"Progress Update: {TqdmToQueue._overall_downloaded_bytes}/{TqdmToQueue._overall_total_size}")
+                     logging.info(f"📥 Download Progress: {progress_pct:.1f}% ({TqdmToQueue._overall_downloaded_bytes:,}/{TqdmToQueue._overall_total_size:,} bytes)")
                 
                 # Throttle UI updates: Only update if changed by > 0.5% or > 1MB, or completed
                 # This prevents flooding the UI queue with millions of tiny 8KB chunk updates
@@ -147,8 +150,10 @@ class TqdmToQueue(tqdm):
                 is_complete = (TqdmToQueue._overall_downloaded_bytes >= TqdmToQueue._overall_total_size) and (TqdmToQueue._overall_total_size > 0)
                 
                 if diff >= threshold or is_complete:
+                    logging.info(f"🔄 Sending UI update: {progress_pct:.1f}% (diff: {diff:,} bytes, threshold: {threshold:,} bytes)")
                     TqdmToQueue._q.put((TqdmToQueue._update_type, (TqdmToQueue._overall_downloaded_bytes, TqdmToQueue._overall_total_size)))
                     TqdmToQueue._last_queued_bytes = TqdmToQueue._overall_downloaded_bytes
+
 
     def close(self):
         super().close()
@@ -419,15 +424,16 @@ def show_model_info_worker(model_id, q, token=None):
 
 def download_model_worker(model_id, q, token=None):
     """Worker thread specifically for downloading a model with accurate progress reporting."""
-    logging.info(f"Starting model download worker for: {model_id}")
+    logging.info(f"🚀 Starting model download worker for: {model_id}")
     try:
         if is_model_downloaded(model_id, token=token):
-            logging.info(f"Model {model_id} already fully downloaded.")
+            logging.info(f"✅ Model {model_id} already fully downloaded.")
             q.put(("model_download_progress", (100, 100))) # Force full progress
             q.put(("download_complete", model_id))
             return
 
         q.put(("status_update", f"Checking files for {model_id}..."))
+        logging.info(f"🔍 Checking which files need to be downloaded for {model_id}...")
         
         # Determine missing bytes to make progress bar accurate
         api = HfApi(token=token)
@@ -437,6 +443,7 @@ def download_model_worker(model_id, q, token=None):
         snapshot_dir = os.path.join(model_cache_dir, 'snapshots')
         
         total_to_download = 0
+        files_to_download = 0
         for sibling in (model_info.siblings or []):
             if sibling.rfilename.endswith(config.MODEL_FILE_EXCLUSIONS):
                 continue
@@ -450,13 +457,14 @@ def download_model_worker(model_id, q, token=None):
             
             if not already_exists:
                 total_to_download += (sibling.size or 0)
+                files_to_download += 1
 
         # Fallback if calculation is zero (e.g. metadata only)
         if total_to_download == 0:
             total_to_download = sum(s.size for s in (model_info.siblings or []) if s.size)
 
         q.put(("total_model_size", total_to_download))
-        logging.info(f"Target download size: {total_to_download} bytes.")
+        logging.info(f"📦 Need to download {files_to_download} files, total size: {format_size(total_to_download)} ({total_to_download:,} bytes)")
         
         TqdmToQueue.reset_overall_progress()
         TqdmToQueue.set_overall_total_size(total_to_download)
@@ -464,6 +472,7 @@ def download_model_worker(model_id, q, token=None):
         TqdmToQueue._update_type = "model_download_progress"
         
         q.put(("status_update", f"Downloading {model_id}..."))
+        logging.info(f"⬇️  Starting download of {model_id}...")
         
         snapshot_download(
             repo_id=model_id,
@@ -474,10 +483,10 @@ def download_model_worker(model_id, q, token=None):
         # Final update to ensure it hits 100%
         q.put(("model_download_progress", (total_to_download, total_to_download)))
         
-        logging.info(f"Model download complete for {model_id}.")
+        logging.info(f"✅ Model download complete for {model_id}!")
         q.put(("download_complete", model_id))
     except Exception as e:
-        logging.exception(f"Failed to download model: {model_id}")
+        logging.exception(f"❌ Failed to download model: {model_id}")
         q.put(("error", f"Failed to download model: {e}"))
 
 def load_model_with_progress(model_id, task, q, token=None, device=-1):

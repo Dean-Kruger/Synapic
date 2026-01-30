@@ -79,6 +79,19 @@ class App(ctk.CTk):
                 # Use iconbitmap for .ico files on Windows
                 self.iconbitmap(icon_path)
                 self.logger.info(f"Loaded application icon from {icon_path}")
+                
+                # Windows-specific: Set AppUserModelID to ensure taskbar icon displays correctly
+                # This prevents Windows from grouping the app with Python and shows our custom icon
+                if sys.platform == 'win32':
+                    try:
+                        import ctypes
+                        # Set a unique AppUserModelID for this application
+                        myappid = 'Synapic.ImageTagger.v2.0'
+                        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+                        self.logger.debug("Windows AppUserModelID set successfully")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to set Windows AppUserModelID: {e}")
+                        
             except Exception as e:
                 self.logger.warning(f"Failed to set application icon: {e}")
 
