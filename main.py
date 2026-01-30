@@ -19,6 +19,14 @@ import os
 import logging
 
 # ============================================================================
+# WINDOWS COMPATIBILITY - HUGGING FACE CACHE SYMLINKS
+# ============================================================================
+# On Windows, Hugging Face Hub tries to use symlinks for caching which requires
+# Developer Mode or Administrator privileges. Setting this env var disables
+# symlink warnings and tells HF Hub to copy files instead.
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
+# ============================================================================
 # PATH SETUP
 # ============================================================================
 # Ensure the 'src' directory is in Python's module search path.

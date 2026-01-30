@@ -61,6 +61,10 @@ import platform
 import torch
 from typing import Optional, Dict, Any, List, Tuple
 
+# Windows compatibility: Disable symlinks to avoid permission errors
+# On Windows without Developer Mode, symlink creation fails with WinError 1314
+_USE_SYMLINKS = "auto" if os.name != "nt" else False
+
 def get_device_info() -> Dict[str, Any]:
     """
     Get detailed information about available compute devices (CPU, CUDA, MPS).
@@ -477,7 +481,8 @@ def download_model_worker(model_id, q, token=None):
         snapshot_download(
             repo_id=model_id,
             tqdm_class=TqdmToQueue, # type: ignore
-            token=token
+            token=token,
+            local_dir_use_symlinks=_USE_SYMLINKS
         )
         
         # Final update to ensure it hits 100%
@@ -510,7 +515,7 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
             TqdmToQueue._update_type = "model_download_progress"
             
             q.put(("status_update", f"Downloading {model_id}..."))
-            local_model_path = snapshot_download(repo_id=model_id, tqdm_class=TqdmToQueue, token=token)
+            local_model_path = snapshot_download(repo_id=model_id, tqdm_class=TqdmToQueue, token=token, local_dir_use_symlinks=_USE_SYMLINKS)
             q.put(("model_download_progress", (total_missing, total_missing)))
         else:
             logging.info(f"Model {model_id} already downloaded.")
@@ -521,7 +526,7 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
                 latest_snapshot = sorted(snapshots)[-1]
                 local_model_path = os.path.join(snapshot_dir, latest_snapshot)
             else:
-                local_model_path = snapshot_download(repo_id=model_id, tqdm_class=TqdmToQueue, token=token)
+                local_model_path = snapshot_download(repo_id=model_id, tqdm_class=TqdmToQueue, token=token, local_dir_use_symlinks=_USE_SYMLINKS)
 
         q.put(("status_update", f"Initializing model {model_id}..."))
         
@@ -645,7 +650,8 @@ def load_model(
             local_model_path = snapshot_download(
                 repo_id=model_id,
                 tqdm_class=TqdmToQueue, # type: ignore
-                token=token
+                token=token,
+                local_dir_use_symlinks=_USE_SYMLINKS
             )
             logging.info(f"Model download complete for {model_id} (sync).")
         else:
@@ -664,7 +670,8 @@ def load_model(
                 local_model_path = snapshot_download(
                     repo_id=model_id,
                     tqdm_class=TqdmToQueue, 
-                    token=token
+                    token=token,
+                    local_dir_use_symlinks=_USE_SYMLINKS
                 )
 
         if q:
