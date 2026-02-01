@@ -467,6 +467,15 @@ def download_model_worker(model_id, q, token=None):
         if total_to_download == 0:
             total_to_download = sum(s.size for s in (model_info.siblings or []) if s.size)
 
+        # If sizes metadata are missing (common for some Hub entries), provide a sane
+        # fallback so the UI progress bar can advance. We approximate per-file size
+        # as 1MB when we know how many files would have been downloaded.
+        if total_to_download == 0 and files_to_download > 0:
+            total_to_download = files_to_download * 1024 * 1024  # 1MB per file as fallback
+            logging.warning(
+                f"Model size metadata missing; using fallback total_to_download={total_to_download} bytes"
+            )
+
         q.put(("total_model_size", total_to_download))
         logging.info(f"📦 Need to download {files_to_download} files, total size: {format_size(total_to_download)} ({total_to_download:,} bytes)")
         
