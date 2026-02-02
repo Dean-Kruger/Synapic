@@ -1,5 +1,7 @@
 # Synapic
 
+
+
 **AI-Powered Image Metadata Tagging for Digital Asset Management**
 
 Synapic automatically generates professional metadata (categories, keywords, and descriptions) for your image library using state-of-the-art AI models. Whether you're managing a personal photo collection or a professional DAM system, Synapic streamlines the tagging workflow with intelligent automation.
