@@ -626,6 +626,9 @@ class ConfigDialog(ctk.CTkToplevel):
                         unique_results.append(r)
                         seen.add(r['id'])
                 
+                # Filter out incompatible models (GPTQ, AWQ, etc.)
+                unique_results = [r for r in unique_results if huggingface_utils.is_model_compatible(r['id'])]
+                
                 # Fetch sizes
                 results_with_details = []
                 for item in unique_results:
@@ -902,6 +905,15 @@ class DownloadManagerDialog(ctk.CTkToplevel):
                     unique_results.append(r)
                     seen.add(r['id'])
             
+            # Filter out incompatible models (GPTQ, AWQ, etc.)
+            compatible_results = []
+            for r in unique_results:
+                if huggingface_utils.is_model_compatible(r['id']):
+                    compatible_results.append(r)
+                else:
+                    print(f"Filtered out incompatible model: {r['id']}")
+            unique_results = compatible_results
+            
             # Fetch sizes concurrently to avoid UI lag
             from concurrent.futures import ThreadPoolExecutor
             
@@ -972,10 +984,27 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.parent.focus_set()
 
     def start_download(self, model_id):
+        from src.core import huggingface_utils
+        
+        # Check compatibility before downloading
+        if not huggingface_utils.is_model_compatible(model_id):
+            reason = huggingface_utils.get_incompatibility_reason(model_id)
+            self.lbl_status.configure(
+                text=f"Cannot download {model_id}: {reason}", 
+                text_color="red"
+            )
+            import tkinter.messagebox as mb
+            mb.showerror(
+                "Incompatible Model", 
+                f"The model '{model_id}' cannot be used with Synapic.\n\n"
+                f"Reason: {reason}\n\n"
+                "These models require special libraries not included in Synapic.\n"
+                "Please choose a different model."
+            )
+            return
+        
         self.lbl_status.configure(text=f"Downloading {model_id}...", text_color="gray")
         self.progress.set(0)
-        
-        from src.core import huggingface_utils
         
         self.download_queue = queue.Queue()
         import threading

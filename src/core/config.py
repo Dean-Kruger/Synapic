@@ -139,6 +139,22 @@ NETWORK_TIMEOUT_SECONDS = 30
 # Files to skip when downloading models (non-essential for inference)
 MODEL_FILE_EXCLUSIONS = (".gitattributes", "README.md")
 
+# Model name patterns that indicate incompatible quantization formats
+# These models require special libraries (auto-gptq, autoawq, llama-cpp) and
+# cannot be loaded with standard transformers pipelines
+INCOMPATIBLE_MODEL_PATTERNS = [
+    "-gptq",      # GPTQ quantized models (require auto-gptq)
+    "-awq",       # AWQ quantized models (require autoawq)
+    "-gguf",      # GGUF format models (require llama-cpp-python)
+    "-ggml",      # GGML format models (legacy llama.cpp format)
+    "-exl2",      # EXL2 quantized models (require exllamav2)
+    "-bnb",       # BitsAndBytes quantized models
+    "-4bit",      # Generic 4-bit quantized
+    "-8bit",      # Generic 8-bit quantized
+    "int4",       # Integer 4-bit quantization
+    "int8",       # Integer 8-bit quantization
+]
+
 # String used to identify cache directories (for validation)
 CACHE_DIRECTORY_IDENTIFIER = ".cache"
 

@@ -334,23 +334,36 @@ class ProcessingManager:
         it for inference on the selected device (CPU or GPU).
         
         The method:
-        1. Converts device string ('cpu'/'cuda') to integer format for pipeline
-        2. Loads the model using huggingface_utils
-        3. Auto-detects and corrects the task if needed
-        4. Stores the model in self.model for reuse across all items
+        1. Checks model compatibility (rejects GPTQ, AWQ, etc.)
+        2. Converts device string ('cpu'/'cuda') to integer format for pipeline
+        3. Loads the model using huggingface_utils
+        4. Auto-detects and corrects the task if needed
+        5. Stores the model in self.model for reuse across all items
         
         Device mapping:
         - 'cpu' -> -1 (use CPU for inference)
         - 'cuda' -> 0 (use GPU device 0 for inference)
         
         Raises:
-            RuntimeError: If model loading fails
+            RuntimeError: If model loading fails or model is incompatible
         
         Note:
             The model is loaded once and reused for all items in the batch,
             which is much more efficient than loading per-item.
         """
         engine = self.session.engine
+        
+        # Check model compatibility before attempting to load
+        if not huggingface_utils.is_model_compatible(engine.model_id):
+            reason = huggingface_utils.get_incompatibility_reason(engine.model_id)
+            error_msg = (
+                f"Cannot load model '{engine.model_id}': {reason}\n\n"
+                "This model requires special libraries not included in Synapic.\n"
+                "Please select a different model from the local cache."
+            )
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
         self.logger.info(f"Initializing local model: {engine.model_id}")
         self.log(f"Loading local model: {engine.model_id}...")
         

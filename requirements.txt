@@ -14,6 +14,7 @@ tqdm>=4.66.0
 
 # Hugging Face Ecosystem
 huggingface_hub>=0.20.0
+hf_xet>=1.0.0
 transformers>=4.36.0
 accelerate>=0.25.0
 sentencepiece>=0.1.99

@@ -108,6 +108,62 @@ def get_device_info() -> Dict[str, Any]:
     return info
 
 
+def is_model_compatible(model_id: str) -> bool:
+    """
+    Check if a model is compatible with standard transformers pipelines.
+    
+    This function filters out models that require special quantization libraries
+    (auto-gptq, autoawq, llama-cpp-python, exllamav2) which are not bundled
+    with Synapic. These models cannot be loaded with the standard pipeline() call.
+    
+    Args:
+        model_id: The Hugging Face model repository ID (e.g., 'google/vit-base')
+        
+    Returns:
+        True if the model uses standard formats, False if it requires special libraries
+    """
+    model_id_lower = model_id.lower()
+    
+    for pattern in config.INCOMPATIBLE_MODEL_PATTERNS:
+        if pattern.lower() in model_id_lower:
+            logging.debug(f"Model {model_id} is incompatible (matched pattern: {pattern})")
+            return False
+    
+    return True
+
+
+def get_incompatibility_reason(model_id: str) -> Optional[str]:
+    """
+    Get a human-readable reason why a model is incompatible.
+    
+    Args:
+        model_id: The Hugging Face model repository ID
+        
+    Returns:
+        A string explaining why the model is incompatible, or None if compatible
+    """
+    model_id_lower = model_id.lower()
+    
+    reasons = {
+        "-gptq": "GPTQ quantized (requires auto-gptq library)",
+        "int4": "GPTQ/Int4 quantized (requires auto-gptq library)",
+        "int8": "Int8 quantized (requires bitsandbytes library)",
+        "-awq": "AWQ quantized (requires autoawq library)",
+        "-gguf": "GGUF format (requires llama-cpp-python)",
+        "-ggml": "GGML format (requires llama-cpp-python)",
+        "-exl2": "EXL2 format (requires exllamav2)",
+        "-bnb": "BitsAndBytes quantized",
+        "-4bit": "4-bit quantized (requires special library)",
+        "-8bit": "8-bit quantized (requires special library)",
+    }
+    
+    for pattern, reason in reasons.items():
+        if pattern.lower() in model_id_lower:
+            return reason
+    
+    return None
+
+
 class TqdmToQueue(tqdm):
     """A custom tqdm class that sends progress updates to a queue and suppresses terminal output."""
     _lock = RLock()
@@ -343,7 +399,7 @@ def find_local_models() -> Dict[str, Dict[str, Any]]:
     
     This function parses the standard Hugging Face cache structure, extracts
     model configuration (task, capability), and calculates on-disk size for
-    each identified model.
+    each identified model. Incompatible models (GPTQ, AWQ, etc.) are filtered out.
     
     Returns:
         A dictionary mapping model IDs to a metadata dict containing:
@@ -359,6 +415,13 @@ def find_local_models() -> Dict[str, Dict[str, Any]]:
             continue
 
         model_id = model_dir.name[len("models--"):].replace("--", "/")
+        
+        # Skip incompatible models (GPTQ, AWQ, etc.)
+        if not is_model_compatible(model_id):
+            reason = get_incompatibility_reason(model_id)
+            logging.debug(f"Skipping incompatible model {model_id}: {reason}")
+            continue
+            
         try:
             snapshot_dirs = [d for d in (model_dir / "snapshots").iterdir() if d.is_dir()]
             if not snapshot_dirs:
