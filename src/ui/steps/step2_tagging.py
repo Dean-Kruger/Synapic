@@ -285,6 +285,8 @@ class Step2Tagging(ctk.CTkFrame):
         Called by the App coordinator whenever the user navigates to this step
         to ensure all inputs accurately reflect the persisted configuration.
         """
+        # Sync engine provider radio button with session
+        self.engine_var.set(self.controller.session.engine.provider or "huggingface")
         self.update_config_button_color()
         self.update_model_info()
         # Update device and threshold from session
@@ -1016,5 +1018,25 @@ class DownloadManagerDialog(ctk.CTkToplevel):
     def on_download_complete(self, model_id):
         self.lbl_status.configure(text=f"Download complete: {model_id}!", text_color="green")
         self.progress.set(1.0)
-        # Refresh parent cache
-        self.parent.refresh_local_cache()
+        
+        # Auto-select the downloaded model for local inference
+        self.session.engine.provider = "local"
+        self.session.engine.model_id = model_id
+        
+        # Try to set the appropriate task based on model info
+        try:
+            from src.core import huggingface_utils
+            local_models = huggingface_utils.find_local_models()
+            model_info = local_models.get(model_id)
+            if model_info:
+                self.session.engine.task = model_info.get('suggested_task', "image-to-text")
+                print(f"Auto-selected model {model_id} with task {self.session.engine.task}")
+        except Exception as e:
+            print(f"Could not determine task for {model_id}: {e}")
+            self.session.engine.task = "image-to-text"  # Default fallback
+        
+        # Refresh parent cache and update selection
+        if hasattr(self.parent, 'refresh_local_cache'):
+            self.parent.refresh_local_cache()
+        if hasattr(self.parent, 'local_model_var'):
+            self.parent.local_model_var.set(model_id)
