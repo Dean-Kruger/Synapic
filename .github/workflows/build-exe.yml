@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 90  # Prevent stuck builds from wasting CI minutes
     
     steps:
     - uses: actions/checkout@v4
@@ -20,12 +21,15 @@ jobs:
         python-version: '3.11'
         cache: 'pip'
         
+    - name: Check disk space before install
+      run: Get-PSDrive C | Select-Object Used,Free
+        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         # Install PyTorch CPU-only first to avoid large CUDA downloads
         pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-        # Install remaining dependencies
+        # Install remaining dependencies (skip hf_xet - not needed for build)
         pip install -r requirements.txt
         
     - name: Verify installations
@@ -34,9 +38,26 @@ jobs:
         python -c "import transformers; print(f'Transformers {transformers.__version__}')"
         python -c "import customtkinter; print('CustomTkinter OK')"
         
+    - name: Check disk space before build
+      run: Get-PSDrive C | Select-Object Used,Free
+        
     - name: Build with PyInstaller
       run: |
-        pyinstaller main.spec
+        # Show PyInstaller version and build with verbose output
+        pyinstaller --version
+        pyinstaller main.spec --noconfirm 2>&1 | Tee-Object -FilePath build.log
+      timeout-minutes: 60
+      
+    - name: Upload build log on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
+        retention-days: 7
+    
+    - name: Check disk space after build
+      run: Get-PSDrive C | Select-Object Used,Free
     
     - name: Zip executable
       run: |

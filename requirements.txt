@@ -14,7 +14,7 @@ tqdm>=4.66.0
 
 # Hugging Face Ecosystem
 huggingface_hub>=0.20.0
-hf_xet>=1.0.0
+# hf_xet is optional - only needed for XetHub downloads, skip for CI builds
 transformers>=4.36.0
 accelerate>=0.25.0
 sentencepiece>=0.1.99
