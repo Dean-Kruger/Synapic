@@ -1,0 +1,2 @@
+This is a placeholder to ensure CI recognizes a workspace for multi-branch work.
+No runtime impact.

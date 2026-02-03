@@ -502,6 +502,22 @@ class DaminionAPI:
             "errors": dict(self._error_counts),
         }
 
+    def get_metrics_json(self) -> str:
+        """Return metrics in JSON format for easy ingestion by dashboards."""
+        try:
+            import json
+            return json.dumps(self.get_metrics())
+        except Exception:
+            return "{}"
+
+    def export_metrics_json(self) -> str:
+        """Backward-compatible wrapper to export metrics as JSON."""
+        return self.get_metrics_json()
+
+    def export_metrics_json(self) -> str:
+        """Backward-compatible wrapper to export metrics as JSON."""
+        return self.get_metrics_json()
+
     def reset_metrics(self) -> None:
         """Reset observability counters and latencies."""
         self._request_count = 0
