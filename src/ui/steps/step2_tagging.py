@@ -26,6 +26,7 @@ Author: Synapic Project
 
 import queue
 import customtkinter as ctk
+from src.utils.background_worker import BackgroundWorker
 
 class Step2Tagging(ctk.CTkFrame):
     """
@@ -310,6 +311,9 @@ class ConfigDialog(ctk.CTkToplevel):
         self.title("Select Engine")
         self.geometry("700x550")
         
+        # Background worker for thread management (single persistent thread)
+        self._worker = BackgroundWorker(name="ConfigDialogWorker")
+        
         # Make modal
         self.transient(parent)
         self.grab_set()
@@ -332,6 +336,12 @@ class ConfigDialog(ctk.CTkToplevel):
         # Select current
         map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter"}
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
+    
+    def destroy(self):
+        """Override destroy to clean up worker thread."""
+        if hasattr(self, '_worker'):
+            self._worker.shutdown()
+        super().destroy()
 
     def init_local_tab(self):
         self.tab_local.grid_columnconfigure(0, weight=1)
@@ -642,8 +652,8 @@ class ConfigDialog(ctk.CTkToplevel):
                 error_msg = str(e)
                 self.after(0, lambda: self.show_hf_results([], error=error_msg) if self.winfo_exists() else None)
         
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
+        # Use submit_replacing so rapid searches only execute the final one
+        self._worker.submit_replacing("hf_search", worker)
 
     def show_hf_results(self, results, error=None):
         for w in self.hf_list.winfo_children(): w.destroy()
@@ -733,9 +743,9 @@ class ConfigDialog(ctk.CTkToplevel):
             except Exception as e:
                 error_msg = str(e)
                 self.after(0, lambda: self.show_or_results([], error=error_msg) if self.winfo_exists() else None)
-                
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
+        
+        # Use submit_replacing so rapid fetches only execute the final one
+        self._worker.submit_replacing("or_fetch", worker)
 
     def show_or_results(self, results, error=None):
         for w in self.or_list.winfo_children(): w.destroy()
@@ -815,6 +825,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.title("Download Models from Hugging Face Hub")
         self.geometry("800x600")
         
+        # Background worker for thread management (single persistent thread)
+        self._worker = BackgroundWorker(name="DownloadManagerWorker")
+        
         # Make the dialog modal or at least ensuring it stays on top
         self.transient(parent)
         self.grab_set()
@@ -866,12 +879,11 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         task = self.task_var.get()
         self.lbl_status.configure(text=f"Searching Hub for '{task}'...")
         
-        # Clear results
         for widget in self.results_frame.winfo_children():
             widget.destroy()
         
-        import threading
-        threading.Thread(target=self._search_worker, args=(query, task), daemon=True).start()
+        # Use submit_replacing so rapid searches only execute the final one
+        self._worker.submit_replacing("search", self._search_worker, query, task)
 
     def _search_worker(self, query, task):
         try:
@@ -1007,12 +1019,11 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.progress.set(0)
         
         self.download_queue = queue.Queue()
-        import threading
-        threading.Thread(
-            target=huggingface_utils.download_model_worker, 
-            args=(model_id, self.download_queue), 
-            daemon=True
-        ).start()
+        self._worker.submit(
+            huggingface_utils.download_model_worker, 
+            model_id, 
+            self.download_queue
+        )
         
         self.poll_download_queue()
 
@@ -1069,3 +1080,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             self.parent.refresh_local_cache()
         if hasattr(self.parent, 'local_model_var'):
             self.parent.local_model_var.set(model_id)
+    
+    def destroy(self):
+        """Override destroy to clean up worker thread."""
+        if hasattr(self, '_worker'):
+            self._worker.shutdown()
+        super().destroy()

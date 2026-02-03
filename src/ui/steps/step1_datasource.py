@@ -25,6 +25,7 @@ Author: Synapic Project
 import customtkinter as ctk
 import logging
 from tkinter import messagebox
+from src.utils.background_worker import BackgroundWorker
 
 class Step1Datasource(ctk.CTkFrame):
     """
@@ -48,6 +49,9 @@ class Step1Datasource(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
         self.logger = logging.getLogger(__name__)
+        
+        # Background worker for thread management (single persistent thread)
+        self._worker = BackgroundWorker(name="Step1Worker")
         
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -257,9 +261,8 @@ class Step1Datasource(ctk.CTkFrame):
             success = self.controller.session.connect_daminion()
             if self.winfo_exists():
                 self.after(0, lambda: self._on_connected(success))
-            
-        import threading
-        threading.Thread(target=_bg_connect, daemon=True).start()
+        
+        self._worker.submit(_bg_connect)
 
     def _on_connected(self, success):
         self.btn_connect.configure(state="normal", text="Connect")
@@ -423,7 +426,6 @@ class Step1Datasource(ctk.CTkFrame):
 
     def _load_daminion_data(self):
         """Fetch Saved Searches and Collections in background."""
-        import threading
         def _bg_load():
             client = self.controller.session.daminion_client
             if not client: return
@@ -463,7 +465,7 @@ class Step1Datasource(ctk.CTkFrame):
             
             self.after(0, _update_ui)
 
-        threading.Thread(target=_bg_load, daemon=True).start()
+        self._worker.submit(_bg_load)
 
     def clear_container(self, container):
         for widget in container.winfo_children():
@@ -511,8 +513,6 @@ class Step1Datasource(ctk.CTkFrame):
 
     def _update_count_actual(self):
         self.lbl_total_count.configure(text="Counting...")
-        
-        import threading
         def _bg_count():
             try:
                 # 1. Determine Scope from Tabs
@@ -633,7 +633,8 @@ class Step1Datasource(ctk.CTkFrame):
                 self.logger.error(f"Count failed: {e}")
                 self.after(0, lambda: self.lbl_total_count.configure(text="Count Error"))
         
-        threading.Thread(target=_bg_count, daemon=True).start()
+        # Use submit_replacing to ensure only the latest count request runs
+        self._worker.submit_replacing("count", _bg_count)
 
     def next_step(self):
         # Save state
@@ -698,3 +699,8 @@ class Step1Datasource(ctk.CTkFrame):
             self.logger.info(f"[LIMIT DEBUG] Final ds.max_items = {ds.max_items}")
         
         self.controller.show_step("Step2Tagging")
+    
+    def shutdown(self):
+        """Clean up resources on application exit."""
+        if hasattr(self, '_worker'):
+            self._worker.shutdown()
