@@ -103,12 +103,12 @@ class DaminionClient:
         """Check if client is authenticated."""
         return self._api.is_authenticated()
     
-    def __enter__(self):
+    def __enter__(self) -> "DaminionClient":
         """Enter context manager."""
         self._api.authenticate()
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         """Exit context manager."""
         try:
             self._api.logout()
@@ -376,16 +376,18 @@ class DaminionClient:
                       logger.info(f"Fallback search returned totalCount={count}")
             
             # Fallback for structured searches if search string failed (returned 0)
-            if count <= 0:
-                 # Try structured query for keyword if text search failed
-                 if scope == "search" and search_term:
-                      kw_id = self._get_tag_id("keywords")
-                      kw_vals = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
-                      if kw_vals:
-                           count = self._api.media_items.get_count(
-                               query_line=f"{kw_id},{kw_vals[0].id}",
-                               operators=f"{kw_id},any"
-                           )
+            if isinstance(count, int) and count <= 0:
+                # Try structured query for keyword if text search failed
+                if scope == "search" and search_term:
+                    kw_id = self._get_tag_id("keywords")
+                    kw_vals = None
+                    if kw_id is not None:
+                        kw_vals = self._api.tags.find_tag_values(tag_id=kw_id, filter_text=search_term)
+                    if kw_vals:
+                        count = self._api.media_items.get_count(
+                            query_line=f"{kw_id},{kw_vals[0].id}",
+                            operators=f"{kw_id},any"
+                        )
 
             logger.info(f"DAMINION COUNT RESULT | count: {count} | scope: {scope} | query: '{combined_search}'")
             return count
