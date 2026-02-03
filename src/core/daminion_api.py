@@ -383,7 +383,8 @@ class DaminionAPI:
         """
         if not skip_auth and not self._authenticated:
             raise DaminionAuthenticationError("Not authenticated. Call authenticate() first.")
-         
+        # Start timing for observability
+        start_time = time.time()
         # Increment request counter for observability
         self._request_count += 1
 
@@ -445,13 +446,22 @@ class DaminionAPI:
                         if 'data' in result:
                             return result['data']
                     
+                    # Observability: latency per endpoint
+                    duration = (time.time() - start_time) * 1000
+                    self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
                     return result
                 else:
                     # Return raw binary data (for images, files, etc.)
+                    # Observability: latency for non-json endpoints
+                    duration = (time.time() - start_time) * 1000
+                    self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
                     return response_data
                     
         except urllib.error.HTTPError as e:
             error_msg = f"HTTP {e.code}: {e.reason}"
+            # Observability: record latency on error path
+            duration = (time.time() - start_time) * 1000
+            self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
             
             if e.code == 401:
                 self._authenticated = False
@@ -466,6 +476,10 @@ class DaminionAPI:
                 raise DaminionAPIError(f"API request failed: {error_msg}")
                 
         except urllib.error.URLError as e:
+            # Observability: record latency on error path
+            duration = (time.time() - start_time) * 1000
+            self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
+            self._error_counts["URLError"] = self._error_counts.get("URLError", 0) + 1
             raise DaminionNetworkError(f"Network error: {e.reason}")
         except json.JSONDecodeError as e:
             raise DaminionAPIError(f"Invalid JSON response: {e}")
@@ -475,6 +489,24 @@ class DaminionAPI:
     def get_request_count(self) -> int:
         """Return the number of API requests performed (observability)."""
         return self._request_count
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Return a lightweight metrics snapshot for observability."""
+        latency_summary = {
+            ep: (sum(vals) / len(vals)) if vals else 0.0
+            for ep, vals in self._latency_by_endpoint.items()
+        }
+        return {
+            "requests": self._request_count,
+            "latency_ms_by_endpoint": latency_summary,
+            "errors": dict(self._error_counts),
+        }
+
+    def reset_metrics(self) -> None:
+        """Reset observability counters and latencies."""
+        self._request_count = 0
+        self._latency_by_endpoint.clear()
+        self._error_counts.clear()
 
 
 # ============================================================================
