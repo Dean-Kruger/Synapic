@@ -1,5 +1,4 @@
 name: CI
-
 on:
   push:
     branches: [ main, master ]
@@ -19,6 +18,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install mypy ruff pytest pytest-cov
+      - name: Lint with Ruff
+        run: |
+          ruff --version
+          ruff src tests
+      - name: Type check with Mypy
+        run: |
+          mypy --version
+          mypy src
       - name: Run tests
         run: |
           pytest -q
