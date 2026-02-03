@@ -566,6 +566,13 @@ class ProcessingManager:
             cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task, threshold=threshold)
             self.logger.debug(f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}")
             
+            # If extraction returned no useful data, write a placeholder so the item
+            # is marked as processed and won't be reprocessed in subsequent runs
+            if not cat and not kws and not desc:
+                desc = "[AI: No Result]"
+                self.logger.info(f"No tags extracted for item, using placeholder: {desc}")
+                self.log(f"No results - marking with placeholder")
+            
             # ===============================================================
             # STAGE 4: METADATA WRITING
             # ===============================================================
