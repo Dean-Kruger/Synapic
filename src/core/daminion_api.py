@@ -245,6 +245,8 @@ class DaminionAPI:
         self._cookies: Dict[str, str] = {}
         self._authenticated = False
         self._last_request_time = 0.0
+        # Simple observability: track number of requests made
+        self._request_count: int = 0
         
         # Initialize sub-APIs
         self.media_items = MediaItemsAPI(self)
@@ -377,7 +379,10 @@ class DaminionAPI:
         """
         if not skip_auth and not self._authenticated:
             raise DaminionAuthenticationError("Not authenticated. Call authenticate() first.")
-        
+         
+        # Increment request counter for observability
+        self._request_count += 1
+
         if not skip_rate_limit:
             self._enforce_rate_limit()
         
@@ -462,6 +467,10 @@ class DaminionAPI:
             raise DaminionAPIError(f"Invalid JSON response: {e}")
         except Exception as e:
             raise DaminionAPIError(f"Request failed: {e}")
+
+    def get_request_count(self) -> int:
+        """Return the number of API requests performed (observability)."""
+        return self._request_count
 
 
 # ============================================================================
