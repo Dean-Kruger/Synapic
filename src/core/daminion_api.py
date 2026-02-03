@@ -245,6 +245,10 @@ class DaminionAPI:
         self._cookies: Dict[str, str] = {}
         self._authenticated = False
         self._last_request_time = 0.0
+        # Observability metrics
+        self._request_count: int = 0
+        self._latency_by_endpoint: Dict[str, List[float]] = {}
+        self._error_counts: Dict[str, int] = {}
         # Simple observability: track number of requests made
         self._request_count: int = 0
         
@@ -482,11 +486,11 @@ class DaminionAPI:
 # ============================================================================
 class BaseAPI:
     """Base class for sub-API implementations."""
-    
-    def __init__(self, client: DaminionAPI):
+
+    def __init__(self, client: DaminionAPI) -> None:
         self.client = client
-    
-    def _request(self, *args, **kwargs):
+
+    def _request(self, *args, **kwargs) -> Any:
         """Shortcut to client._make_request()"""
         return self.client._make_request(*args, **kwargs)
 
@@ -629,7 +633,13 @@ class MediaItemsAPI(BaseAPI):
         
         try:
             result = self._request("/api/MediaItems/GetCount", params=params)
-            count = result if isinstance(result, int) else result.get('count', result.get('totalCount', 0))
+            # Normalize to int defensively
+            if isinstance(result, int):
+                count = result
+            elif isinstance(result, dict):
+                count = int(result.get('count', result.get('totalCount', 0)))
+            else:
+                count = 0
             logging.debug(f"API GetCount result: {count} (params: {params})")
             return count
         except Exception as e:
