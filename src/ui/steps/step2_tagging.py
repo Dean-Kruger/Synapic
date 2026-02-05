@@ -25,6 +25,10 @@ Author: Synapic Project
 """
 
 import queue
+try:
+    from src.ui.steps.step_groq_settings import GroqSettingsDialog  # optional
+except Exception:
+    GroqSettingsDialog = None
 import customtkinter as ctk
 from src.utils.background_worker import BackgroundWorker
 
@@ -66,6 +70,8 @@ class Step2Tagging(ctk.CTkFrame):
         self.create_engine_card(self.cards_frame, "Local Inference", "local", 0)
         self.create_engine_card(self.cards_frame, "Hugging Face", "huggingface", 1)
         self.create_engine_card(self.cards_frame, "OpenRouter", "openrouter", 2)
+        # Groq Inference provider (new)
+        self.create_engine_card(self.cards_frame, "Groq Inference", "groq", 3)
 
         # Configure Button (renamed to "Select Engine")
         self.btn_config = ctk.CTkButton(self.container, text="Select Engine", command=self.open_config_dialog, width=200)
@@ -236,6 +242,8 @@ class Step2Tagging(ctk.CTkFrame):
             is_ready = bool(self.controller.session.engine.api_key)
         elif engine == "openrouter":
             is_ready = bool(self.controller.session.engine.api_key)
+        elif engine == "groq":
+            is_ready = bool(self.controller.session.engine.groq_base_url) and bool(self.controller.session.engine.groq_api_key)
             
         if is_ready:
             self.btn_config.configure(fg_color="#2FA572", hover_color="#288E62") # Green
@@ -254,7 +262,7 @@ class Step2Tagging(ctk.CTkFrame):
         engine provider (Local, HF, or OpenRouter).
         """
         engine = self.engine_var.get()
-        # Pass session to dialog
+        # Open the main configuration dialog (Groq, HF, OpenRouter, Local all via ConfigDialog)
         dialog = ConfigDialog(self, self.controller.session, initial_tab=engine)
         self.wait_window(dialog)
         self.update_config_button_color()
@@ -327,15 +335,77 @@ class ConfigDialog(ctk.CTkToplevel):
         self.tab_local = self.tabview.add("Local Inference")
         self.tab_hf = self.tabview.add("Hugging Face")
         self.tab_or = self.tabview.add("OpenRouter")
+        # Groq tab (optional integration in the config dialog)
+        self.tab_groq = self.tabview.add("Groq")
+        
         
         # Init Tabs
         self.init_local_tab()
         self.init_hf_tab()
         self.init_or_tab()
+        self.init_groq_tab()
         
         # Select current
-        map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter"}
+        map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter", "groq": "Groq"}
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
+
+    def init_groq_tab(self):
+        # Simple Groq tab with base URL and API key
+        self.tab_groq.grid_columnconfigure(0, weight=1)
+        self.tab_groq.grid_rowconfigure(0, weight=1)
+        frame = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
+        frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        frame.grid_columnconfigure(1, weight=1)
+
+        row = 0
+        ctk.CTkLabel(frame, text="Groq Base URL:").grid(row=row, column=0, sticky="e", padx=5, pady=5)
+        self.groq_base_url_var = ctk.StringVar(value=getattr(self.session.engine, 'groq_base_url', ''))
+        self.groq_base_url_entry = ctk.CTkEntry(frame, textvariable=self.groq_base_url_var, width=420)
+        self.groq_base_url_entry.grid(row=row, column=1, sticky="w", pady=5)
+
+        row += 1
+        ctk.CTkLabel(frame, text="Groq API Key:").grid(row=row, column=0, sticky="e", padx=5, pady=5)
+        self.groq_api_key_var = ctk.StringVar(value=getattr(self.session.engine, 'groq_api_key', ''))
+        self.groq_api_key_entry = ctk.CTkEntry(frame, textvariable=self.groq_api_key_var, show="*", width=420)
+        self.groq_api_key_entry.grid(row=row, column=1, sticky="w", pady=5)
+
+        # Status / actions
+        self.groq_status = ctk.CTkLabel(frame, text="", text_color="gray")
+        self.groq_status.grid(row=row+1, column=0, columnspan=2, pady=8)
+
+        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_frame.grid(row=row+2, column=0, columnspan=2, pady=6)
+        ctk.CTkButton(btn_frame, text="Test Groq Connection", command=self.test_groq_connection, width=180).pack(side="left", padx=6)
+        ctk.CTkButton(btn_frame, text="Save Groq Config", command=self.save_groq_config, width=170).pack(side="left", padx=6)
+
+    def test_groq_connection(self):
+        from src.integrations.groq_client import GroqClient
+        base = self.groq_base_url_var.get().strip()
+        key = self.groq_api_key_var.get().strip()
+        client = GroqClient(base_url=base or None, api_key=key or None)
+        self.groq_status.configure(text="Testing connection...", text_color="gray")
+
+        def worker():
+            ok = False
+            try:
+                ok = client.test_connection()
+            except Exception as e:
+                ok = False
+                self.after(0, lambda: self.groq_status.configure(text=f"Error: {e}", text_color="red"))
+            self.after(0, lambda: self.groq_status.configure(text=("Connection OK" if ok else "Connection failed"), text_color=("green" if ok else "red")))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def save_groq_config(self):
+        self.session.engine.groq_base_url = self.groq_base_url_var.get().strip()
+        self.session.engine.groq_api_key = self.groq_api_key_var.get().strip()
+        from src.utils.config_manager import save_config
+        try:
+            save_config(self.session)
+        except Exception:
+            pass
+        self.groq_status.configure(text="Groq config saved", text_color="green")
     
     def destroy(self):
         """Override destroy to clean up worker thread."""

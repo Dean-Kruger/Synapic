@@ -9,6 +9,7 @@ import tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
 from src.utils.config_manager import save_config
+from src.integrations.groq_client import GroqClient
 
 class GroqSettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent, session, title: str = "Groq Settings"):
@@ -42,8 +43,12 @@ class GroqSettingsDialog(ctk.CTkToplevel):
         # Buttons
         btn_frame = ctk.CTkFrame(self)
         btn_frame.grid(row=1, column=0, pady=8)
+        ctk.CTkButton(btn_frame, text="Test Connection", command=self.test_connection, width=140).pack(side="left", padx=8)
         ctk.CTkButton(btn_frame, text="Save", command=self.save, width=100).pack(side="left", padx=8)
         ctk.CTkButton(btn_frame, text="Cancel", command=self.close, width=100).pack(side="left", padx=8)
+
+        self.status_label = ctk.CTkLabel(self, text="Not tested", text_color="gray")
+        self.status_label.grid(row=2, column=0, sticky="w", padx=12, pady=6)
 
         self.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -56,6 +61,24 @@ class GroqSettingsDialog(ctk.CTkToplevel):
         except Exception:
             pass
         self.close()
+
+    def test_connection(self):
+        base = self.base_url_var.get().strip()
+        key = self.api_key_var.get().strip()
+        client = GroqClient(base_url=base or None, api_key=key or None)
+        self.status_label.configure(text="Testing Groq connection...", text_color="gray")
+
+        def worker():
+            ok = False
+            try:
+                ok = client.test_connection()
+            except Exception as e:
+                ok = False
+                self.after(0, lambda: self.status_label.configure(text=f"Error: {e}", text_color="red"))
+            self.after(0, lambda: self.status_label.configure(text=("Connection OK" if ok else "Connection failed"), text_color=("green" if ok else "red")))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
 
     def close(self):
         self.grab_release()

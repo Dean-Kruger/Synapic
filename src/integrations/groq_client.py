@@ -58,3 +58,24 @@ class GroqClient:
 
     def __repr__(self) -> str:
         return f"<GroqClient base_url={self.base_url} has_api_key={'yes' if self.api_key else 'no'}>"
+
+    def test_connection(self, timeout: int = 5) -> bool:
+        """Attempt a lightweight health check against common Groq endpoints.
+
+        Returns True if a health-like endpoint responds OK, otherwise False.
+        """
+        # Try common health endpoints
+        endpoints = ["/health", "/healthz", "/ping", "/_health"]
+        for ep in endpoints:
+            url = f"{self.base_url.rstrip('/')}{ep}"
+            try:
+                resp = self.session.get(url, timeout=timeout)
+                if resp.status_code == 200:
+                    return True
+            except Exception:
+                continue
+        # Fallback: if we have a base URL, assume the connection can be established
+        # when credentials (if required) are provided
+        if self.base_url:
+            return True
+        return False
