@@ -46,6 +46,14 @@ from . import openrouter_utils
 from . import image_processing
 from . import config
 
+# Optional Groq integration (for Groq SDK-based inference)
+try:
+    from src.integrations.groq_package_client import GroqPackageClient
+    GROQ_AVAILABLE = True
+except ImportError:
+    GroqPackageClient = None
+    GROQ_AVAILABLE = False
+
 # Optional metadata verification (for testing/debugging)
 # This module may not be available in packaged distributions
 try:
@@ -523,6 +531,43 @@ class ProcessingManager:
                     with Image.open(path) as img:
                          if img.mode != "RGB": img = img.convert("RGB")
                          result = self.model(img)
+
+            elif engine.provider == "groq_package":
+                # ---------------------------------------------------------------
+                # GROQ SDK INFERENCE (Cloud-based via Groq Python SDK)
+                # ---------------------------------------------------------------
+                # Uses the Groq Python SDK to send images to Groq's vision models
+                # Requires GROQ_API_KEY environment variable or configured in session
+                
+                if not GROQ_AVAILABLE:
+                    raise RuntimeError("Groq SDK not available. Please install it with: pip install groq")
+                
+                # Initialize Groq client
+                groq_client = GroqPackageClient()
+                if not groq_client.is_available():
+                    raise RuntimeError("Groq SDK is not available or not properly configured")
+                
+                # Default model for vision tasks (Groq's vision model)
+                model_id = engine.model_id or "meta-llama/llama-4-scout-17b-16e-instruct"
+                
+                # Create a detailed prompt for image analysis
+                prompt = (
+                    "Analyze this image and provide a detailed response in JSON format with these keys:\n"
+                    "- 'description': A detailed description of the image content\n"
+                    "- 'category': A single broad category (e.g., 'Nature', 'Architecture', 'People')\n"
+                    "- 'keywords': A list of 5-10 relevant tags/keywords\n\n"
+                    "Return ONLY the raw JSON object, no additional text."
+                )
+                
+                # Call Groq API with the image
+                response_text = groq_client.chat_with_image(
+                    model=model_id,
+                    prompt=prompt,
+                    image_path=str(path)
+                )
+                
+                # Format result to match expected structure for tag extraction
+                result = [{"generated_text": response_text}]
 
             elif engine.provider in ["huggingface", "openrouter"]:
                 # ---------------------------------------------------------------

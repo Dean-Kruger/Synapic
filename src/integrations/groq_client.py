@@ -79,3 +79,45 @@ class GroqClient:
         if self.base_url:
             return True
         return False
+
+    def list_models(self, dataset: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fetch available Groq models via API.
+
+        Attempts a GET to /groq/models, with optional dataset filter and limit.
+        Falls back to POST if GET fails or endpoint differs.
+        Returns a list of model dicts.
+        """
+        models: List[Dict[str, Any]] = []
+        # Try GET first
+        url = f"{self.base_url.rstrip('/')}/groq/models"
+        params: Dict[str, Any] = {"limit": limit}
+        if dataset:
+            params["dataset"] = dataset
+        try:
+            resp = self.session.get(url, params=params, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                models = data
+            elif isinstance(data, dict):
+                if "models" in data:
+                    models = data["models"]
+                elif "data" in data:
+                    val = data["data"]
+                    models = val if isinstance(val, list) else [val]
+        except Exception:
+            # Fallback to POST
+            try:
+                payload = {"limit": limit}
+                if dataset:
+                    payload["dataset"] = dataset
+                resp = self.session.post(url, json=payload, timeout=self.timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                if isinstance(data, list):
+                    models = data
+                elif isinstance(data, dict):
+                    models = data.get("models", data.get("data", [])) or []
+            except Exception:
+                models = []
+        return models
