@@ -108,6 +108,10 @@ class EngineConfig:
     confidence_threshold: int = 50  # Confidence threshold (1-100) for category/keyword filtering
     device: str = "cpu"  # 'cpu' or 'cuda' for local inference
 
+    # Groq integration settings (optional)
+    groq_base_url: str = ""  # Base URL for Groq API
+    groq_api_key: str = ""   # Groq API key
+
 # ============================================================================
 # SESSION CLASS
 # ============================================================================

@@ -111,6 +111,18 @@ For cloud-based AI models:
 
 Configure in the application settings or via environment variables.
 
+Groq Integration
+-----------------
+- Synapic can query Groq-backed datasets via an in-app Groq Settings panel and registry-persisted configuration.
+- In-app config:
+  - Groq Base URL: Base endpoint for Groq API (e.g. https://console.groq.com/api)
+  - Groq API Key: Your Groq API key (hidden in UI)
+- Environment config:
+  - GROQ_API_BASE_URL: Groq API base URL
+  - GROQ_API_KEY: Groq API key
+- The Groq settings are saved to the registry like other providers, so changes persist across sessions.
+- Example usage: create a Groq query with a dataset and a query string, then execute in the Groq Explorer.
+
 ### Daminion Connection
 - Server URL (e.g., `http://yourserver.com/daminion`)
 - Username and password
