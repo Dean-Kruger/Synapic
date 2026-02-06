@@ -1147,17 +1147,25 @@ class GroqPackageConfigDialog(ctk.CTkToplevel):
         
         def worker():
             import os
+            import logging
+            logger = logging.getLogger(__name__)
+            
             # Temporarily set the API key in environment for the client
             old_key = os.environ.get("GROQ_API_KEY")
             os.environ["GROQ_API_KEY"] = api_key
+            logger.info(f"test_connection worker: Set GROQ_API_KEY, key length: {len(api_key)}")
             
             try:
                 from src.integrations.groq_package_client import GroqPackageClient
+                logger.info("test_connection worker: Creating GroqPackageClient")
                 client = GroqPackageClient()
+                logger.info(f"test_connection worker: client.is_available() = {client.is_available()}")
                 
                 if client.is_available():
                     # Try to list models as a real connection test
+                    logger.info("test_connection worker: SDK available, listing models...")
                     models = client.list_models(limit=1)
+                    logger.info(f"test_connection worker: Got {len(models)} models")
                     if models:
                         self.after(0, lambda: self.status_label.configure(
                             text="✓ Connection successful!", text_color="green"
@@ -1169,10 +1177,12 @@ class GroqPackageConfigDialog(ctk.CTkToplevel):
                             text_color="orange"
                         ))
                 else:
+                    logger.error(f"test_connection worker: SDK NOT available. _groq_class={client._groq_class}")
                     self.after(0, lambda: self.status_label.configure(
                         text="✗ Groq SDK not available", text_color="red"
                     ))
             except Exception as e:
+                logger.exception(f"test_connection worker: Exception: {e}")
                 self.after(0, lambda: self.status_label.configure(
                     text=f"✗ Error: {str(e)[:50]}", text_color="red"
                 ))

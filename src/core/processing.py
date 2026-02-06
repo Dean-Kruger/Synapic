@@ -542,10 +542,19 @@ class ProcessingManager:
                 if not GROQ_AVAILABLE:
                     raise RuntimeError("Groq SDK not available. Please install it with: pip install groq")
                 
+                # Set GROQ_API_KEY environment variable from session config if provided
+                # This allows the GroqPackageClient to authenticate without a global env var
+                import os
+                groq_api_key = getattr(engine, 'groq_api_key', None) or engine.api_key
+                if groq_api_key:
+                    os.environ["GROQ_API_KEY"] = groq_api_key
+                    self.logger.debug(f"Set GROQ_API_KEY from session config")
+                
                 # Initialize Groq client
                 groq_client = GroqPackageClient()
                 if not groq_client.is_available():
-                    raise RuntimeError("Groq SDK is not available or not properly configured")
+                    self.logger.error(f"Groq SDK unavailable. GROQ_AVAILABLE={GROQ_AVAILABLE}, has_groq_class={groq_client._groq_class is not None}")
+                    raise RuntimeError("Groq SDK is not available or not properly configured. Check that 'groq' package is installed.")
                 
                 # Default model for vision tasks (Groq's vision model)
                 model_id = engine.model_id or "meta-llama/llama-4-scout-17b-16e-instruct"

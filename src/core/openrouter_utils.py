@@ -416,13 +416,50 @@ def run_inference_api(
                     # Clean potential markdown
                     cleaned_content = content.replace("```json", "").replace("```", "").strip()
                     outputs = json.loads(cleaned_content)
+                except json.JSONDecodeError:
+                    # Models sometimes return Python-style dict strings with single quotes
+                    # Try ast.literal_eval as fallback
+                    import ast
+                    try:
+                        parsed = ast.literal_eval(cleaned_content)
+                        if isinstance(parsed, dict):
+                            outputs = parsed
+                        else:
+                            # If it's not a dict, treat as plain text
+                            if task == config.MODEL_TASK_IMAGE_TO_TEXT:
+                                outputs = [{"generated_text": content}]
+                            else:
+                                outputs = content
+                    except (ValueError, SyntaxError):
+                        # Treat as plain text
+                        if task == config.MODEL_TASK_IMAGE_TO_TEXT:
+                            outputs = [{"generated_text": content}]
+                        else:
+                            outputs = content
                 except Exception:
                     # Treat as plain text
                     if task == config.MODEL_TASK_IMAGE_TO_TEXT:
                         outputs = [{"generated_text": content}]
                     else:
                         outputs = content
+                
+                # Handle nested 'generated_text' structures from models
+                # e.g., "{'generated_text': ''}" or "{'generated_text': {...}}"
+                if isinstance(outputs, dict) and 'generated_text' in outputs and len(outputs) == 1:
+                    inner = outputs['generated_text']
+                    if isinstance(inner, dict):
+                        # Inner dict has actual content, use it directly
+                        outputs = inner
+                    elif isinstance(inner, str) and inner.strip():
+                        # Inner is a non-empty string, keep as-is for later wrapping
+                        outputs = inner
+                    elif isinstance(inner, str) and not inner.strip():
+                        # Inner is empty string - model returned nothing useful
+                        # This is an edge case where model says {'generated_text': ''}
+                        logger.warning("Model returned empty 'generated_text' structure")
+                        outputs = None  # Will trigger fallback or empty handling
             else:
+                # content is not a string (already a dict or other type)
                 outputs = content
         else:
             # Fallback: Not the chat format. Use the whole json

@@ -283,6 +283,68 @@ def process_single_image(
 # AI MODEL RESULT PARSING
 # ============================================================================
 
+def to_title_case(text: str) -> str:
+    """
+    Convert text to proper Title Case.
+    
+    Handles:
+    - Regular words: "hello world" -> "Hello World"
+    - Compound words: "blue-sky" -> "Blue-Sky"
+    - Underscores: "blue_sky" -> "Blue_Sky"
+    - All-caps preserved: "3D", "AI", "JPEG", "HDR" stay as-is
+    - Mixed case: "iPhone" stays as "iPhone"
+    
+    Args:
+        text: Input string to convert
+        
+    Returns:
+        Title-cased string
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    def capitalize_word(word: str) -> str:
+        """Capitalize a single word, preserving all-caps and mixed case."""
+        if not word:
+            return word
+        
+        # If word is all uppercase (like "3D", "AI", "JPEG"), preserve it
+        if word.isupper():
+            return word
+        
+        # If word has mixed case (like "iPhone", "MacBook"), preserve it
+        if not word.islower() and not word.isupper():
+            # Check if it's just first-letter-capitalized (like "Hello")
+            if word[0].isupper() and word[1:].islower():
+                return word  # Already title case
+            # Otherwise it's mixed case like "iPhone" - preserve it
+            return word
+        
+        # Regular lowercase word - capitalize first letter
+        return word[0].upper() + word[1:].lower() if len(word) > 1 else word.upper()
+    
+    # Handle compound separators
+    result = []
+    for word in text.split():
+        # Handle hyphenated words (e.g., "blue-sky" or "high-speed")
+        if '-' in word:
+            parts = word.split('-')
+            word = '-'.join(capitalize_word(p) for p in parts)
+        # Handle underscored words (e.g., "blue_sky")
+        elif '_' in word:
+            parts = word.split('_')
+            word = '_'.join(capitalize_word(p) for p in parts)
+        # Handle forward slash separated (e.g., "Art/Design")
+        elif '/' in word:
+            parts = word.split('/')
+            word = '/'.join(capitalize_word(p) for p in parts)
+        else:
+            word = capitalize_word(word)
+        result.append(word)
+    
+    return ' '.join(result)
+
+
 def extract_tags_from_result(
     result: Any,
     model_task: str,
@@ -304,6 +366,7 @@ def extract_tags_from_result(
     - Multi-modal models that combine text generation with image understanding
     - Confidence threshold filtering to ensure quality
     - Stop word filtering for generated text
+    - **Title Case formatting for all keywords and categories**
     
     Args:
         result: The raw output from the AI pipeline. Format varies by task:
@@ -318,14 +381,15 @@ def extract_tags_from_result(
     
     Returns:
         Tuple of (category, keywords, description) where:
-        - category: Single best category label (str, may be empty)
-        - keywords: List of keyword tags (List[str], may be empty)
+        - category: Single best category label (str, may be empty) - Title Cased
+        - keywords: List of keyword tags (List[str], may be empty) - Title Cased
         - description: Descriptive caption text (str, may be empty)
     
     Note:
         - For VLMs, attempts to parse JSON from generated text first
         - Falls back to plain text extraction if JSON parsing fails
         - Applies config.MAX_KEYWORDS_PER_IMAGE limit to prevent tag spam
+        - All keywords and categories are converted to Title Case
     """
     category = ""
     keywords = []
@@ -543,4 +607,19 @@ def extract_tags_from_result(
     except Exception as e:
         logging.error(f"Error extracting tags from result: {e}")
 
+    # =========================================================================
+    # TITLE CASE NORMALIZATION
+    # =========================================================================
+    # Apply Title Case to all keywords and categories for consistent formatting
+    if category:
+        category = to_title_case(category)
+    
+    if keywords:
+        keywords = [to_title_case(k) for k in keywords if k]
+        # Re-deduplicate after title casing (in case "Blue Sky" and "blue sky" become same)
+        keywords = list(dict.fromkeys(keywords))
+    
+    logging.debug(f"Final tags - Category: '{category}', Keywords: {keywords[:5]}..., Description: '{description[:50]}...'")
+
     return category, keywords, description
+

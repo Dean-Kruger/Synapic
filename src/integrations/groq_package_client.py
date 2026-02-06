@@ -43,13 +43,22 @@ class GroqPackageClient:
         self._client = None
         self._groq_class = None
         self.available = False
+        import logging
+        logger = logging.getLogger(__name__)
         try:
             # Groq provides a Groq class in the groq package (e.g. from groq import Groq)
             from groq import Groq  # type: ignore
             self._groq_class = Groq
             self._client = None  # will instantiate per-call using environment key
             self.available = True
-        except Exception:
+            logger.debug(f"GroqPackageClient initialized: available=True, Groq class loaded")
+        except ImportError as e:
+            logger.warning(f"GroqPackageClient: groq package not installed: {e}")
+            self._groq_class = None
+            self._client = None
+            self.available = False
+        except Exception as e:
+            logger.error(f"GroqPackageClient: unexpected error during init: {e}")
             self._groq_class = None
             self._client = None
             self.available = False
@@ -59,14 +68,21 @@ class GroqPackageClient:
 
     def _ensure_client(self):
         if self._groq_class is None:
+            import logging
+            logging.getLogger(__name__).warning("Groq class is None - SDK not imported")
             return None
         try:
             # Groq accepts api_key via env or constructor; not all combos required
+            import logging
             key = os.environ.get("GROQ_API_KEY") or None
+            logging.getLogger(__name__).debug(f"GROQ_API_KEY from env: {'set' if key else 'not set'}")
             if key:
                 return self._groq_class(api_key=key)
+            # If no key in env, this will likely fail
             return self._groq_class()
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Failed to create Groq client: {e}")
             return None
 
     def chat_with_image(self, model: str, prompt: str, image_path: str = None, base64_image: str = None) -> str:
