@@ -119,15 +119,38 @@ class App(ctk.CTk):
 
         self.steps = {}
         
-        from src.ui.steps import Step1Datasource, Step2Tagging, Step3Process, Step4Results
+        from src.ui.steps import Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepGroq
 
         self.logger.info("Creating UI steps")
-        for F in (Step1Datasource, Step2Tagging, Step3Process, Step4Results):
+        for F in (Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepGroq):
             page_name = F.__name__
             self.logger.debug(f"Creating step: {page_name}")
             frame = F(parent=self.container, controller=self)
             self.steps[page_name] = frame
             frame.grid(row=0, column=0, sticky="nsew")
+
+        # Add a small persistent navigation for Groq Explorer
+        self.nav_frame = ctk.CTkFrame(self, height=40)
+        self.nav_frame.grid(row=1, column=0, sticky="ew")
+        
+        self.explorer_btn = ctk.CTkButton(
+            self.nav_frame, 
+            text="Open Groq Explorer", 
+            command=lambda: self.show_step("StepGroq"),
+            width=150,
+            fg_color="#8E44AD", # Purple for explorer
+            hover_color="#7D3C98"
+        )
+        self.explorer_btn.pack(side="right", padx=20, pady=5)
+        
+        self.wizard_btn = ctk.CTkButton(
+            self.nav_frame, 
+            text="Back to Wizard", 
+            command=lambda: self.show_step("Step1Datasource"),
+            width=150,
+            fg_color="gray"
+        )
+        self.wizard_btn.pack(side="left", padx=20, pady=5)
 
         self.logger.info("Showing initial step: Step1Datasource")
         self.show_step("Step1Datasource")
