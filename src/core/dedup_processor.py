@@ -295,10 +295,15 @@ class DaminionDedupProcessor:
                     results['skipped'] += 1
                 
                 elif action == DedupAction.DELETE:
-                    # Delete from Daminion
+                    # Delete from Daminion catalog
                     # WARNING: This is destructive!
-                    logger.warning(f"Delete action not yet implemented for item {item_id}")
-                    results['skipped'] += 1
+                    try:
+                        self.client._api.media_items.delete_items([int_item_id])
+                        results['deleted'] += 1
+                        logger.info(f"Deleted item {item_id} from catalog")
+                    except Exception as del_err:
+                        logger.error(f"Failed to delete item {item_id}: {del_err}")
+                        results['errors'] += 1
                 
             except Exception as e:
                 logger.error(f"Error applying action to item {item_id}: {e}")

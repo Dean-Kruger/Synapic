@@ -49,6 +49,9 @@ class DuplicateGroupFrame(ctk.CTkFrame):
         # Track which item is selected to keep
         self.keep_item = ctk.StringVar(value=group.items[0] if group.items else "")
         
+        # Track if this is a false positive (keep all)
+        self.keep_all = ctk.BooleanVar(value=False)
+        
         # Header
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=(10, 5))
@@ -62,6 +65,17 @@ class DuplicateGroupFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=14, weight="bold")
         )
         title_label.pack(side="left")
+        
+        # Keep All checkbox (false positive)
+        self.keep_all_cb = ctk.CTkCheckBox(
+            header,
+            text="Keep All (Not duplicates)",
+            variable=self.keep_all,
+            command=self._on_keep_all_changed,
+            font=ctk.CTkFont(size=11),
+            text_color=("orange", "#FFA500")
+        )
+        self.keep_all_cb.pack(side="right", padx=10)
         
         algo_label = ctk.CTkLabel(
             header,
@@ -141,8 +155,65 @@ class DuplicateGroupFrame(ctk.CTkFrame):
         if self.on_selection_changed:
             self.on_selection_changed(self.group_index, self.keep_item.get())
     
+    def _on_keep_all_changed(self):
+        """Called when keep all checkbox changes."""
+        if self.on_selection_changed:
+            self.on_selection_changed(self.group_index, self.keep_item.get())
+    
+    def select_by_strategy(self, strategy: str):
+        """Auto-select item based on strategy."""
+        if not self.group.items:
+            return
+        
+        metadata_map = {}
+        for item_id in self.group.items:
+            meta = self.processor.get_item_metadata(item_id)
+            if meta:
+                metadata_map[item_id] = meta
+        
+        selected = self.group.items[0]  # Default
+        
+        if strategy == "oldest":
+            # Sort by date (ascending) - oldest first
+            sorted_items = sorted(
+                self.group.items,
+                key=lambda x: metadata_map.get(x, {}).get('DateTimeOriginal', '') or metadata_map.get(x, {}).get('Created', '') or '9999'
+            )
+            selected = sorted_items[0]
+        elif strategy == "newest":
+            sorted_items = sorted(
+                self.group.items,
+                key=lambda x: metadata_map.get(x, {}).get('DateTimeOriginal', '') or metadata_map.get(x, {}).get('Created', '') or '',
+                reverse=True
+            )
+            selected = sorted_items[0]
+        elif strategy == "largest":
+            sorted_items = sorted(
+                self.group.items,
+                key=lambda x: metadata_map.get(x, {}).get('FileSize', 0) or 0,
+                reverse=True
+            )
+            selected = sorted_items[0]
+        elif strategy == "smallest":
+            sorted_items = sorted(
+                self.group.items,
+                key=lambda x: metadata_map.get(x, {}).get('FileSize', 0) or float('inf')
+            )
+            selected = sorted_items[0]
+        
+        self.keep_item.set(selected)
+        self._on_selection_changed()
+    
     def get_decision(self) -> DedupDecision:
         """Get the dedup decision for this group based on user selection."""
+        # If keep_all is checked, return empty remove list (false positive)
+        if self.keep_all.get():
+            return DedupDecision(
+                keep_item=None,
+                remove_items=[],
+                reason="False positive - keep all"
+            )
+        
         keep = self.keep_item.get()
         remove = [item for item in self.group.items if item != keep]
         return DedupDecision(
@@ -238,7 +309,7 @@ class StepDedup(ctk.CTkFrame):
         self.action_var = ctk.StringVar(value="Tag as Duplicate")
         self.action_dropdown = ctk.CTkOptionMenu(
             settings_frame,
-            values=["Tag as Duplicate", "Manual Review Only"],
+            values=["Tag as Duplicate", "Delete from Catalog", "Manual Review Only"],
             variable=self.action_var,
             width=160
         )
@@ -308,6 +379,26 @@ class StepDedup(ctk.CTkFrame):
             text_color=("gray50", "gray60")
         )
         self.stats_label.pack(side="left")
+        
+        # Auto-select buttons frame
+        self.select_btns_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
+        self.select_btns_frame.pack(side="left", padx=20)
+        
+        select_label = ctk.CTkLabel(self.select_btns_frame, text="Select all:", font=ctk.CTkFont(size=11))
+        select_label.pack(side="left", padx=(0, 5))
+        
+        for strategy, label in [("oldest", "Oldest"), ("newest", "Newest"), ("largest", "Largest"), ("smallest", "Smallest")]:
+            btn = ctk.CTkButton(
+                self.select_btns_frame,
+                text=label,
+                width=70,
+                height=26,
+                font=ctk.CTkFont(size=11),
+                fg_color=("gray60", "gray40"),
+                hover_color=("gray50", "gray30"),
+                command=lambda s=strategy: self._select_all_by_strategy(s)
+            )
+            btn.pack(side="left", padx=2)
         
         self.apply_btn = ctk.CTkButton(
             footer_frame,
@@ -434,6 +525,11 @@ class StepDedup(ctk.CTkFrame):
         
         self.apply_btn.configure(state="normal")
     
+    def _select_all_by_strategy(self, strategy: str):
+        """Apply a selection strategy to all duplicate groups."""
+        for group_frame in self.group_frames:
+            group_frame.select_by_strategy(strategy)
+    
     def _on_scan_error(self, error_message: str):
         """Called when scan fails with an error."""
         self.progress_frame.grid_remove()
@@ -456,6 +552,16 @@ class StepDedup(ctk.CTkFrame):
         if action_text == "Tag as Duplicate":
             action = DedupAction.TAG
             action_desc = f"tag {total_remove} items as 'Duplicate'"
+        elif action_text == "Delete from Catalog":
+            action = DedupAction.DELETE
+            action_desc = f"DELETE {total_remove} items from the catalog"
+            # Extra warning for delete
+            if not messagebox.askyesno("⚠️ Warning",
+                                       f"You are about to DELETE {total_remove} items from Daminion.\n\n"
+                                       "This action CANNOT be undone!\n\n"
+                                       "Are you absolutely sure?",
+                                       icon="warning"):
+                return
         else:
             action = DedupAction.NONE
             messagebox.showinfo("Manual Review", 
@@ -475,6 +581,8 @@ class StepDedup(ctk.CTkFrame):
             msg = f"Deduplication complete!\n\n"
             if results['tagged'] > 0:
                 msg += f"• Tagged: {results['tagged']} items\n"
+            if results['deleted'] > 0:
+                msg += f"• Deleted: {results['deleted']} items\n"
             if results['errors'] > 0:
                 msg += f"• Errors: {results['errors']} items\n"
             if results['skipped'] > 0:
