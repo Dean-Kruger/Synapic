@@ -119,10 +119,10 @@ class App(ctk.CTk):
 
         self.steps = {}
         
-        from src.ui.steps import Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepGroq
+        from src.ui.steps import Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepGroq, StepDedup
 
         self.logger.info("Creating UI steps")
-        for F in (Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepGroq):
+        for F in (Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepGroq, StepDedup):
             page_name = F.__name__
             self.logger.debug(f"Creating step: {page_name}")
             frame = F(parent=self.container, controller=self)
@@ -168,9 +168,11 @@ class App(ctk.CTk):
         self.logger.info(f"Navigating to step: {page_name}")
         frame = self.steps[page_name]
         frame.tkraise()
-        # Trigger explicit refresh if supported (tkraise handles visibility but custom hooks might exist)
+        # Trigger explicit refresh if supported
         if hasattr(frame, 'refresh_stats'):
              frame.refresh_stats()
+        elif hasattr(frame, 'refresh'):
+             frame.refresh()
 
     def on_close(self):
         """

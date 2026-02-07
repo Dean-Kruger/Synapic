@@ -281,23 +281,6 @@ class Step1Datasource(ctk.CTkFrame):
             widget.destroy()
         ctk.CTkLabel(self.filters_container, text="Connect to see filtering options", text_color="gray", font=("Roboto", 12, "italic")).pack(pady=20)
 
-    def show_connected_view(self):
-        # Hide config
-        self.config_container.grid_forget()
-        
-        # Show status/disconnect
-        for widget in self.status_container.winfo_children():
-            widget.destroy()
-            
-        self.status_container.grid(row=0, column=0, columnspan=2, padx=20, pady=10, sticky="ew")
-        
-        status_frame = ctk.CTkFrame(self.status_container, fg_color="#1a1a1a")
-        status_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(status_frame, text=f"Connected to Daminion as {self.entry_user.get()}", font=("Roboto", 14, "bold"), text_color="green").pack(side="left", padx=20, pady=10)
-        ctk.CTkButton(status_frame, text="Disconnect", fg_color="#990000", hover_color="#660000", width=100, command=self.disconnect_daminion).pack(side="right", padx=20, pady=10)
-        
-        self.show_simplified_daminion_filters()
 
     def show_connected_view(self):
         # Hide config
@@ -313,9 +296,113 @@ class Step1Datasource(ctk.CTkFrame):
         status_frame.pack(fill="x", padx=10, pady=5)
         
         ctk.CTkLabel(status_frame, text=f"Connected to Daminion as {self.entry_user.get()}", font=("Roboto", 14, "bold"), text_color="green").pack(side="left", padx=20, pady=10)
-        ctk.CTkButton(status_frame, text="Disconnect", fg_color="#990000", hover_color="#660000", width=100, command=self.disconnect_daminion).pack(side="right", padx=20, pady=10)
+        
+        # Button container on the right
+        btn_container = ctk.CTkFrame(status_frame, fg_color="transparent")
+        btn_container.pack(side="right", padx=10, pady=10)
+        
+        # Deduplicate button
+        ctk.CTkButton(
+            btn_container,
+            text="🔍 Deduplicate",
+            fg_color=("purple", "#6b21a8"),
+            hover_color=("darkviolet", "#7c3aed"),
+            width=120,
+            command=self._open_dedup_step
+        ).pack(side="left", padx=5)
+        
+        # Disconnect button
+        ctk.CTkButton(
+            btn_container,
+            text="Disconnect",
+            fg_color="#990000",
+            hover_color="#660000",
+            width=100,
+            command=self.disconnect_daminion
+        ).pack(side="left", padx=5)
         
         self.show_daminion_scope_selector()
+    
+    def _open_dedup_step(self):
+        """
+        Navigate to the deduplication step with items from current scope.
+        
+        This fetches the items based on current filter settings and passes
+        them to the dedup step for duplicate detection.
+        """
+        if not self.controller.session.daminion_client:
+            messagebox.showerror("Error", "Not connected to Daminion.")
+            return
+        
+        # Show loading state
+        self.lbl_total_count.configure(text="Loading items for dedup...")
+        
+        def _bg_fetch_items():
+            try:
+                # Get current scope settings
+                tab = self.tabs.get()
+                scope = "all"
+                ss_id = None
+                col_id = None
+                search_term = None
+                
+                if tab == "Saved Searches":
+                    scope = "saved_search"
+                    ss_name = self.ss_var.get()
+                    ss_id = getattr(self, '_ss_map', {}).get(ss_name)
+                elif tab == "Shared Collections":
+                    scope = "collection"
+                    col_name = self.col_var.get()
+                    col_id = getattr(self, '_col_map', {}).get(col_name)
+                elif tab == "Keyword Search":
+                    scope = "search"
+                    search_term = self.search_entry.get()
+                
+                status = self.status_var.get()
+                
+                untagged = []
+                if hasattr(self, 'chk_untagged_kws') and self.chk_untagged_kws.get():
+                    untagged.append("Keywords")
+                if hasattr(self, 'chk_untagged_cats') and self.chk_untagged_cats.get():
+                    untagged.append("Category")
+                if hasattr(self, 'chk_untagged_desc') and self.chk_untagged_desc.get():
+                    untagged.append("Description")
+                
+                # Fetch items (limit to 500 for dedup to avoid performance issues)
+                items = self.controller.session.daminion_client.get_items_filtered(
+                    scope=scope,
+                    saved_search_id=ss_id,
+                    collection_id=col_id,
+                    search_term=search_term if scope == "search" else None,
+                    untagged_fields=untagged,
+                    status_filter=status,
+                    max_items=500
+                )
+                
+                def _navigate():
+                    if not self.winfo_exists():
+                        return
+                    
+                    if not items:
+                        messagebox.showwarning("No Items", "No items found with current filters.")
+                        self.lbl_total_count.configure(text="")
+                        return
+                    
+                    # Store items in session for dedup step
+                    self.controller.session.dedup_items = items
+                    
+                    # Navigate to dedup step
+                    self.lbl_total_count.configure(text="")
+                    self.controller.show_step("StepDedup")
+                
+                self.after(0, _navigate)
+                
+            except Exception as e:
+                self.logger.error(f"Failed to fetch items for dedup: {e}", exc_info=True)
+                self.after(0, lambda: messagebox.showerror("Error", f"Failed to load items:\n{e}"))
+                self.after(0, lambda: self.lbl_total_count.configure(text=""))
+        
+        self._worker.submit(_bg_fetch_items)
 
     def show_daminion_scope_selector(self):
         """Shows scope selection (Tabs) and detailed filters for Daminion."""
