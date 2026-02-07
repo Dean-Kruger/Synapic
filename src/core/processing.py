@@ -551,7 +551,7 @@ class ProcessingManager:
                     self.logger.debug(f"Set GROQ_API_KEY from session config")
                 
                 # Initialize Groq client
-                groq_client = GroqPackageClient()
+                groq_client = GroqPackageClient(api_key=groq_api_key)
                 if not groq_client.is_available():
                     self.logger.error(f"Groq SDK unavailable. GROQ_AVAILABLE={GROQ_AVAILABLE}, has_groq_class={groq_client._groq_class is not None}")
                     raise RuntimeError("Groq SDK is not available or not properly configured. Check that 'groq' package is installed.")

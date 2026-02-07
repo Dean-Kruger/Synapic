@@ -250,7 +250,8 @@ class Step2Tagging(ctk.CTkFrame):
             import os
             try:
                 from src.integrations.groq_package_client import GroqPackageClient
-                client = GroqPackageClient()
+                groq_key = self.controller.session.engine.groq_api_key
+                client = GroqPackageClient(api_key=groq_key)
                 # Ready if SDK is available AND (API key in env OR model is set)
                 # We check directly in session for API key
                 api_key_set = bool(self.controller.session.engine.groq_api_key)
@@ -371,7 +372,8 @@ class ConfigDialog(ctk.CTkToplevel):
 
     def _load_and_display_groq_models(self):
         from src.integrations.groq_package_client import GroqPackageClient
-        client = GroqPackageClient()
+        api_key = self.session.engine.groq_api_key or self.groq_api_key_var.get()
+        client = GroqPackageClient(api_key=api_key)
 
         def worker():
             try:

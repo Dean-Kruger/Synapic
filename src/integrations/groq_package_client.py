@@ -39,10 +39,11 @@ def is_vision_model(model_id: str) -> bool:
 
 
 class GroqPackageClient:
-    def __init__(self):
+    def __init__(self, api_key: Optional[str] = None):
         self._client = None
         self._groq_class = None
         self.available = False
+        self.api_key = api_key
         import logging
         logger = logging.getLogger(__name__)
         try:
@@ -74,11 +75,14 @@ class GroqPackageClient:
         try:
             # Groq accepts api_key via env or constructor; not all combos required
             import logging
-            key = os.environ.get("GROQ_API_KEY") or None
-            logging.getLogger(__name__).debug(f"GROQ_API_KEY from env: {'set' if key else 'not set'}")
+            # Checks self.api_key first, then env var
+            key = self.api_key or os.environ.get("GROQ_API_KEY")
+            logging.getLogger(__name__).debug(f"GROQ_API_KEY resolution: {'Found' if key else 'Not found'}")
+            
             if key:
                 return self._groq_class(api_key=key)
-            # If no key in env, this will likely fail
+            
+            # If no key found, this will likely fail unless implicit env var works
             return self._groq_class()
         except Exception as e:
             import logging
