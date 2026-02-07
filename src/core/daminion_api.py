@@ -756,7 +756,7 @@ class MediaItemsAPI(BaseAPI):
         self._request(
             "/api/MediaItems/Remove",
             method="POST",
-            data={"itemIds": item_ids}
+            data={"ids": item_ids, "delete": True}
         )
 
 
