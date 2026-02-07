@@ -493,6 +493,7 @@ def extract_tags_from_result(
                 if text:
                     import json
                     import re
+                    import ast
                     
                     json_extracted = False
                     
@@ -549,6 +550,78 @@ def extract_tags_from_result(
                                     logging.info(f"Successfully extracted raw JSON object from text")
                             except (json.JSONDecodeError, TypeError, AttributeError) as e:
                                 logging.debug(f"Failed to parse raw JSON object: {e}")
+                    
+                    # Method 3: Try to parse Python-style dictionary string (single quotes)
+                    if not json_extracted:
+                        # Look for dictionary-like structure
+                        dict_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+                        if dict_match:
+                            try:
+                                dict_str = dict_match.group(0).strip()
+                                data = ast.literal_eval(dict_str)
+                                if isinstance(data, dict):
+                                    description = data.get('description', '')
+                                    category = data.get('category', '')
+                                    keywords_raw = data.get('keywords', [])
+                                    
+                                    # Handle keywords
+                                    if isinstance(keywords_raw, str):
+                                        keywords = [k.strip() for k in keywords_raw.split(',')]
+                                    elif isinstance(keywords_raw, list):
+                                        keywords = []
+                                        for k in keywords_raw:
+                                            if isinstance(k, str):
+                                                keywords.extend([part.strip() for part in k.split(',')])
+                                            else:
+                                                keywords.append(str(k))
+                                    
+                                    json_extracted = True
+                                    logging.info(f"Successfully extracted Python dict object from text")
+                            except (ValueError, SyntaxError, TypeError, AttributeError) as e:
+                                logging.debug(f"Failed to parse Python dict object: {e}")
+
+                    # Method 4: Try to repair truncated JSON
+                    if not json_extracted:
+                        try:
+                            # Check for likely truncated JSON (starts with { but misses closing })
+                            json_start = text.find('{')
+                            if json_start != -1:
+                                potential_json = text[json_start:].strip()
+                                # Simple heuristic: count braces/brackets
+                                open_braces = potential_json.count('{')
+                                close_braces = potential_json.count('}')
+                                open_brackets = potential_json.count('[')
+                                close_brackets = potential_json.count(']')
+                                
+                                if open_braces > close_braces or open_brackets > close_brackets:
+                                    logging.warning("Detected potentially truncated JSON, attempting repair...")
+                                    # Try closing array first if inside keywords
+                                    if open_brackets > close_brackets:
+                                        potential_json += ']}'
+                                    elif open_braces > close_braces:
+                                        potential_json += '}'
+                                        
+                                    data = json.loads(potential_json)
+                                    if isinstance(data, dict):
+                                        description = data.get('description', '')
+                                        category = data.get('category', '')
+                                        keywords_raw = data.get('keywords', [])
+                                        
+                                        # Handle keywords
+                                        if isinstance(keywords_raw, str):
+                                            keywords = [k.strip() for k in keywords_raw.split(',')]
+                                        elif isinstance(keywords_raw, list):
+                                            keywords = []
+                                            for k in keywords_raw:
+                                                if isinstance(k, str):
+                                                    keywords.extend([part.strip() for part in k.split(',')])
+                                                else:
+                                                    keywords.append(str(k))
+                                        
+                                        json_extracted = True
+                                        logging.info(f"Successfully extracted JSON after repair")
+                        except Exception as e:
+                            logging.debug(f"Failed to repair truncated JSON: {e}")
                     
                     # Method 3: Fallback - treat entire text as plain description (only if JSON extraction failed)
                     if not json_extracted:

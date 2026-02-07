@@ -587,7 +587,7 @@ class ProcessingManager:
                 provider_module = huggingface_utils if engine.provider == "huggingface" else openrouter_utils
                 
                 # Configure inference parameters
-                params = {"max_new_tokens": 512}
+                params = {"max_new_tokens": 1024}
                 if engine.task == config.MODEL_TASK_ZERO_SHOT:
                     params["candidate_labels"] = config.DEFAULT_CANDIDATE_LABELS
                 
