@@ -229,6 +229,7 @@ class DaminionDedupProcessor:
         """
         return generate_dedup_plan(groups, strategy)
     
+    
     def apply_dedup_action(
         self,
         decisions: List[DedupDecision],
@@ -246,11 +247,11 @@ class DaminionDedupProcessor:
             collection_id: Target collection ID (for COLLECTION action)
             
         Returns:
-            Dict with counts: {'tagged': N, 'moved': N, 'deleted': N, 'errors': N}
+            Dict with counts and lists: {'tagged': N, 'moved': N, 'deleted': N, 'errors': N, 'deleted_ids': [...]}
         """
         self._abort_requested = False
         
-        results = {'tagged': 0, 'moved': 0, 'deleted': 0, 'errors': 0, 'skipped': 0}
+        results = {'tagged': 0, 'moved': 0, 'deleted': 0, 'errors': 0, 'skipped': 0, 'deleted_ids': []}
         
         if action == DedupAction.NONE:
             logger.info("No action requested, skipping application")
@@ -289,8 +290,6 @@ class DaminionDedupProcessor:
                 
                 elif action == DedupAction.COLLECTION:
                     # Move to collection (if API supports it)
-                    # Note: Daminion API may not support adding to collections directly
-                    # This would need to be implemented based on API capabilities
                     logger.warning(f"Collection action not yet implemented for item {item_id}")
                     results['skipped'] += 1
                 
@@ -300,6 +299,7 @@ class DaminionDedupProcessor:
                     try:
                         self.client._api.media_items.delete_items([int_item_id])
                         results['deleted'] += 1
+                        results['deleted_ids'].append(item_id)
                         logger.info(f"Deleted item {item_id} from catalog")
                     except Exception as del_err:
                         logger.error(f"Failed to delete item {item_id}: {del_err}")

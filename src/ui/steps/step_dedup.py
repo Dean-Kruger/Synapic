@@ -201,8 +201,14 @@ class DuplicateGroupFrame(ctk.CTkFrame):
             )
             selected = sorted_items[0]
         
-        self.keep_item.set(selected)
-        self._on_selection_changed()
+        
+        # Ensure we have a valid selection before setting
+        if selected:
+            logger.debug(f"Strategy '{strategy}' selected item {selected} for group {self.group_index}")
+            self.keep_item.set(str(selected))
+            self._on_selection_changed()
+        else:
+            logger.warning(f"Strategy '{strategy}' failed to find a valid item for group {self.group_index}")
     
     def get_decision(self) -> DedupDecision:
         """Get the dedup decision for this group based on user selection."""
@@ -589,6 +595,36 @@ class StepDedup(ctk.CTkFrame):
                 msg += f"• Skipped: {results['skipped']} items\n"
             
             messagebox.showinfo("Deduplication Complete", msg)
+            
+            # Remove deleted items from the session list so they don't reappear in scans
+            if results.get('deleted_ids'):
+                deleted_ids = set(str(pid) for pid in results['deleted_ids'])
+                if hasattr(self.session, 'dedup_items'):
+                    # Filter out deleted items
+                    original_count = len(self.session.dedup_items)
+                    self.session.dedup_items = [
+                        item for item in self.session.dedup_items
+                        if str(item.get('Id') or item.get('id')) not in deleted_ids
+                    ]
+                    new_count = len(self.session.dedup_items)
+                    logger.info(f"Removed {original_count - new_count} deleted items from session list")
+                    
+                    # Also refresh the UI status
+                    self.initial_label.configure(
+                        text=f"Ready to scan {new_count} items for duplicates.\n\n"
+                             "Configure settings above and click 'Scan for Duplicates' to begin."
+                    )
+                    
+                    # Clear results if deletions happened, forcing a rescan to be safe
+                    if new_count < original_count and self.group_frames:
+                         # Clear previous results
+                        for frame in self.group_frames:
+                            frame.destroy()
+                        self.group_frames.clear()
+                        # self.results_scroll.pack_forget() # Removed incorrect call
+                        self.initial_label.pack(pady=50)
+                        self.apply_btn.configure(state="disabled")
+                        self.stats_label.configure(text=f"Items updated. Please rescan.")
             
         except Exception as e:
             self.logger.error(f"Apply dedup failed: {e}", exc_info=True)
