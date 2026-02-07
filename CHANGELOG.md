@@ -4,6 +4,27 @@ All notable changes to the **Synapic** project will be documented in this file.
 
 ---
 
+## [2.2.0] - 2026-02-07
+
+### Added
+- **Groq Integration**: Added full support for the Groq SDK (`groq` python package) enabling high-speed inference with models like Llama 3 and Mixtral.
+- **Unified Engine Configuration**: Completely redesigned the "Select Engine" dialog in Step 2 to be the central hub for all AI providers (Local, Hugging Face, OpenRouter, Groq).
+- **Confidence Threshold Slider**: Implemented a configurable confidence threshold (1-100%) to filter out low-probability tags and categories from AI results.
+- **Deduplication Engine**: Added a complete visual deduplication workflow (`StepDedup`) supporting perceptual hashing (pHash, dHash, etc.) to find and manage duplicate images in Daminion catalogs.
+- **Process Management**: Added robust shutdown logic to ensure all background threads and processes are terminated when the application closes.
+
+### Changed
+- **Step 2 UI Overhaul**: Removed redundant "Groq Explorer" and standalone settings from the main wizard form, consolidating everything into the configuration dialog.
+- **Model List Improvements**: Standardized the layout of model selection lists across all providers with consistent headers (Model ID | Capability | Cost/Size) and styling.
+- **Configuration Persistence**: Optimized how API keys and engine settings are saved to `.synapic_v2_config.json`.
+
+### Fixed
+- **Daminion Search Limits**: Addressed issues where text-based searches were artificially limited to 500 items.
+- **Groq API Compatibility**: Resolved issues with the Groq base URL and simplified the integration to focus on the official SDK.
+- **Keyword Creation**: Fixed edge cases where existing keywords in Daminion were duplicates or not correctly identified.
+
+---
+
 ## [2.1.0] - 2026-01-29
 
 ### Added

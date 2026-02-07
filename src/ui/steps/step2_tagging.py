@@ -70,8 +70,7 @@ class Step2Tagging(ctk.CTkFrame):
         self.create_engine_card(self.cards_frame, "Local Inference", "local", 0)
         self.create_engine_card(self.cards_frame, "Hugging Face", "huggingface", 1)
         self.create_engine_card(self.cards_frame, "OpenRouter", "openrouter", 2)
-        # Groq SDK (Groq Python package) integration (option in Step 2 main window)
-        self.create_engine_card(self.cards_frame, "Groq SDK", "groq_package", 3)
+        self.create_engine_card(self.cards_frame, "Groq", "groq_package", 3)
 
         # Configure Button (renamed to "Select Engine")
         self.btn_config = ctk.CTkButton(self.container, text="Select Engine", command=self.open_config_dialog, width=200)
@@ -97,9 +96,7 @@ class Step2Tagging(ctk.CTkFrame):
         )
         self.model_info_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
 
-        # Groq SDK status indicator on the main step UI
-        self.groq_status_label = ctk.CTkLabel(self.container, text="", text_color="gray")
-        self.groq_status_label.grid(row=5, column=0, sticky="w", padx=12, pady=6)
+
         
         # === Global Settings Section ===
         settings_frame = ctk.CTkFrame(self.container, fg_color="#2B2B2B", corner_radius=10)
@@ -248,8 +245,6 @@ class Step2Tagging(ctk.CTkFrame):
             is_ready = bool(self.controller.session.engine.api_key)
         elif engine == "openrouter":
             is_ready = bool(self.controller.session.engine.api_key)
-        elif engine == "groq":
-            is_ready = bool(self.controller.session.engine.groq_base_url) and bool(self.controller.session.engine.groq_api_key)
         elif engine == "groq_package":
             # Check if Groq SDK is available and API key is set
             import os
@@ -257,7 +252,8 @@ class Step2Tagging(ctk.CTkFrame):
                 from src.integrations.groq_package_client import GroqPackageClient
                 client = GroqPackageClient()
                 # Ready if SDK is available AND (API key in env OR model is set)
-                api_key_set = bool(os.environ.get("GROQ_API_KEY") or self.controller.session.engine.groq_api_key)
+                # We check directly in session for API key
+                api_key_set = bool(self.controller.session.engine.groq_api_key)
                 is_ready = client.is_available() and api_key_set
             except:
                 is_ready = False
@@ -281,35 +277,11 @@ class Step2Tagging(ctk.CTkFrame):
         engine provider (Local, HF, or OpenRouter).
         """
         engine = self.engine_var.get()
-        # For Groq SDK, open the Groq Package config dialog
-        if engine == "groq_package":
-            dialog = GroqPackageConfigDialog(self, self.controller.session)
-            self.wait_window(dialog)
-            self.update_config_button_color()
-            self.update_model_info()
-            return
-        # Open the main configuration dialog (Groq HTTP, HF, OpenRouter, Local all via ConfigDialog)
+        # Open the main configuration dialog (Groq, HF, OpenRouter, Local all via ConfigDialog)
         dialog = ConfigDialog(self, self.controller.session, initial_tab=engine)
         self.wait_window(dialog)
         self.update_config_button_color()
         self.update_model_info()
-
-    def run_groq_package_test(self):
-        """Test Groq SDK availability and show status."""
-        try:
-            from src.integrations.groq_package_client import GroqPackageClient
-            client = GroqPackageClient()
-            if client.is_available():
-                models = client.list_models(limit=10)
-                model_count = len(models) if models else 0
-                self.groq_status_label.configure(
-                    text=f"Groq SDK available ({model_count} models found)", 
-                    text_color="green"
-                )
-            else:
-                self.groq_status_label.configure(text="Groq SDK not available", text_color="red")
-        except Exception as e:
-            self.groq_status_label.configure(text=f"Groq SDK error: {e}", text_color="red")
         
     def update_model_info(self):
         """Update the model info label after configuration changes."""
@@ -389,7 +361,7 @@ class ConfigDialog(ctk.CTkToplevel):
         self.init_groq_tab()
         
         # Select current
-        map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter", "groq": "Groq"}
+        map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter", "groq": "Groq", "groq_package": "Groq"}
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
         # Auto-load Groq models when the Groq tab is opened (delay 1000ms)
         self._groq_models_loaded = False
@@ -402,104 +374,126 @@ class ConfigDialog(ctk.CTkToplevel):
         client = GroqPackageClient()
 
         def worker():
-            models = client.list_models(limit=40)
+            try:
+                models = client.list_models(limit=40)
+            except Exception:
+                models = []
             self._display_groq_models(models)
 
         import threading
         threading.Thread(target=worker, daemon=True).start()
 
     def _display_groq_models(self, models):
-        # Lazy create a Groq models panel on the Groq tab
-        if not hasattr(self, "_groq_models_container") or self._groq_models_container is None:
-            self._groq_models_container = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
-            self._groq_models_container.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-            self._groq_models_list = ctk.CTkScrollableFrame(self._groq_models_container, label_text="Available Groq Models")
-            self._groq_models_list.grid(row=0, column=0, sticky="nsew")
-        for w in getattr(self, "_groq_models_list").winfo_children():
+        # Lazy create a Groq models panel on the Groq tab if not exists (though init_groq_tab creates it now)
+        if not hasattr(self, "_groq_models_list"):
+             return 
+
+        for w in self._groq_models_list.winfo_children():
             w.destroy()
+            
+        # Header
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
+        ctk.CTkLabel(
+            self._groq_models_list, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        ).pack(fill="x", pady=(5, 10), padx=5)
+
         if not models:
-            ctk.CTkLabel(self._groq_models_list, text="No Groq models found.", text_color="gray").pack()
+            ctk.CTkLabel(self._groq_models_list, text="No Groq models found (check API key?).", text_color="gray").pack()
             return
+
         for m in models:
             mid = m.get('id') or m.get('model_id') or ''
             cap = m.get('capability') or m.get('task') or 'Groq'
             cost = m.get('token_cost') or m.get('token_cost_per_inference') or m.get('cost')
-            cost_text = f"{cost} tokens" if cost is not None else "Cost: Unknown"
-            display = f"{mid:<40} | {cap:^12} | {cost_text:>20}"
-            btn = ctk.CTkButton(self._groq_models_list, text=display, anchor="w", width=0,
-                                command=lambda m_id=mid: self._select_groq_model(m_id))
+            cost_text = f"{cost} tokens" if cost is not None else "Unknown"
+            
+            display_text = f"{mid:<40} | {cap:^15} | {cost_text:>15}"
+            
+            btn = ctk.CTkButton(
+                self._groq_models_list, 
+                text=display_text, 
+                font=("Courier New", 12),
+                fg_color="transparent",
+                border_width=1,
+                anchor="w", 
+                width=0,
+                command=lambda m_id=mid: self._select_groq_model(m_id)
+            )
             btn.pack(fill="x", pady=2)
 
     def _select_groq_model(self, model_id):
-        self.session.engine.model_id = model_id
-        try:
-            from src.utils.config_manager import save_config
-            save_config(self.session)
-        except Exception:
-            pass
-        try:
-            if hasattr(self, 'groq_status'):
-                self.groq_status.configure(text=f"Selected: {model_id}", text_color="green")
-        except Exception:
-            pass
+        self.groq_model.delete(0, "end")
+        self.groq_model.insert(0, model_id)
 
     def init_groq_tab(self):
-        # Simple Groq tab with base URL and API key
+        # Refined Groq tab with API Key and Model Selection, no Base URL
         self.tab_groq.grid_columnconfigure(0, weight=1)
-        self.tab_groq.grid_rowconfigure(0, weight=1)
-        frame = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
-        frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        frame.grid_columnconfigure(1, weight=1)
+        self.tab_groq.grid_rowconfigure(2, weight=1) # List area grows
 
-        row = 0
-        ctk.CTkLabel(frame, text="Groq Base URL:").grid(row=row, column=0, sticky="e", padx=5, pady=5)
-        self.groq_base_url_var = ctk.StringVar(value=getattr(self.session.engine, 'groq_base_url', ''))
-        self.groq_base_url_entry = ctk.CTkEntry(frame, textvariable=self.groq_base_url_var, width=420)
-        self.groq_base_url_entry.grid(row=row, column=1, sticky="w", pady=5)
-
-        row += 1
-        ctk.CTkLabel(frame, text="Groq API Key:").grid(row=row, column=0, sticky="e", padx=5, pady=5)
-        self.groq_api_key_var = ctk.StringVar(value=getattr(self.session.engine, 'groq_api_key', ''))
-        self.groq_api_key_entry = ctk.CTkEntry(frame, textvariable=self.groq_api_key_var, show="*", width=420)
-        self.groq_api_key_entry.grid(row=row, column=1, sticky="w", pady=5)
+        # API Key
+        row1 = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
+        row1.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        
+        ctk.CTkLabel(row1, text="API Key:").pack(side="left")
+        
+        # Get existing API key from session
+        self.groq_api_key_var = ctk.StringVar(value=self.session.engine.groq_api_key or "")
+        self.groq_api_key_entry = ctk.CTkEntry(row1, textvariable=self.groq_api_key_var, show="*", width=250)
+        self.groq_api_key_entry.pack(side="left", padx=10, fill="x", expand=True)
+        
+        ctk.CTkButton(row1, text="Refresh Models", command=self._load_and_display_groq_models, width=120).pack(side="right")
 
         # Status / actions
-        self.groq_status = ctk.CTkLabel(frame, text="", text_color="gray")
-        self.groq_status.grid(row=row+1, column=0, columnspan=2, pady=8)
+        row_status = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
+        row_status.grid(row=1, column=0, sticky="ew", padx=10, pady=0)
+        self.groq_status = ctk.CTkLabel(row_status, text="", text_color="gray")
+        self.groq_status.pack(side="left")
 
-        btn_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        btn_frame.grid(row=row+2, column=0, columnspan=2, pady=6)
-        ctk.CTkButton(btn_frame, text="Test Groq Connection", command=self.test_groq_connection, width=180).pack(side="left", padx=6)
-        ctk.CTkButton(btn_frame, text="Save Groq Config", command=self.save_groq_config, width=170).pack(side="left", padx=6)
+        # List
+        self._groq_models_list = ctk.CTkScrollableFrame(self.tab_groq, label_text="Available Groq Models")
+        self._groq_models_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
+        # Selection
+        row_sel = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
+        row_sel.grid(row=3, column=0, sticky="ew", padx=10, pady=(5,20))
+        
+        ctk.CTkLabel(row_sel, text="Selected:").pack(side="left")
+        self.groq_model = ctk.CTkEntry(row_sel, width=300)
+        # Default if not set
+        self.groq_model.insert(0, self.session.engine.model_id if self.session.engine.provider == "groq_package" else "llama2-70b-4096") 
+        self.groq_model.pack(side="left", padx=10, fill="x", expand=True)
+        
+        ctk.CTkButton(row_sel, text="Save Config", command=self.save_groq_config).pack(side="right")
 
     def test_groq_connection(self):
-        from src.integrations.groq_client import GroqClient
-        base = self.groq_base_url_var.get().strip()
-        key = self.groq_api_key_var.get().strip()
-        client = GroqClient(base_url=base or None, api_key=key or None)
-        self.groq_status.configure(text="Testing connection...", text_color="gray")
-
-        def worker():
-            ok = False
-            try:
-                ok = client.test_connection()
-            except Exception as e:
-                ok = False
-                self.after(0, lambda: self.groq_status.configure(text=f"Error: {e}", text_color="red"))
-            self.after(0, lambda: self.groq_status.configure(text=("Connection OK" if ok else "Connection failed"), text_color=("green" if ok else "red")))
-
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
+        # Simplified test calling load_models essentially
+        self._load_and_display_groq_models()
 
     def save_groq_config(self):
-        self.session.engine.groq_base_url = self.groq_base_url_var.get().strip()
-        self.session.engine.groq_api_key = self.groq_api_key_var.get().strip()
+        model_id = self.groq_model.get().strip()
+        api_key = self.groq_api_key_var.get().strip()
+        
+        if not api_key:
+             self.groq_status.configure(text="API Key required", text_color="red")
+             return
+
+        self.session.engine.provider = "groq_package"
+        self.session.engine.groq_api_key = api_key
+        self.session.engine.model_id = model_id
+        # Groq vision models are multi-modal usually or LLMs.
+        self.session.engine.task = "image-to-text"
+        
         from src.utils.config_manager import save_config
         try:
             save_config(self.session)
         except Exception:
             pass
         self.groq_status.configure(text="Groq config saved", text_color="green")
+        self.destroy()
     
     def destroy(self):
         """Override destroy to clean up worker thread."""
@@ -881,6 +875,16 @@ class ConfigDialog(ctk.CTkToplevel):
         self.or_list = ctk.CTkScrollableFrame(self.tab_or, label_text="OpenRouter Vision Models")
         self.or_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
 
+        # Header
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
+        ctk.CTkLabel(
+            self.or_list, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        ).pack(fill="x", pady=(5, 10), padx=5)
+
         # Selection
         row4 = ctk.CTkFrame(self.tab_or, fg_color="transparent")
         row4.grid(row=3, column=0, sticky="ew", padx=10, pady=(5,20))
@@ -891,7 +895,19 @@ class ConfigDialog(ctk.CTkToplevel):
         ctk.CTkButton(row4, text="Save Config", command=self.save_or).pack(side="right")
 
     def fetch_or_models(self):
+        # Clear including header
         for w in self.or_list.winfo_children(): w.destroy()
+        
+        # Restore header
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
+        ctk.CTkLabel(
+            self.or_list, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        ).pack(fill="x", pady=(5, 10), padx=5)
+
         ctk.CTkLabel(self.or_list, text="Fetching...", text_color="gray").pack()
         
         def worker():
@@ -912,7 +928,20 @@ class ConfigDialog(ctk.CTkToplevel):
         self._worker.submit_replacing("or_fetch", worker)
 
     def show_or_results(self, results, error=None):
+        # Clear list but keep header? Actually cleaner to clear and redraw header in one go if I had separate method, 
+        # but here I cleared children in fetch.
+        # Let's just clear and redraw header to be safe
         for w in self.or_list.winfo_children(): w.destroy()
+        
+        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
+        ctk.CTkLabel(
+            self.or_list, 
+            text=header_text, 
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        ).pack(fill="x", pady=(5, 10), padx=5)
+
         if error:
             ctk.CTkLabel(self.or_list, text=f"Error: {error}\n(Check internet?)", text_color="red").pack()
             return
@@ -922,8 +951,22 @@ class ConfigDialog(ctk.CTkToplevel):
             return
             
         for mid in results:
-             btn = ctk.CTkButton(self.or_list, text=mid, fg_color="transparent", border_width=1, 
-                                anchor="w", command=lambda m=mid: self.select_or_model(m))
+             # OR results are often just IDs, but check if we have more info
+             # The openrouter_utils.find_models_by_task returns list of strings usually
+             capability = "Vision"
+             cost_str = "Unknown"
+             
+             display_text = f"{mid:<40} | {capability:^15} | {cost_str:>15}"
+
+             btn = ctk.CTkButton(
+                 self.or_list, 
+                 text=display_text, 
+                 font=("Courier New", 12),
+                 fg_color="transparent", 
+                 border_width=1, 
+                 anchor="w", 
+                 command=lambda m=mid: self.select_or_model(m)
+             )
              btn.pack(fill="x", pady=2)
 
     def select_or_model(self, mid):
@@ -972,381 +1015,7 @@ class ConfigDialog(ctk.CTkToplevel):
         self.session.engine.task = "image-to-text" 
         self.destroy()
 
-class GroqPackageConfigDialog(ctk.CTkToplevel):
-    """
-    Modal dialog for configuring Groq SDK (groq package) integration.
-    
-    This dialog allows users to:
-    - Enter their Groq API key (stored in session or environment)
-    - Test the connection to Groq
-    - Browse and select available vision models
-    - Save the configuration for use with the groq_package provider
-    """
-    
-    def __init__(self, parent, session):
-        super().__init__(parent)
-        self.parent = parent
-        self.session = session
-        self.title("Groq SDK Configuration")
-        self.geometry("650x500")
-        
-        # Make modal
-        self.transient(parent)
-        self.grab_set()
-        
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
-        
-        # === Header Section ===
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
-        
-        ctk.CTkLabel(
-            header_frame,
-            text="🚀 Groq SDK Configuration",
-            font=("Roboto", 18, "bold")
-        ).pack(side="left")
-        
-        # === API Key Section ===
-        api_frame = ctk.CTkFrame(self, fg_color="#2B2B2B", corner_radius=10)
-        api_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
-        api_frame.grid_columnconfigure(1, weight=1)
-        
-        ctk.CTkLabel(
-            api_frame,
-            text="API Key:",
-            font=("Roboto", 12, "bold")
-        ).grid(row=0, column=0, sticky="e", padx=(15, 10), pady=15)
-        
-        # Get existing API key from session or environment
-        import os
-        existing_key = self.session.engine.groq_api_key or os.environ.get("GROQ_API_KEY", "")
-        
-        self.api_key_var = ctk.StringVar(value=existing_key)
-        self.api_key_entry = ctk.CTkEntry(
-            api_frame,
-            textvariable=self.api_key_var,
-            show="*",
-            width=350,
-            placeholder_text="Enter your Groq API key..."
-        )
-        self.api_key_entry.grid(row=0, column=1, sticky="w", pady=15)
-        
-        # Toggle visibility button
-        self.show_key = ctk.BooleanVar(value=False)
-        ctk.CTkCheckBox(
-            api_frame,
-            text="Show",
-            variable=self.show_key,
-            command=self._toggle_key_visibility,
-            width=60
-        ).grid(row=0, column=2, padx=10)
-        
-        # Test connection button
-        ctk.CTkButton(
-            api_frame,
-            text="Test Connection",
-            command=self.test_connection,
-            width=130
-        ).grid(row=0, column=3, padx=(5, 15))
-        
-        # === Models Section ===
-        models_label_frame = ctk.CTkFrame(self, fg_color="transparent")
-        models_label_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(10, 5))
-        models_label_frame.grid_columnconfigure(0, weight=1)
-        models_label_frame.grid_rowconfigure(1, weight=1)
-        
-        header_row = ctk.CTkFrame(models_label_frame, fg_color="transparent")
-        header_row.grid(row=0, column=0, sticky="ew")
-        
-        ctk.CTkLabel(
-            header_row,
-            text="Available Vision Models:",
-            font=("Roboto", 12, "bold")
-        ).pack(side="left")
-        
-        ctk.CTkButton(
-            header_row,
-            text="Refresh Models",
-            command=self.load_models,
-            width=120
-        ).pack(side="right")
-        
-        self.models_list = ctk.CTkScrollableFrame(
-            models_label_frame,
-            label_text="Select a model for image tagging"
-        )
-        self.models_list.grid(row=1, column=0, sticky="nsew", pady=(5, 0))
-        
-        # === Status and Selection Section ===
-        footer_frame = ctk.CTkFrame(self, fg_color="#2B2B2B", corner_radius=10)
-        footer_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=10)
-        footer_frame.grid_columnconfigure(1, weight=1)
-        
-        ctk.CTkLabel(
-            footer_frame,
-            text="Selected Model:",
-            font=("Roboto", 12)
-        ).grid(row=0, column=0, sticky="e", padx=(15, 10), pady=10)
-        
-        self.selected_model_var = ctk.StringVar(value=self.session.engine.model_id or "")
-        self.selected_model_label = ctk.CTkLabel(
-            footer_frame,
-            textvariable=self.selected_model_var,
-            font=("Roboto", 12, "bold"),
-            text_color="#2FA572"
-        )
-        self.selected_model_label.grid(row=0, column=1, sticky="w", pady=10)
-        
-        self.status_label = ctk.CTkLabel(
-            footer_frame,
-            text="Enter API key and test connection",
-            text_color="gray"
-        )
-        self.status_label.grid(row=1, column=0, columnspan=3, sticky="w", padx=15, pady=(0, 10))
-        
-        # === Action Buttons ===
-        button_frame = ctk.CTkFrame(self, fg_color="transparent")
-        button_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(5, 20))
-        
-        ctk.CTkButton(
-            button_frame,
-            text="Cancel",
-            command=self.destroy,
-            fg_color="gray",
-            width=100
-        ).pack(side="left")
-        
-        ctk.CTkButton(
-            button_frame,
-            text="Save & Use Groq SDK",
-            command=self.save_config,
-            fg_color="#2FA572",
-            width=180
-        ).pack(side="right")
-        
-        # Auto-load models if API key exists
-        if existing_key:
-            self.after(500, self.load_models)
-    
-    def _toggle_key_visibility(self):
-        """Toggle API key visibility."""
-        if self.show_key.get():
-            self.api_key_entry.configure(show="")
-        else:
-            self.api_key_entry.configure(show="*")
-    
-    def test_connection(self):
-        """Test connection to Groq API."""
-        api_key = self.api_key_var.get().strip()
-        if not api_key:
-            self.status_label.configure(text="Please enter an API key", text_color="red")
-            return
-        
-        self.status_label.configure(text="Testing connection...", text_color="gray")
-        
-        def worker():
-            import os
-            import logging
-            logger = logging.getLogger(__name__)
-            
-            # Temporarily set the API key in environment for the client
-            old_key = os.environ.get("GROQ_API_KEY")
-            os.environ["GROQ_API_KEY"] = api_key
-            logger.info(f"test_connection worker: Set GROQ_API_KEY, key length: {len(api_key)}")
-            
-            try:
-                from src.integrations.groq_package_client import GroqPackageClient
-                logger.info("test_connection worker: Creating GroqPackageClient")
-                client = GroqPackageClient()
-                logger.info(f"test_connection worker: client.is_available() = {client.is_available()}")
-                
-                if client.is_available():
-                    # Try to list models as a real connection test
-                    logger.info("test_connection worker: SDK available, listing models...")
-                    models = client.list_models(limit=1)
-                    logger.info(f"test_connection worker: Got {len(models)} models")
-                    if models:
-                        self.after(0, lambda: self.status_label.configure(
-                            text="✓ Connection successful!", text_color="green"
-                        ))
-                        self.after(0, self.load_models)
-                    else:
-                        self.after(0, lambda: self.status_label.configure(
-                            text="✓ Connected (no models found - check API key permissions)", 
-                            text_color="orange"
-                        ))
-                else:
-                    logger.error(f"test_connection worker: SDK NOT available. _groq_class={client._groq_class}")
-                    self.after(0, lambda: self.status_label.configure(
-                        text="✗ Groq SDK not available", text_color="red"
-                    ))
-            except Exception as e:
-                logger.exception(f"test_connection worker: Exception: {e}")
-                self.after(0, lambda: self.status_label.configure(
-                    text=f"✗ Error: {str(e)[:50]}", text_color="red"
-                ))
-            finally:
-                # Restore previous key
-                if old_key:
-                    os.environ["GROQ_API_KEY"] = old_key
-                elif "GROQ_API_KEY" in os.environ:
-                    del os.environ["GROQ_API_KEY"]
-        
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
-    
-    def load_models(self):
-        """Load available models from Groq API."""
-        api_key = self.api_key_var.get().strip()
-        if not api_key:
-            self.status_label.configure(text="Please enter an API key first", text_color="red")
-            return
-        
-        self.status_label.configure(text="Loading models...", text_color="gray")
-        
-        # Clear existing model list
-        for widget in self.models_list.winfo_children():
-            widget.destroy()
-        
-        ctk.CTkLabel(
-            self.models_list,
-            text="Loading...",
-            text_color="gray"
-        ).pack(pady=20)
-        
-        def worker():
-            import os
-            old_key = os.environ.get("GROQ_API_KEY")
-            os.environ["GROQ_API_KEY"] = api_key
-            
-            try:
-                from src.integrations.groq_package_client import GroqPackageClient
-                client = GroqPackageClient()
-                models = client.list_models(limit=40)
-                self.after(0, lambda: self._display_models(models))
-            except Exception as e:
-                self.after(0, lambda: self.status_label.configure(
-                    text=f"Error loading models: {str(e)[:50]}", text_color="red"
-                ))
-            finally:
-                if old_key:
-                    os.environ["GROQ_API_KEY"] = old_key
-                elif "GROQ_API_KEY" in os.environ:
-                    del os.environ["GROQ_API_KEY"]
-        
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
-    
-    def _display_models(self, models):
-        """Display fetched models in the list."""
-        # Clear loading message
-        for widget in self.models_list.winfo_children():
-            widget.destroy()
-        
-        if not models:
-            ctk.CTkLabel(
-                self.models_list,
-                text="No models found. Check your API key.",
-                text_color="gray"
-            ).pack(pady=20)
-            self.status_label.configure(text="No models available", text_color="orange")
-            return
-        
-        # Filter to show vision-capable models first, then others
-        vision_models = [m for m in models if 'vision' in m.get('id', '').lower() or m.get('capability') == 'Vision']
-        other_models = [m for m in models if m not in vision_models]
-        
-        # Display vision models first with a header
-        if vision_models:
-            ctk.CTkLabel(
-                self.models_list,
-                text="🖼️ Vision Models (Recommended)",
-                font=("Roboto", 11, "bold"),
-                text_color="#2FA572"
-            ).pack(fill="x", pady=(5, 5), padx=5)
-            
-            for m in vision_models:
-                self._add_model_button(m, is_vision=True)
-        
-        # Display other models
-        if other_models:
-            ctk.CTkLabel(
-                self.models_list,
-                text="📝 Other Models",
-                font=("Roboto", 11, "bold"),
-                text_color="gray"
-            ).pack(fill="x", pady=(15, 5), padx=5)
-            
-            for m in other_models:
-                self._add_model_button(m, is_vision=False)
-        
-        total_vision = len(vision_models)
-        self.status_label.configure(
-            text=f"Found {len(models)} models ({total_vision} vision-capable)",
-            text_color="green"
-        )
-    
-    def _add_model_button(self, model, is_vision=False):
-        """Add a model button to the list."""
-        model_id = model.get('id', '')
-        capability = model.get('capability', 'LLM')
-        context = model.get('context_window')
-        
-        context_str = f"{context:,}" if context else "?"
-        display_text = f"{model_id:<45} | {capability:^10} | ctx: {context_str}"
-        
-        btn = ctk.CTkButton(
-            self.models_list,
-            text=display_text,
-            font=("Courier New", 11),
-            fg_color="#2FA572" if is_vision else "transparent",
-            hover_color="#288E62" if is_vision else "#3B3B3B",
-            border_width=1 if not is_vision else 0,
-            anchor="w",
-            command=lambda m=model_id: self._select_model(m)
-        )
-        btn.pack(fill="x", pady=2, padx=5)
-    
-    def _select_model(self, model_id):
-        """Select a model for use."""
-        self.selected_model_var.set(model_id)
-        self.status_label.configure(
-            text=f"Selected: {model_id}",
-            text_color="#2FA572"
-        )
-    
-    def save_config(self):
-        """Save the Groq SDK configuration to session."""
-        api_key = self.api_key_var.get().strip()
-        model_id = self.selected_model_var.get()
-        
-        if not api_key:
-            self.status_label.configure(text="Please enter an API key", text_color="red")
-            return
-        
-        if not model_id:
-            self.status_label.configure(text="Please select a model", text_color="red")
-            return
-        
-        # Save to session
-        self.session.engine.provider = "groq_package"
-        self.session.engine.model_id = model_id
-        self.session.engine.groq_api_key = api_key
-        self.session.engine.task = "image-to-text"  # Groq vision models are multi-modal
-        
-        # Also set environment variable for the SDK
-        import os
-        os.environ["GROQ_API_KEY"] = api_key
-        
-        # Persist configuration
-        try:
-            from src.utils.config_manager import save_config
-            save_config(self.session)
-        except Exception as e:
-            print(f"Warning: Could not persist config: {e}")
-        
-        self.destroy()
+
 
 
 class DownloadManagerDialog(ctk.CTkToplevel):

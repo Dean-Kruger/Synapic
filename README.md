@@ -57,7 +57,8 @@ Notes
 ### 🤖 **Multi-Engine AI Support**
 - **Local Models**: Run Hugging Face models locally with GPU acceleration
 - **Cloud API**: Use OpenRouter's unified API for Gemini, Qwen, and other vision models
-- **Flexibility**: Switch between local privacy and cloud performance
+- **Groq Integration**: Leverage Groq's ultra-fast LPU inference engine for near-instant tagging
+- **Flexibility**: Switch seamlessly between local privacy and cloud performance
 
 ### 📁 **Flexible Data Sources**
 - **Folder Mode**: Process images from any local directory
@@ -69,7 +70,13 @@ Notes
 ### ✨ **Intelligent Tagging**
 - **Auto-Keywords**: Extract relevant tags from image content
 - **Categorization**: Assign broad categories automatically or via zero-shot classification
+- **Categorization**: Assign broad categories automatically or via zero-shot classification
 - **Descriptions**: Generate detailed captions for image context
+
+### 🔍 **Duplicate Elimination**
+- **Visual Deduplication**: Find exact and similar images using perceptual hashing (pHash, dHash, etc.)
+- **Smart Selection**: Auto-select duplicates to keep based on size, date, or quality.
+- **Daminion Sync**: Tag duplicates or remove them directly from your catalog.
 
 ### 💾 **Professional Metadata Writing**
 - **IPTC Standard**: Keywords, categories, and captions written to IPTC fields
@@ -113,15 +120,12 @@ Configure in the application settings or via environment variables.
 
 Groq Integration
 -----------------
-- Synapic can query Groq-backed datasets via an in-app Groq Settings panel and registry-persisted configuration.
-- In-app config:
-  - Groq Base URL: Base endpoint for Groq API (e.g. https://console.groq.com/api)
-  - Groq API Key: Your Groq API key (hidden in UI)
-- Environment config:
-  - GROQ_API_BASE_URL: Groq API base URL
-  - GROQ_API_KEY: Groq API key
-- The Groq settings are saved to the registry like other providers, so changes persist across sessions.
-- Example usage: create a Groq query with a dataset and a query string, then execute in the Groq Explorer.
+- Synapic includes native support for the Groq Python SDK.
+- Configure via **Step 2: Select Engine -> Groq Tab**:
+  - Enter your Groq API Key (get one at [console.groq.com](https://console.groq.com))
+  - Browse and select from available vision-capable models (e.g., Llama 3).
+- Settings are persisted to the `.synapic_v2_config.json` file in your user home directory.
+- Environment variable `GROQ_API_KEY` is also supported for headless/automated runs.
 
 ### Daminion Connection
 - Server URL (e.g., `http://yourserver.com/daminion`)
@@ -143,6 +147,10 @@ For the best results, we recommend downloading the following models for local us
 | **Keywords** | `microsoft/resnet-50` | Faster, lightweight alternative for standard object tagging. | ~100MB |
 | **Categorization** | `openai/clip-vit-base-patch32` | Zero-shot classification. Matches images to your *exact* category names. | ~600MB |
 | **Categorization** | `openai/clip-vit-large-patch14` | Higher accuracy zero-shot classification for nuanced categories. | ~1.7GB |
+
+### Groq Models (Ultra-Fast)
+- **Llama 3 Vision**: High-performance multimodal model optimized for Groq LPUs.
+- **Mixtral 8x7B (v0.1)**: Powerful mixture-of-experts model for complex descriptions.
 
 ### Cloud Models (via OpenRouter)
 - **Google Gemini 2.0 Flash**: Fast, free, and multimodal.
@@ -191,7 +199,11 @@ Synapic iterates on traditional tagging workflows by providing a linear, 4-step 
 1.  **🚀 Step 1: Datasource**: Connect to your Daminion server or a local image folder. Supports advanced filtering by status (flags), untagged fields, and specific catalog scopes.
 2.  **🤖 Step 2: Tagging Engine**: Choose your intelligence. Run local models via Hugging Face for privacy, or use cloud-based VLMs via OpenRouter for state-of-the-art accuracy.
 3.  **⚙️ Step 3: Process**: Execute the batch job with real-time feedback, multithreaded logging, and granular progress monitoring.
+3.  **⚙️ Step 3: Process**: Execute the batch job with real-time feedback, multithreaded logging, and granular progress monitoring.
 4.  **📊 Step 4: Results**: Review your new metadata, verify successful writes to the DAM, and export session reports.
+
+**Bonus: Deduplication Wizard**
+- A dedicated workflow step to scanning collections for visual duplicates, reviewing matches side-by-side, and applying bulk actions (Tag or Delete).
 
 ## Technology Stack
 
