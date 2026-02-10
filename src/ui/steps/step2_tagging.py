@@ -31,6 +31,7 @@ except Exception:
     GroqSettingsDialog = None
 import customtkinter as ctk
 from src.utils.background_worker import BackgroundWorker
+from src.utils.concurrency import DaemonThreadPoolExecutor
 
 class Step2Tagging(ctk.CTkFrame):
     """
@@ -1139,7 +1140,8 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             unique_results = compatible_results
             
             # Fetch sizes concurrently to avoid UI lag
-            from concurrent.futures import ThreadPoolExecutor
+            # from concurrent.futures import ThreadPoolExecutor -> Replaced with Daemon version
+            from src.utils.concurrency import DaemonThreadPoolExecutor as ThreadPoolExecutor
             
             def fetch_size(item):
                 mid = item['id']
