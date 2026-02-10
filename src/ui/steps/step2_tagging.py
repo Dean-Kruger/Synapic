@@ -72,6 +72,7 @@ class Step2Tagging(ctk.CTkFrame):
         self.create_engine_card(self.cards_frame, "Hugging Face", "huggingface", 1)
         self.create_engine_card(self.cards_frame, "OpenRouter", "openrouter", 2)
         self.create_engine_card(self.cards_frame, "Groq", "groq_package", 3)
+        self.create_engine_card(self.cards_frame, "Ollama Free", "ollama_free", 4)
 
         # Configure Button (renamed to "Select Engine")
         self.btn_config = ctk.CTkButton(self.container, text="Select Engine", command=self.open_config_dialog, width=200)
@@ -259,7 +260,14 @@ class Step2Tagging(ctk.CTkFrame):
                 is_ready = client.is_available() and api_key_set
             except:
                 is_ready = False
-            
+        elif engine == "ollama_free":
+            # OllamaFreeAPI: no API key required, just check if package is installed
+            try:
+                from src.integrations.ollama_free_client import OllamaFreeClient
+                client = OllamaFreeClient()
+                is_ready = client.is_available()
+            except:
+                is_ready = False
         if is_ready:
             self.btn_config.configure(fg_color="#2FA572", hover_color="#288E62") # Green
         else:
@@ -354,6 +362,8 @@ class ConfigDialog(ctk.CTkToplevel):
         self.tab_or = self.tabview.add("OpenRouter")
         # Groq tab (optional integration in the config dialog)
         self.tab_groq = self.tabview.add("Groq")
+        # OllamaFreeAPI tab (free distributed Ollama inference)
+        self.tab_ollama_free = self.tabview.add("Ollama Free")
         
         
         # Init Tabs
@@ -361,13 +371,24 @@ class ConfigDialog(ctk.CTkToplevel):
         self.init_hf_tab()
         self.init_or_tab()
         self.init_groq_tab()
+        self.init_ollama_free_tab()
         
         # Select current
-        map_name = {"local": "Local Inference", "huggingface": "Hugging Face", "openrouter": "OpenRouter", "groq": "Groq", "groq_package": "Groq"}
+        map_name = {
+            "local": "Local Inference",
+            "huggingface": "Hugging Face",
+            "openrouter": "OpenRouter",
+            "groq": "Groq",
+            "groq_package": "Groq",
+            "ollama_free": "Ollama Free",
+        }
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
         # Auto-load Groq models when the Groq tab is opened (delay 1000ms)
         self._groq_models_loaded = False
         self.after(1000, self._load_and_display_groq_models)
+        # Auto-load OllamaFreeAPI models (delay 1200ms to stagger with Groq)
+        self._ollama_free_models_loaded = False
+        self.after(1200, self._load_and_display_ollama_free_models)
 
     # Groq auto-load methods moved to ConfigDialog
 
@@ -498,6 +519,215 @@ class ConfigDialog(ctk.CTkToplevel):
         self.groq_status.configure(text="Groq config saved", text_color="green")
         self.destroy()
     
+    # ================================================================
+    # OLLAMA FREE API TAB METHODS
+    # ================================================================
+
+    def init_ollama_free_tab(self):
+        """Initialize the OllamaFreeAPI configuration tab.
+        
+        This tab provides:
+        - A family filter dropdown to browse model families
+        - A scrollable list of available models with metadata
+        - A selected model entry with Save Config action
+        - No API key required (free tier)
+        """
+        self.tab_ollama_free.grid_columnconfigure(0, weight=1)
+        self.tab_ollama_free.grid_rowconfigure(2, weight=1)  # List area grows
+
+        # Info banner - free tier notice
+        info_frame = ctk.CTkFrame(self.tab_ollama_free, fg_color="#1A6B3C", corner_radius=8)
+        info_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 10))
+
+        ctk.CTkLabel(
+            info_frame,
+            text="🆓  Free API — No API key required. Access 50+ open-source LLMs via distributed Ollama servers.",
+            wraplength=550,
+            font=("Roboto", 11),
+            text_color="white"
+        ).pack(padx=10, pady=8)
+
+        # Controls row: Family filter + Refresh
+        row_controls = ctk.CTkFrame(self.tab_ollama_free, fg_color="transparent")
+        row_controls.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+
+        ctk.CTkLabel(row_controls, text="Family:").pack(side="left")
+
+        self._ollama_free_family_var = ctk.StringVar(value="All")
+        self._ollama_free_family_menu = ctk.CTkOptionMenu(
+            row_controls,
+            variable=self._ollama_free_family_var,
+            values=["All"],
+            command=lambda _: self._load_and_display_ollama_free_models(),
+            width=160
+        )
+        self._ollama_free_family_menu.pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            row_controls,
+            text="Refresh Models",
+            command=self._load_and_display_ollama_free_models,
+            width=120
+        ).pack(side="right")
+
+        self._ollama_free_status = ctk.CTkLabel(row_controls, text="", text_color="gray")
+        self._ollama_free_status.pack(side="right", padx=10)
+
+        # Models list
+        self._ollama_free_models_list = ctk.CTkScrollableFrame(
+            self.tab_ollama_free,
+            label_text="Available Ollama Free Models"
+        )
+        self._ollama_free_models_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
+        # Selection row
+        row_sel = ctk.CTkFrame(self.tab_ollama_free, fg_color="transparent")
+        row_sel.grid(row=3, column=0, sticky="ew", padx=10, pady=(5, 20))
+
+        ctk.CTkLabel(row_sel, text="Selected:").pack(side="left")
+        self._ollama_free_model_entry = ctk.CTkEntry(row_sel, width=300)
+        # Default to current session model if provider matches, else a sensible default
+        default_model = (
+            self.session.engine.model_id
+            if self.session.engine.provider == "ollama_free" and self.session.engine.model_id
+            else "llama3:8b-instruct"
+        )
+        self._ollama_free_model_entry.insert(0, default_model)
+        self._ollama_free_model_entry.pack(side="left", padx=10, fill="x", expand=True)
+
+        ctk.CTkButton(
+            row_sel,
+            text="Save Config",
+            command=self._save_ollama_free_config
+        ).pack(side="right")
+
+    def _load_and_display_ollama_free_models(self):
+        """Load models from OllamaFreeAPI in a background thread."""
+        self._ollama_free_status.configure(text="Loading models...", text_color="gray")
+
+        def worker():
+            try:
+                from src.integrations.ollama_free_client import OllamaFreeClient
+                client = OllamaFreeClient()
+
+                if not client.is_available():
+                    self.after(0, lambda: self._display_ollama_free_models([], []))
+                    return
+
+                families = client.list_families()
+
+                # Filter by selected family
+                selected_family = self._ollama_free_family_var.get()
+                family_filter = None if selected_family == "All" else selected_family
+
+                models = client.list_models(family=family_filter, limit=100)
+
+                self.after(0, lambda f=families, m=models: self._display_ollama_free_models(m, f))
+
+            except Exception as e:
+                self.after(
+                    0,
+                    lambda err=str(e): self._ollama_free_status.configure(
+                        text=f"Error: {err}", text_color="red"
+                    )
+                )
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _display_ollama_free_models(self, models, families=None):
+        """Display OllamaFreeAPI models in the scrollable list.
+
+        Args:
+            models: List of model dictionaries from OllamaFreeClient.list_models()
+            families: List of family names for the family filter dropdown
+        """
+        # Update family dropdown if we have new families
+        if families:
+            family_values = ["All"] + sorted(families)
+            self._ollama_free_family_menu.configure(values=family_values)
+
+        # Clear existing list
+        for w in self._ollama_free_models_list.winfo_children():
+            w.destroy()
+
+        # Header
+        header_text = f"{'Model ID':<40} | {'Family':^12} | {'Type':^10} | {'Cost':>8}"
+        ctk.CTkLabel(
+            self._ollama_free_models_list,
+            text=header_text,
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        ).pack(fill="x", pady=(5, 10), padx=5)
+
+        if not models:
+            ctk.CTkLabel(
+                self._ollama_free_models_list,
+                text="No models found. Check that 'ollamafreeapi' is installed:\n"
+                     "pip install ollamafreeapi",
+                text_color="gray",
+                justify="center"
+            ).pack(pady=20)
+            self._ollama_free_status.configure(text="0 models", text_color="gray")
+            return
+
+        self._ollama_free_status.configure(
+            text=f"{len(models)} models available",
+            text_color="#2FA572"
+        )
+
+        for m in models:
+            mid = m.get('id', '')
+            family = m.get('family', 'unknown')
+            cap = m.get('capability', 'LLM')
+            cost = m.get('cost', 'Free')
+
+            # Truncate model ID for display if too long
+            display_id = mid[:38] + ".." if len(mid) > 40 else mid
+            display_text = f"{display_id:<40} | {family:^12} | {cap:^10} | {cost:>8}"
+
+            btn = ctk.CTkButton(
+                self._ollama_free_models_list,
+                text=display_text,
+                font=("Courier New", 12),
+                fg_color="transparent",
+                border_width=1,
+                anchor="w",
+                width=0,
+                command=lambda m_id=mid: self._select_ollama_free_model(m_id)
+            )
+            btn.pack(fill="x", pady=2)
+
+    def _select_ollama_free_model(self, model_id):
+        """Set the selected model in the entry field."""
+        self._ollama_free_model_entry.delete(0, "end")
+        self._ollama_free_model_entry.insert(0, model_id)
+
+    def _save_ollama_free_config(self):
+        """Save the OllamaFreeAPI configuration to the session and close dialog."""
+        model_id = self._ollama_free_model_entry.get().strip()
+
+        if not model_id:
+            self._ollama_free_status.configure(text="Please select a model", text_color="red")
+            return
+
+        self.session.engine.provider = "ollama_free"
+        self.session.engine.model_id = model_id
+        # OllamaFreeAPI models are text-based LLMs (with optional vision support)
+        self.session.engine.task = "image-to-text"
+
+        from src.utils.config_manager import save_config
+        try:
+            save_config(self.session)
+        except Exception:
+            pass
+
+        self._ollama_free_status.configure(
+            text=f"Saved: {model_id}", text_color="green"
+        )
+        self.destroy()
+
     def destroy(self):
         """Override destroy to clean up worker thread."""
         if hasattr(self, '_worker'):

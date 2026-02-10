@@ -84,15 +84,19 @@ class EngineConfig:
     """
     Configuration for the AI tagging engine.
     
-    Supports three types of providers:
+    Supports five types of providers:
     1. Local - Run models locally using Hugging Face Transformers
     2. Hugging Face - Use Hugging Face Inference API (requires API key)
     3. OpenRouter - Use OpenRouter API for LLM-based tagging (requires API key)
+    4. Groq - Use Groq SDK for fast inference (requires API key)
+    5. OllamaFreeAPI - Free access to 50+ open-source LLMs via distributed
+       Ollama servers (no API key required)
     
     Attributes:
-        provider: Engine type - 'local', 'huggingface', or 'openrouter'
+        provider: Engine type - 'local', 'huggingface', 'openrouter',
+                  'groq_package', or 'ollama_free'
         model_id: Identifier for the model (e.g., 'Qwen/Qwen2-VL-2B-Instruct')
-        api_key: API key for cloud providers (not used for local)
+        api_key: API key for cloud providers (not used for local/ollama_free)
         system_prompt: Custom system prompt for LLM-based models
         task: Model task type - 'image-classification', 'zero-shot-image-classification',
               'image-to-text', or 'image-text-to-text'
@@ -100,7 +104,7 @@ class EngineConfig:
                             Lower = more permissive, Higher = more strict
         device: Inference device for local models - 'cpu' or 'cuda' (GPU)
     """
-    provider: str = "huggingface"  # 'local', 'huggingface', 'openrouter'
+    provider: str = "huggingface"  # 'local', 'huggingface', 'openrouter', 'groq_package', 'ollama_free'
     model_id: str = ""
     api_key: str = ""
     system_prompt: str = ""  # For OpenRouter/LLMs

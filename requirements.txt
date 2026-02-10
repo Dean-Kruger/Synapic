@@ -34,3 +34,5 @@ protobuf>=4.25.0
 # Build Tools
 pyinstaller>=6.0.0
 groq
+ollamafreeapi
+ollama

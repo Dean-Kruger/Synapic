@@ -54,6 +54,14 @@ except ImportError:
     GroqPackageClient = None
     GROQ_AVAILABLE = False
 
+# Optional OllamaFreeAPI integration (free distributed Ollama inference)
+try:
+    from src.integrations.ollama_free_client import OllamaFreeClient
+    OLLAMA_FREE_AVAILABLE = True
+except ImportError:
+    OllamaFreeClient = None
+    OLLAMA_FREE_AVAILABLE = False
+
 # Optional metadata verification (for testing/debugging)
 # This module may not be available in packaged distributions
 try:
@@ -571,6 +579,53 @@ class ProcessingManager:
                 # Call Groq API with the image
                 response_text = groq_client.chat_with_image(
                     model=model_id,
+                    prompt=prompt,
+                    image_path=str(path)
+                )
+                
+                # Format result to match expected structure for tag extraction
+                result = [{"generated_text": response_text}]
+
+            elif engine.provider == "ollama_free":
+                # ---------------------------------------------------------------
+                # OLLAMA FREE API INFERENCE (Free distributed Ollama servers)
+                # ---------------------------------------------------------------
+                # Uses the OllamaFreeAPI package to send images to free
+                # distributed Ollama servers with auto load-balancing.
+                # No API key required.
+                
+                if not OLLAMA_FREE_AVAILABLE:
+                    raise RuntimeError(
+                        "OllamaFreeAPI not available. Please install it with: "
+                        "pip install ollamafreeapi"
+                    )
+                
+                # Initialize OllamaFreeAPI client
+                ollama_client = OllamaFreeClient()
+                if not ollama_client.is_available():
+                    raise RuntimeError(
+                        "OllamaFreeAPI is not available or not properly configured. "
+                        "Check that 'ollamafreeapi' package is installed: "
+                        "pip install ollamafreeapi"
+                    )
+                
+                # Use configured model or fall back to a default
+                model_id = engine.model_id or "llama3:8b-instruct"
+                
+                # Create a detailed prompt for image analysis
+                prompt = (
+                    "Analyze this image and provide a detailed response in "
+                    "JSON format with these keys:\n"
+                    "- 'description': A detailed description of the image content\n"
+                    "- 'category': A single broad category "
+                    "(e.g., 'Nature', 'Architecture', 'People')\n"
+                    "- 'keywords': A list of 5-10 relevant tags/keywords\n\n"
+                    "Return ONLY the raw JSON object, no additional text."
+                )
+                
+                # Call OllamaFreeAPI with the image
+                response_text = ollama_client.chat_with_image(
+                    model_name=model_id,
                     prompt=prompt,
                     image_path=str(path)
                 )
