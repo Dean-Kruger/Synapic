@@ -262,19 +262,25 @@ class StreamToLogger:
         if not self.running:
             return
             
+        # Prevent new messages from being queued
         self.running = False
         
         # Process any remaining messages in the queue (graceful flush)
+        # We wrap this in a try/except because during shutdown many things can be None
         try:
             while not self.queue.empty():
                 try:
-                    buf = self.queue.get_nowait()
-                    for line in buf.rstrip().splitlines():
-                        if line.strip():
-                            self.logger.log(self.log_level, line.rstrip())
+                    # Non-blocking get with short timeout just in case
+                    buf = self.queue.get(timeout=0.1)
+                    if buf and buf.strip():
+                        # Direct call to avoid overhead if possible, but stick to logger for consistency
+                        self.logger.log(self.log_level, buf.rstrip())
                     self.queue.task_done()
                 except (queue.Empty, ValueError):
                     break
+                except Exception:
+                    # Completely suppress errors here during shutdown to avoid loops
+                    pass
         except Exception:
             pass
         
@@ -355,10 +361,14 @@ def setup_logging(
     _original_stderr = sys.stderr
     
     # Redirect stdout and stderr to also write to log file
-    _stdout_logger = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO, sys.stdout)
-    _stderr_logger = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR, sys.stderr)
-    sys.stdout = _stdout_logger
-    sys.stderr = _stderr_logger
+    # Only redirect if not already redirected to avoid double wrapping
+    if not isinstance(sys.stdout, StreamToLogger):
+        _stdout_logger = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO, sys.stdout)
+        sys.stdout = _stdout_logger
+        
+    if not isinstance(sys.stderr, StreamToLogger):
+        _stderr_logger = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR, sys.stderr)
+        sys.stderr = _stderr_logger
     
     # Log the initialization
     logging.info("=" * 80)
@@ -385,6 +395,11 @@ def shutdown_logging():
     system tries to write to streams that are being shut down.
     """
     global _stdout_logger, _stderr_logger, _original_stdout, _original_stderr
+    
+    # CRITICAL: Disable logging exception handling during shutdown
+    # This prevents the "NoneType has no attribute 'write'" infinite loop
+    # when logging tries to write to stderr which is already closed/None
+    logging.raiseExceptions = False
     
     # Step 1: Restore original stdout/stderr FIRST to prevent circular logging errors
     # This ensures any subsequent logging doesn't try to write to our StreamToLogger

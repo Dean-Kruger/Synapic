@@ -621,6 +621,10 @@ class ConfigDialog(ctk.CTkToplevel):
                 family_filter = None if selected_family == "All" else selected_family
 
                 models = client.list_models(family=family_filter, limit=100)
+                
+                # Filter for Vision capability as requested
+                models = [m for m in models if m.get('capability') == 'Vision']
+
 
                 self.after(0, lambda f=families, m=models: self._display_ollama_free_models(m, f))
 
