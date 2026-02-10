@@ -27,12 +27,12 @@ timm>=0.9.0
 
 # Vision-Language Models
 qwen-vl-utils>=0.0.10
+groq
+ollamafreeapi
+ollama
 
 # Serialization
 protobuf>=4.25.0
 
 # Build Tools
 pyinstaller>=6.0.0
-groq
-ollamafreeapi
-ollama
