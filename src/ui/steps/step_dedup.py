@@ -261,6 +261,12 @@ class StepDedup(ctk.CTkFrame):
         self.scan_result: Optional[DedupScanResult] = None
         self.group_frames: List[DuplicateGroupFrame] = []
         
+        # Confirmation state for Apply button
+        self.is_confirming_action = False
+        self.default_btn_fg = None
+        self.default_btn_hover = None
+        self.default_btn_text = "Apply Deduplication"
+        
         self._build_ui()
     
     def _build_ui(self):
@@ -331,7 +337,8 @@ class StepDedup(ctk.CTkFrame):
             settings_frame,
             values=["Tag as Duplicate", "Delete from Catalog", "Manual Review Only"],
             variable=self.action_var,
-            width=160
+            width=160,
+            command=self._on_action_change
         )
         self.action_dropdown.grid(row=0, column=6, padx=5, pady=10)
         
@@ -439,6 +446,8 @@ class StepDedup(ctk.CTkFrame):
     
     def _start_scan(self):
         """Start the duplicate scan in a background thread."""
+        self._reset_confirmation()
+        
         # Check if Daminion is connected
         if not self.session.daminion_client or not self.session.daminion_client.authenticated:
             messagebox.showerror("Error", "Please connect to Daminion first.")
@@ -569,134 +578,120 @@ class StepDedup(ctk.CTkFrame):
         self.scan_btn.configure(state="normal")
         messagebox.showerror("Scan Error", f"Failed to scan for duplicates:\n\n{error_message}")
     
+    def _reset_confirmation(self, *args):
+        """Reset the apply button to its default state."""
+        if self.is_confirming_action:
+            if self.default_btn_fg:
+                self.apply_btn.configure(fg_color=self.default_btn_fg)
+            if self.default_btn_hover:
+                self.apply_btn.configure(hover_color=self.default_btn_hover)
+            
+            self.apply_btn.configure(text=self.default_btn_text)
+            self.is_confirming_action = False
+
+    def _on_action_change(self, choice):
+        """Called when action dropdown changes."""
+        self._reset_confirmation()
+
     def _apply_dedup(self):
         """Apply deduplication actions based on user selections."""
         logger.info(f"[DEDUP APPLY] Apply button clicked. Processor: {self.processor is not None}, Group frames: {len(self.group_frames) if self.group_frames else 0}")
         
         if not self.processor or not self.group_frames:
-            logger.warning(f"[DEDUP APPLY] Early return - processor={self.processor is not None}, group_frames={len(self.group_frames) if self.group_frames else 0}")
             return
-        
-        # Collect decisions from all group frames
-        decisions = [frame.get_decision() for frame in self.group_frames]
-        logger.info(f"[DEDUP APPLY] Collected {len(decisions)} decisions")
-        
-        # Count items to be affected
-        total_remove = sum(len(d.remove_items) for d in decisions)
-        logger.info(f"[DEDUP APPLY] Total items to remove: {total_remove}")
         
         # Get action
         action_text = self.action_var.get()
         logger.info(f"[DEDUP APPLY] Action selected: '{action_text}'")
+        
         if action_text == "Tag as Duplicate":
             action = DedupAction.TAG
-            action_desc = f"tag {total_remove} items as 'Duplicate'"
         elif action_text == "Delete from Catalog":
             action = DedupAction.DELETE
-            action_desc = f"DELETE {total_remove} items from the catalog"
-            # Extra warning for delete
-            logger.info("[DEDUP APPLY] Showing delete warning dialog")
-            
-            # Ensure dialog appears on top
-            self.winfo_toplevel().attributes('-topmost', True)
-            self.winfo_toplevel().lift()
-            self.winfo_toplevel().focus_force()
-            
-            response = messagebox.askyesno("⚠️ Warning",
-                                       f"You are about to DELETE {total_remove} items from Daminion.\n\n"
-                                       "This action CANNOT be undone!\n\n"
-                                       "Are you absolutely sure?",
-                                       icon="warning")
-            
-            # Restore normal window state
-            self.winfo_toplevel().attributes('-topmost', False)
-            
-            if not response:
-                logger.info("[DEDUP APPLY] Delete cancelled by user at warning dialog")
-                return
-            logger.info("[DEDUP APPLY] Delete confirmed at warning dialog")
         else:
             action = DedupAction.NONE
-            logger.info(f"[DEDUP APPLY] Manual review mode - showing info dialog")
             
-            # Ensure dialog appears on top
-            self.winfo_toplevel().attributes('-topmost', True)
-            self.winfo_toplevel().lift()
-            
+        # Handle Manual Review (No-op / Info only)
+        if action == DedupAction.NONE:
+            total_remove = sum(len(f.get_decision().remove_items) for f in self.group_frames)
             messagebox.showinfo("Manual Review", 
                               f"You have selected {total_remove} items as duplicates.\n\n"
                               "No automatic action will be taken.")
+            return
+
+        # --- Two-Step Confirmation Logic ---
+        if not self.is_confirming_action:
+            # First click: Change button to red "Confirm" state
+            self.default_btn_fg = self.apply_btn.cget("fg_color")
+            self.default_btn_hover = self.apply_btn.cget("hover_color")
+            # Save current text just in case, though we default to "Apply Deduplication"
+            self.default_btn_text = "Apply Deduplication" 
             
-            self.winfo_toplevel().attributes('-topmost', False)
-            logger.info("[DEDUP APPLY] Manual review dialog closed - returning")
+            self.apply_btn.configure(
+                text="Confirm to proceed",
+                fg_color="red",
+                hover_color="darkred"
+            )
+            self.is_confirming_action = True
             return
+
+        # Second click: Execute Action
+        # Reset button state first
+        self._reset_confirmation()
         
-        # Confirm
-        logger.info(f"[DEDUP APPLY] Showing confirmation dialog for action: {action_desc}")
-        
-        # Ensure dialog appears on top
-        self.winfo_toplevel().attributes('-topmost', True)
-        self.winfo_toplevel().lift()
-        
-        response = messagebox.askyesno("Confirm Deduplication",
-                                   f"This will {action_desc}.\n\nAre you sure?")
-        
-        self.winfo_toplevel().attributes('-topmost', False)
-        
-        if not response:
-            logger.info("[DEDUP APPLY] Action cancelled by user")
-            return
-        
-        logger.info(f"[DEDUP APPLY] Action confirmed - proceeding with {action.value}")
+        # Collect decisions
+        decisions = [frame.get_decision() for frame in self.group_frames]
+        total_remove = sum(len(d.remove_items) for d in decisions)
+        logger.info(f"[DEDUP APPLY] Executing action {action} on {total_remove} items")
         
         # Apply action
         try:
+            # Disable button during processing
+            self.apply_btn.configure(state="disabled", text="Processing...")
+            self.update_idletasks() # Force UI update
+            
             results = self.processor.apply_dedup_action(decisions, action)
             
+            self.apply_btn.configure(state="normal", text="Apply Deduplication")
+            
             msg = f"Deduplication complete!\n\n"
-            if results['tagged'] > 0:
+            if results.get('tagged', 0) > 0:
                 msg += f"• Tagged: {results['tagged']} items\n"
-            if results['deleted'] > 0:
+            if results.get('deleted', 0) > 0:
                 msg += f"• Deleted: {results['deleted']} items\n"
-            if results['errors'] > 0:
+            if results.get('errors', 0) > 0:
                 msg += f"• Errors: {results['errors']} items\n"
-            if results['skipped'] > 0:
+            if results.get('skipped', 0) > 0:
                 msg += f"• Skipped: {results['skipped']} items\n"
             
             messagebox.showinfo("Deduplication Complete", msg)
             
-            # Remove deleted items from the session list so they don't reappear in scans
+            # Post-action cleanup (remove deleted items from session/UI)
             if results.get('deleted_ids'):
                 deleted_ids = set(str(pid) for pid in results['deleted_ids'])
                 if hasattr(self.session, 'dedup_items'):
-                    # Filter out deleted items
                     original_count = len(self.session.dedup_items)
                     self.session.dedup_items = [
                         item for item in self.session.dedup_items
                         if str(item.get('Id') or item.get('id')) not in deleted_ids
                     ]
                     new_count = len(self.session.dedup_items)
-                    logger.info(f"Removed {original_count - new_count} deleted items from session list")
                     
-                    # Also refresh the UI status
-                    self.initial_label.configure(
-                        text=f"Ready to scan {new_count} items for duplicates.\n\n"
-                             "Configure settings above and click 'Scan for Duplicates' to begin."
-                    )
-                    
-                    # Clear results if deletions happened, forcing a rescan to be safe
-                    if new_count < original_count and self.group_frames:
-                         # Clear previous results
+                    if new_count < original_count:
+                        # Clear UI and ask for rescan
                         for frame in self.group_frames:
                             frame.destroy()
                         self.group_frames.clear()
-                        # self.results_scroll.pack_forget() # Removed incorrect call
+                        self.initial_label.configure(
+                            text=f"Items deleted. Remaining: {new_count}.\nPlease rescan."
+                        )
                         self.initial_label.pack(pady=50)
                         self.apply_btn.configure(state="disabled")
-                        self.stats_label.configure(text=f"Items updated. Please rescan.")
+                        self.stats_label.configure(text="Items updated. Please rescan.")
             
         except Exception as e:
             self.logger.error(f"Apply dedup failed: {e}", exc_info=True)
+            self.apply_btn.configure(state="normal", text="Apply Deduplication")
             messagebox.showerror("Error", f"Failed to apply deduplication:\n\n{e}")
     
     def set_items(self, items: List[Dict]):

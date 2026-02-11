@@ -89,12 +89,11 @@ class EngineConfig:
     2. Hugging Face - Use Hugging Face Inference API (requires API key)
     3. OpenRouter - Use OpenRouter API for LLM-based tagging (requires API key)
     4. Groq - Use Groq SDK for fast inference (requires API key)
-    5. OllamaFreeAPI - Free access to 50+ open-source LLMs via distributed
-       Ollama servers (no API key required)
+    5. Ollama - Access to local or remote Ollama models (requires running Ollama server)
     
     Attributes:
         provider: Engine type - 'local', 'huggingface', 'openrouter',
-                  'groq_package', or 'ollama_free'
+                  'groq_package', or 'ollama'
         model_id: Identifier for the model (e.g., 'Qwen/Qwen2-VL-2B-Instruct')
         api_key: API key for cloud providers (not used for local/ollama_free)
         system_prompt: Custom system prompt for LLM-based models
@@ -115,6 +114,10 @@ class EngineConfig:
     # Groq integration settings (optional)
     groq_base_url: str = ""  # Base URL for Groq API
     groq_api_key: str = ""   # Groq API key
+
+    # Ollama settings
+    ollama_host: str = ""  # Host URL for Ollama (e.g., http://localhost:11434)
+    ollama_api_key: str = ""  # API key for cloud/remote Ollama instances
 
 # ============================================================================
 # SESSION CLASS
