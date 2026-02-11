@@ -16,7 +16,7 @@ import customtkinter as ctk
 import logging
 import io
 from PIL import Image, ImageTk
-from tkinter import messagebox
+from CTkMessagebox import CTkMessagebox
 from typing import Optional, List, Dict, Any, Callable
 import threading
 
@@ -597,21 +597,20 @@ class StepDedup(ctk.CTkFrame):
             # Extra warning for delete
             logger.info("[DEDUP APPLY] Showing delete warning dialog")
             
-            # Ensure dialog appears on top
-            self.winfo_toplevel().attributes('-topmost', True)
-            self.winfo_toplevel().lift()
-            self.winfo_toplevel().focus_force()
+            # Use CTkMessagebox for better visibility
+            msg = CTkMessagebox(
+                title="⚠️ Warning",
+                message=f"You are about to DELETE {total_remove} items from Daminion.\n\n"
+                        "This action CANNOT be undone!\n\n"
+                        "Are you absolutely sure?",
+                icon="warning",
+                option_1="No",
+                option_2="Yes"
+            )
             
-            response = messagebox.askyesno("⚠️ Warning",
-                                       f"You are about to DELETE {total_remove} items from Daminion.\n\n"
-                                       "This action CANNOT be undone!\n\n"
-                                       "Are you absolutely sure?",
-                                       icon="warning")
+            response = msg.get()
             
-            # Restore normal window state
-            self.winfo_toplevel().attributes('-topmost', False)
-            
-            if not response:
+            if response != "Yes":
                 logger.info("[DEDUP APPLY] Delete cancelled by user at warning dialog")
                 return
             logger.info("[DEDUP APPLY] Delete confirmed at warning dialog")
@@ -619,31 +618,32 @@ class StepDedup(ctk.CTkFrame):
             action = DedupAction.NONE
             logger.info(f"[DEDUP APPLY] Manual review mode - showing info dialog")
             
-            # Ensure dialog appears on top
-            self.winfo_toplevel().attributes('-topmost', True)
-            self.winfo_toplevel().lift()
+            # Use CTkMessagebox
+            CTkMessagebox(
+                title="Manual Review",
+                message=f"You have selected {total_remove} items as duplicates.\n\n"
+                        "No automatic action will be taken.",
+                icon="info"
+            )
             
-            messagebox.showinfo("Manual Review", 
-                              f"You have selected {total_remove} items as duplicates.\n\n"
-                              "No automatic action will be taken.")
-            
-            self.winfo_toplevel().attributes('-topmost', False)
             logger.info("[DEDUP APPLY] Manual review dialog closed - returning")
             return
         
         # Confirm
         logger.info(f"[DEDUP APPLY] Showing confirmation dialog for action: {action_desc}")
         
-        # Ensure dialog appears on top
-        self.winfo_toplevel().attributes('-topmost', True)
-        self.winfo_toplevel().lift()
+        # Use CTkMessagebox
+        msg = CTkMessagebox(
+            title="Confirm Deduplication",
+            message=f"This will {action_desc}.\n\nAre you sure?",
+            icon="question",
+            option_1="No",
+            option_2="Yes"
+        )
         
-        response = messagebox.askyesno("Confirm Deduplication",
-                                   f"This will {action_desc}.\n\nAre you sure?")
+        response = msg.get()
         
-        self.winfo_toplevel().attributes('-topmost', False)
-        
-        if not response:
+        if response != "Yes":
             logger.info("[DEDUP APPLY] Action cancelled by user")
             return
         
