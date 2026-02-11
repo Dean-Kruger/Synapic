@@ -54,13 +54,13 @@ except ImportError:
     GroqPackageClient = None
     GROQ_AVAILABLE = False
 
-# Optional OllamaFreeAPI integration (free distributed Ollama inference)
+# Optional Ollama integration (official client with host config)
 try:
-    from src.integrations.ollama_free_client import OllamaFreeClient
-    OLLAMA_FREE_AVAILABLE = True
+    from src.integrations.ollama_client import OllamaClient
+    OLLAMA_AVAILABLE = True
 except ImportError:
-    OllamaFreeClient = None
-    OLLAMA_FREE_AVAILABLE = False
+    OllamaClient = None
+    OLLAMA_AVAILABLE = False
 
 # Optional metadata verification (for testing/debugging)
 # This module may not be available in packaged distributions
@@ -586,31 +586,30 @@ class ProcessingManager:
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]
 
-            elif engine.provider == "ollama_free":
+            elif engine.provider == "ollama":
                 # ---------------------------------------------------------------
-                # OLLAMA FREE API INFERENCE (Free distributed Ollama servers)
+                # OLLAMA INFERENCE (Local or Remote)
                 # ---------------------------------------------------------------
-                # Uses the OllamaFreeAPI package to send images to free
-                # distributed Ollama servers with auto load-balancing.
-                # No API key required.
+                # Uses the official Ollama Python library to connect to an Ollama server.
+                # Supports configurable host (e.g. localhost or remote IP).
                 
-                if not OLLAMA_FREE_AVAILABLE:
-                    raise RuntimeError(
-                        "OllamaFreeAPI not available. Please install it with: "
-                        "pip install ollamafreeapi"
-                    )
+                if not OLLAMA_AVAILABLE:
+                    raise RuntimeError("Ollama client not available. Please install 'ollama' package.")
                 
-                # Initialize OllamaFreeAPI client
-                ollama_client = OllamaFreeClient()
+                # Initialize Ollama client with configured host and api key
+                # If host is empty, it defaults to standard localhost:11434
+                ollama_client = OllamaClient(
+                    host=engine.ollama_host,
+                    api_key=engine.ollama_api_key
+                )
                 if not ollama_client.is_available():
                     raise RuntimeError(
-                        "OllamaFreeAPI is not available or not properly configured. "
-                        "Check that 'ollamafreeapi' package is installed: "
-                        "pip install ollamafreeapi"
+                        "Ollama client could not be initialized. "
+                        "Check that 'ollama' package is installed and server is reachable."
                     )
                 
-                # Use configured model or fall back to a default
-                model_id = engine.model_id or "llama3:8b-instruct"
+                # Use configured model
+                model_id = engine.model_id or "llama3:latest"
                 
                 # Create a detailed prompt for image analysis
                 prompt = (
@@ -623,7 +622,7 @@ class ProcessingManager:
                     "Return ONLY the raw JSON object, no additional text."
                 )
                 
-                # Call OllamaFreeAPI with the image
+                # Call Ollama with the image path
                 response_text = ollama_client.chat_with_image(
                     model_name=model_id,
                     prompt=prompt,

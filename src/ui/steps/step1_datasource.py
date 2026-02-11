@@ -330,6 +330,8 @@ class Step1Datasource(ctk.CTkFrame):
         This fetches the items based on current filter settings and passes
         them to the dedup step for duplicate detection.
         """
+        self.logger.info("Deduplicate button clicked.")
+        
         if not self.controller.session.daminion_client:
             messagebox.showerror("Error", "Not connected to Daminion.")
             return
@@ -339,24 +341,36 @@ class Step1Datasource(ctk.CTkFrame):
         
         def _bg_fetch_items():
             try:
+                self.logger.info("Starting background item fetch for dedup...")
                 # Get current scope settings
+                if not hasattr(self, 'tabs'):
+                    raise RuntimeError("UI not fully initialized (tabs missing)")
+                    
                 tab = self.tabs.get()
                 scope = "all"
                 ss_id = None
                 col_id = None
                 search_term = None
                 
+                self.logger.info(f"Dedup Scope: {tab}")
+                
                 if tab == "Saved Searches":
                     scope = "saved_search"
                     ss_name = self.ss_var.get()
                     ss_id = getattr(self, '_ss_map', {}).get(ss_name)
+                    if not ss_id:
+                        raise ValueError("No saved search selected")
                 elif tab == "Shared Collections":
                     scope = "collection"
                     col_name = self.col_var.get()
                     col_id = getattr(self, '_col_map', {}).get(col_name)
+                    if not col_id:
+                        raise ValueError("No collection selected")
                 elif tab == "Keyword Search":
                     scope = "search"
                     search_term = self.search_entry.get()
+                    if not search_term:
+                         raise ValueError("No search term entered")
                 
                 status = self.status_var.get()
                 
@@ -368,6 +382,8 @@ class Step1Datasource(ctk.CTkFrame):
                 if hasattr(self, 'chk_untagged_desc') and self.chk_untagged_desc.get():
                     untagged.append("Description")
                 
+                self.logger.info(f"Fetching items with filters: scope={scope}, status={status}, untagged={untagged}")
+                
                 # Fetch items (limit to 500 for dedup to avoid performance issues)
                 items = self.controller.session.daminion_client.get_items_filtered(
                     scope=scope,
@@ -378,6 +394,8 @@ class Step1Datasource(ctk.CTkFrame):
                     status_filter=status,
                     max_items=500
                 )
+                
+                self.logger.info(f"Fetched {len(items) if items else 0} items.")
                 
                 def _navigate():
                     if not self.winfo_exists():
@@ -400,7 +418,7 @@ class Step1Datasource(ctk.CTkFrame):
             except Exception as e:
                 self.logger.error(f"Failed to fetch items for dedup: {e}", exc_info=True)
                 self.after(0, lambda: messagebox.showerror("Error", f"Failed to load items:\n{e}"))
-                self.after(0, lambda: self.lbl_total_count.configure(text=""))
+                self.after(0, lambda: self.lbl_total_count.configure(text="Error loading items"))
         
         self._worker.submit(_bg_fetch_items)
 
