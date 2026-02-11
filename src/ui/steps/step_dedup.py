@@ -162,7 +162,10 @@ class DuplicateGroupFrame(ctk.CTkFrame):
     
     def select_by_strategy(self, strategy: str):
         """Auto-select item based on strategy."""
+        logger.info(f"[DEDUP GROUP {self.group_index}] Applying strategy: '{strategy}', items: {self.group.items}")
+        
         if not self.group.items:
+            logger.warning(f"[DEDUP GROUP {self.group_index}] No items in group, skipping")
             return
         
         metadata_map = {}
@@ -170,6 +173,9 @@ class DuplicateGroupFrame(ctk.CTkFrame):
             meta = self.processor.get_item_metadata(item_id)
             if meta:
                 metadata_map[item_id] = meta
+                logger.debug(f"[DEDUP GROUP {self.group_index}] Item {item_id} metadata: FileSize={meta.get('FileSize')}, Created={meta.get('Created')}, DateTimeOriginal={meta.get('DateTimeOriginal')}")
+            else:
+                logger.warning(f"[DEDUP GROUP {self.group_index}] No metadata found for item {item_id}")
         
         selected = self.group.items[0]  # Default
         
@@ -180,6 +186,7 @@ class DuplicateGroupFrame(ctk.CTkFrame):
                 key=lambda x: metadata_map.get(x, {}).get('DateTimeOriginal', '') or metadata_map.get(x, {}).get('Created', '') or '9999'
             )
             selected = sorted_items[0]
+            logger.info(f"[DEDUP GROUP {self.group_index}] Oldest strategy selected: {selected}")
         elif strategy == "newest":
             sorted_items = sorted(
                 self.group.items,
@@ -187,6 +194,7 @@ class DuplicateGroupFrame(ctk.CTkFrame):
                 reverse=True
             )
             selected = sorted_items[0]
+            logger.info(f"[DEDUP GROUP {self.group_index}] Newest strategy selected: {selected}")
         elif strategy == "largest":
             sorted_items = sorted(
                 self.group.items,
@@ -194,21 +202,27 @@ class DuplicateGroupFrame(ctk.CTkFrame):
                 reverse=True
             )
             selected = sorted_items[0]
+            logger.info(f"[DEDUP GROUP {self.group_index}] Largest strategy selected: {selected} (size: {metadata_map.get(selected, {}).get('FileSize', 'N/A')})")
         elif strategy == "smallest":
             sorted_items = sorted(
                 self.group.items,
                 key=lambda x: metadata_map.get(x, {}).get('FileSize', 0) or float('inf')
             )
             selected = sorted_items[0]
+            logger.info(f"[DEDUP GROUP {self.group_index}] Smallest strategy selected: {selected} (size: {metadata_map.get(selected, {}).get('FileSize', 'N/A')})")
         
         
         # Ensure we have a valid selection before setting
         if selected:
-            logger.debug(f"Strategy '{strategy}' selected item {selected} for group {self.group_index}")
+            logger.info(f"[DEDUP GROUP {self.group_index}] Setting keep_item to: {selected}")
             self.keep_item.set(str(selected))
             self._on_selection_changed()
+            
+            # Force UI update by triggering the widget update
+            # CustomTkinter radio buttons don't auto-update when variable changes programmatically
+            self.update_idletasks()
         else:
-            logger.warning(f"Strategy '{strategy}' failed to find a valid item for group {self.group_index}")
+            logger.warning(f"[DEDUP GROUP {self.group_index}] Strategy '{strategy}' failed to find a valid item")
     
     def get_decision(self) -> DedupDecision:
         """Get the dedup decision for this group based on user selection."""
@@ -533,8 +547,21 @@ class StepDedup(ctk.CTkFrame):
     
     def _select_all_by_strategy(self, strategy: str):
         """Apply a selection strategy to all duplicate groups."""
+        logger.info(f"[DEDUP UI] Strategy button clicked: '{strategy}', group_frames count: {len(self.group_frames)}")
+        
+        if not self.group_frames:
+            logger.warning("[DEDUP UI] No group frames to apply strategy to")
+            return
+        
         for group_frame in self.group_frames:
             group_frame.select_by_strategy(strategy)
+        
+        # Update status to show strategy was applied
+        self.stats_label.configure(
+            text=f"Strategy '{strategy.capitalize()}' applied to {len(self.group_frames)} groups | "
+                 f"Review selections and click 'Apply Deduplication' to proceed"
+        )
+        logger.info(f"[DEDUP UI] Strategy '{strategy}' applied to {len(self.group_frames)} groups")
     
     def _on_scan_error(self, error_message: str):
         """Called when scan fails with an error."""
@@ -544,17 +571,23 @@ class StepDedup(ctk.CTkFrame):
     
     def _apply_dedup(self):
         """Apply deduplication actions based on user selections."""
+        logger.info(f"[DEDUP APPLY] Apply button clicked. Processor: {self.processor is not None}, Group frames: {len(self.group_frames) if self.group_frames else 0}")
+        
         if not self.processor or not self.group_frames:
+            logger.warning(f"[DEDUP APPLY] Early return - processor={self.processor is not None}, group_frames={len(self.group_frames) if self.group_frames else 0}")
             return
         
         # Collect decisions from all group frames
         decisions = [frame.get_decision() for frame in self.group_frames]
+        logger.info(f"[DEDUP APPLY] Collected {len(decisions)} decisions")
         
         # Count items to be affected
         total_remove = sum(len(d.remove_items) for d in decisions)
+        logger.info(f"[DEDUP APPLY] Total items to remove: {total_remove}")
         
         # Get action
         action_text = self.action_var.get()
+        logger.info(f"[DEDUP APPLY] Action selected: '{action_text}'")
         if action_text == "Tag as Duplicate":
             action = DedupAction.TAG
             action_desc = f"tag {total_remove} items as 'Duplicate'"
@@ -562,23 +595,59 @@ class StepDedup(ctk.CTkFrame):
             action = DedupAction.DELETE
             action_desc = f"DELETE {total_remove} items from the catalog"
             # Extra warning for delete
-            if not messagebox.askyesno("⚠️ Warning",
+            logger.info("[DEDUP APPLY] Showing delete warning dialog")
+            
+            # Ensure dialog appears on top
+            self.winfo_toplevel().attributes('-topmost', True)
+            self.winfo_toplevel().lift()
+            self.winfo_toplevel().focus_force()
+            
+            response = messagebox.askyesno("⚠️ Warning",
                                        f"You are about to DELETE {total_remove} items from Daminion.\n\n"
                                        "This action CANNOT be undone!\n\n"
                                        "Are you absolutely sure?",
-                                       icon="warning"):
+                                       icon="warning")
+            
+            # Restore normal window state
+            self.winfo_toplevel().attributes('-topmost', False)
+            
+            if not response:
+                logger.info("[DEDUP APPLY] Delete cancelled by user at warning dialog")
                 return
+            logger.info("[DEDUP APPLY] Delete confirmed at warning dialog")
         else:
             action = DedupAction.NONE
+            logger.info(f"[DEDUP APPLY] Manual review mode - showing info dialog")
+            
+            # Ensure dialog appears on top
+            self.winfo_toplevel().attributes('-topmost', True)
+            self.winfo_toplevel().lift()
+            
             messagebox.showinfo("Manual Review", 
                               f"You have selected {total_remove} items as duplicates.\n\n"
                               "No automatic action will be taken.")
+            
+            self.winfo_toplevel().attributes('-topmost', False)
+            logger.info("[DEDUP APPLY] Manual review dialog closed - returning")
             return
         
         # Confirm
-        if not messagebox.askyesno("Confirm Deduplication",
-                                   f"This will {action_desc}.\n\nAre you sure?"):
+        logger.info(f"[DEDUP APPLY] Showing confirmation dialog for action: {action_desc}")
+        
+        # Ensure dialog appears on top
+        self.winfo_toplevel().attributes('-topmost', True)
+        self.winfo_toplevel().lift()
+        
+        response = messagebox.askyesno("Confirm Deduplication",
+                                   f"This will {action_desc}.\n\nAre you sure?")
+        
+        self.winfo_toplevel().attributes('-topmost', False)
+        
+        if not response:
+            logger.info("[DEDUP APPLY] Action cancelled by user")
             return
+        
+        logger.info(f"[DEDUP APPLY] Action confirmed - proceeding with {action.value}")
         
         # Apply action
         try:

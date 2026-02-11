@@ -111,7 +111,7 @@ class DaminionDedupProcessor:
         items: List[Dict],
         algorithm: str = 'phash',
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
-        thumbnail_size: int = 300
+        thumbnail_size: int = 150
     ) -> DedupScanResult:
         """
         Scan Daminion items for duplicates.
@@ -120,7 +120,7 @@ class DaminionDedupProcessor:
             items: List of Daminion item dicts (must have 'Id' or 'id' key)
             algorithm: Hash algorithm ('phash', 'dhash', 'ahash', 'whash')
             progress_callback: Callback(message, current, total) for progress updates
-            thumbnail_size: Size of thumbnails to fetch for hashing
+            thumbnail_size: Size of thumbnails to fetch for hashing (default: 150px, smaller = less memory)
             
         Returns:
             DedupScanResult with duplicate groups and statistics
@@ -163,6 +163,27 @@ class DaminionDedupProcessor:
                 if not thumbnail_bytes:
                     errors.append(f"No thumbnail for item {item_id}")
                     continue
+                
+                # Enrich metadata with file size and creation date if missing
+                # Normalize field names from various Daminion API responses
+                if 'FileSize' not in item:
+                    # Try alternative field names
+                    item['FileSize'] = item.get('Size') or item.get('size') or item.get('fileSize') or 0
+                
+                if 'Created' not in item and 'DateTimeOriginal' not in item:
+                    # Try alternative field names for creation date
+                    item['Created'] = (item.get('created') or 
+                                      item.get('DateCreated') or 
+                                      item.get('dateCreated') or 
+                                      item.get('CreationDate') or '')
+                    item['DateTimeOriginal'] = (item.get('dateTimeOriginal') or 
+                                               item.get('DateTaken') or 
+                                               item.get('dateTaken') or '')
+                
+                # Log captured metadata for debugging
+                logger.debug(f"Item {item_id} metadata: FileSize={item.get('FileSize', 'N/A')}, "
+                           f"Created={item.get('Created', 'N/A')}, "
+                           f"DateTimeOriginal={item.get('DateTimeOriginal', 'N/A')}")
                 
                 # Calculate hash
                 img = self.calculator.load_image_from_bytes(thumbnail_bytes)
