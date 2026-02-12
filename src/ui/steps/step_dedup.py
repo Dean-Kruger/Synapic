@@ -619,7 +619,6 @@ class StepDedup(ctk.CTkFrame):
             action = DedupAction.TAG
         elif action_text == "Delete from Catalog":
             action = DedupAction.DELETE
-<<<<<<< HEAD
         else:
             action = DedupAction.NONE
             
@@ -705,113 +704,6 @@ class StepDedup(ctk.CTkFrame):
             self.logger.error(f"Apply dedup failed: {e}", exc_info=True)
             self.apply_btn.configure(state="normal", text="Apply Deduplication")
             messagebox.showerror("Error", f"Failed to apply deduplication:\n\n{e}")
-=======
-            action_desc = f"DELETE {total_remove} items from the catalog"
-            # Extra warning for delete
-            logger.info("[DEDUP APPLY] Showing delete warning dialog")
-            
-            # Use CTkMessagebox for better visibility
-        # Two-step confirmation logic
-        current_btn_text = self.apply_btn.cget("text")
-        confirm_text = f"Confirm {action_text}?"
-        
-        if current_btn_text != confirm_text:
-            # First click: Change text to confirm
-            logger.info(f"[DEDUP APPLY] Requesting confirmation for action: {action_text}")
-            self.apply_btn.configure(text=confirm_text, fg_color="red" if action == DedupAction.DELETE else "orange")
-            
-            # Optional: Reset button after 5 seconds if not clicked
-            self.after(5000, lambda: self._reset_apply_button())
-            return
-            
-        # Second click: Proceed
-        logger.info(f"[DEDUP APPLY] Action confirmed via button click - proceeding with {action.value}")
-        
-        # Reset button appearance immediately (will be disabled by _start_apply)
-        self._reset_apply_button()
-        
-        # Proceed with action
-        # Show progress
-        self.progress_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
-        self.progress_label.configure(text="Applying changes...")
-        self.progress_bar.set(0)
-        self.apply_btn.configure(state="disabled")
-        
-        # Start apply thread
-        thread = threading.Thread(
-            target=self._run_apply_dedup,
-            args=(decisions, action),
-            daemon=True
-        )
-        thread.start()
-
-    def _run_apply_dedup(self, decisions, action):
-        """Run dedup application in background."""
-        try:
-            def progress_callback(message, current, total):
-                self.after(0, lambda: self._update_progress(message, current, total))
-
-            results = self.processor.apply_dedup_action(
-                decisions, 
-                action,
-                progress_callback=progress_callback
-            )
-            
-            self.after(0, lambda: self._on_apply_complete(results))
-            
-        except Exception as e:
-            self.logger.error(f"Apply dedup failed: {e}", exc_info=True)
-            self.after(0, lambda: self._on_apply_error(str(e)))
-
-    def _on_apply_complete(self, results):
-        """Called when dedup application completes."""
-        self.progress_frame.grid_remove()
-        self.apply_btn.configure(state="normal")
-        
-        msg = f"Deduplication complete!\n\n"
-        if results['tagged'] > 0:
-            msg += f"• Tagged: {results['tagged']} items\n"
-        if results['deleted'] > 0:
-            msg += f"• Deleted: {results['deleted']} items\n"
-        if results['errors'] > 0:
-            msg += f"• Errors: {results['errors']} items\n"
-        if results['skipped'] > 0:
-            msg += f"• Skipped: {results['skipped']} items\n"
-        
-        # Show completion message in initial label
-        self.initial_label.configure(text=msg, text_color=("gray10", "gray90"))
-        
-        # Remove deleted items from the session list so they don't reappear in scans
-        if results.get('deleted_ids'):
-            deleted_ids = set(str(pid) for pid in results['deleted_ids'])
-            if hasattr(self.session, 'dedup_items'):
-                # Filter out deleted items
-                original_count = len(self.session.dedup_items)
-                self.session.dedup_items = [
-                    item for item in self.session.dedup_items
-                    if str(item.get('Id') or item.get('id')) not in deleted_ids
-                ]
-                new_count = len(self.session.dedup_items)
-                logger.info(f"Removed {original_count - new_count} deleted items from session list")
-                
-                # Clear results if deletions happened, forcing a rescan to be safe
-                if new_count < original_count and self.group_frames:
-                     # Clear previous results
-                    for frame in self.group_frames:
-                        frame.destroy()
-                    self.group_frames.clear()
-                    self.initial_label.pack(pady=50)
-                    self.apply_btn.configure(state="disabled")
-                    self.stats_label.configure(text=f"Items updated. Please rescan.")
-
-    def _on_apply_error(self, error_message):
-        """Called if apply fails."""
-        self.progress_frame.grid_remove()
-        self.apply_btn.configure(state="normal")
-        # Show error in initial label
-        self.initial_label.configure(text=f"Error applying deduplication:\n\n{error_message}", text_color="red")
-        self.initial_label.pack(pady=50)
->>>>>>> be27fcb75f0a1f6e06cb762ac9ddde1e97c4db24
     
     def set_items(self, items: List[Dict]):
         """Set the items to scan for deduplication."""
