@@ -47,6 +47,41 @@ from src.utils.logger import setup_logging
 log_file = setup_logging()
 
 # Import the main application UI after logging is configured
+# Import the main application UI after logging is configured
+import customtkinter
+import tkinter
+
+# MONKEYPATCH: CTkToplevel icon methods
+# The customtkiner library tries to load a default icon in a delayed callback.
+# On some systems/configurations (especially Python 3.14 preview), this fails with 
+# a TclError even if the file exists. We patch these methods to catch and ignore those errors.
+
+def safe_wm_iconbitmap(self, bitmap=None, default=None):
+    try:
+        # We can't easily call the original CTkToplevel.wm_iconbitmap because we're replacing it.
+        # But we can replicate its logic (setting the flag) and then call the superclass (tkinter.Toplevel).
+        self._iconbitmap_method_called = True
+        tkinter.Toplevel.wm_iconbitmap(self, bitmap, default)
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Ignored error in wm_iconbitmap: {e}")
+
+def safe_iconbitmap(self, bitmap=None, default=None):
+    try:
+        self._iconbitmap_method_called = True
+        tkinter.Toplevel.iconbitmap(self, bitmap, default)
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Ignored error in iconbitmap: {e}")
+
+def safe_wm_iconphoto(self, default=False, *args):
+    try:
+        tkinter.Toplevel.wm_iconphoto(self, default, *args)
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Ignored error in wm_iconphoto: {e}")
+
+customtkinter.CTkToplevel.wm_iconbitmap = safe_wm_iconbitmap
+customtkinter.CTkToplevel.iconbitmap = safe_iconbitmap
+customtkinter.CTkToplevel.wm_iconphoto = safe_wm_iconphoto
+
 from src.ui.app import App
 
 def main():
