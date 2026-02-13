@@ -746,17 +746,19 @@ class MediaItemsAPI(BaseAPI):
             data={"itemIds": item_ids}
         )
     
-    def delete_items(self, item_ids: List[int]):
+    def delete_items(self, item_ids: List[int], delete_from_disk: bool = False):
         """
-        Delete media items from catalog.
+        Remove media items from catalog, optionally deleting files from disk.
         
         Args:
-            item_ids: List of item IDs to delete
+            item_ids: List of item IDs to remove
+            delete_from_disk: If True, also delete the physical file from disk.
+                              If False (default), only remove the catalog entry.
         """
         self._request(
             "/api/MediaItems/Remove",
             method="POST",
-            data={"ids": item_ids, "delete": True}
+            data={"ids": item_ids, "delete": delete_from_disk}
         )
 
 

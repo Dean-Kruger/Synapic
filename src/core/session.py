@@ -113,11 +113,43 @@ class EngineConfig:
 
     # Groq integration settings (optional)
     groq_base_url: str = ""  # Base URL for Groq API
-    groq_api_key: str = ""   # Groq API key
+    groq_api_keys: str = ""  # Newline-separated list of Groq API keys (supports rotation)
+
+    # Index for Groq API key rotation (not persisted)
+    groq_current_key_index: int = 0
 
     # Ollama settings
     ollama_host: str = ""  # Host URL for Ollama (e.g., http://localhost:11434)
     ollama_api_key: str = ""  # API key for cloud/remote Ollama instances
+
+    @property
+    def groq_api_key(self) -> str:
+        """Backward-compatible property returning the currently active Groq API key."""
+        keys = self.get_groq_key_list()
+        if not keys:
+            return ""
+        idx = self.groq_current_key_index % len(keys)
+        return keys[idx]
+
+    @groq_api_key.setter
+    def groq_api_key(self, value: str):
+        """Backward-compatible setter — sets a single key."""
+        self.groq_api_keys = value
+
+    def get_groq_key_list(self) -> list:
+        """Parse the newline-separated groq_api_keys string into a list of non-empty keys."""
+        if not self.groq_api_keys:
+            return []
+        return [k.strip() for k in self.groq_api_keys.splitlines() if k.strip()]
+
+    def rotate_groq_key(self) -> str:
+        """Advance to the next Groq API key and return it. Returns '' if no keys."""
+        keys = self.get_groq_key_list()
+        if not keys:
+            return ""
+        self.groq_current_key_index = (self.groq_current_key_index + 1) % len(keys)
+        new_key = keys[self.groq_current_key_index]
+        return new_key
 
 # ============================================================================
 # SESSION CLASS

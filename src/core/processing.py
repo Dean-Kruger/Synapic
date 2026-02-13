@@ -553,12 +553,12 @@ class ProcessingManager:
                 # Set GROQ_API_KEY environment variable from session config if provided
                 # This allows the GroqPackageClient to authenticate without a global env var
                 import os
-                groq_api_key = getattr(engine, 'groq_api_key', None) or engine.api_key
+                groq_api_key = engine.groq_api_key  # property returns current active key
                 if groq_api_key:
                     os.environ["GROQ_API_KEY"] = groq_api_key
                     self.logger.debug(f"Set GROQ_API_KEY from session config")
                 
-                # Initialize Groq client
+                # Initialize Groq client with current key
                 groq_client = GroqPackageClient(api_key=groq_api_key)
                 if not groq_client.is_available():
                     self.logger.error(f"Groq SDK unavailable. GROQ_AVAILABLE={GROQ_AVAILABLE}, has_groq_class={groq_client._groq_class is not None}")
@@ -576,12 +576,22 @@ class ProcessingManager:
                     "Return ONLY the raw JSON object, no additional text."
                 )
                 
-                # Call Groq API with the image
-                response_text = groq_client.chat_with_image(
-                    model=model_id,
-                    prompt=prompt,
-                    image_path=str(path)
-                )
+                # Call Groq API with the image — uses key rotation on quota/rate-limit errors
+                num_keys = len(engine.get_groq_key_list())
+                if num_keys > 1:
+                    self.logger.info(f"Using Groq API key rotation ({num_keys} keys available)")
+                    response_text = groq_client.chat_with_image_rotating(
+                        engine_config=engine,
+                        model=model_id,
+                        prompt=prompt,
+                        image_path=str(path)
+                    )
+                else:
+                    response_text = groq_client.chat_with_image(
+                        model=model_id,
+                        prompt=prompt,
+                        image_path=str(path)
+                    )
                 
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]

@@ -36,7 +36,8 @@ class DedupAction(Enum):
     """Actions that can be applied to duplicate items."""
     TAG = "tag"               # Add "Duplicate" tag to duplicates
     COLLECTION = "collection" # Move duplicates to a collection
-    DELETE = "delete"         # Delete duplicates from Daminion
+    REMOVE = "remove"         # Remove from catalog only (files stay on disk)
+    DELETE = "delete"         # Delete from catalog AND disk
     NONE = "none"             # Just report, no action
 
 
@@ -314,16 +315,19 @@ class DaminionDedupProcessor:
                     logger.warning(f"Collection action not yet implemented for item {item_id}")
                     results['skipped'] += 1
                 
-                elif action == DedupAction.DELETE:
-                    # Delete from Daminion catalog
-                    # WARNING: This is destructive!
+                elif action in (DedupAction.REMOVE, DedupAction.DELETE):
+                    # REMOVE = catalog only, DELETE = catalog + disk
+                    delete_from_disk = (action == DedupAction.DELETE)
+                    action_word = "Deleting" if delete_from_disk else "Removing"
                     try:
-                        self.client._api.media_items.delete_items([int_item_id])
+                        self.client._api.media_items.delete_items(
+                            [int_item_id], delete_from_disk=delete_from_disk
+                        )
                         results['deleted'] += 1
                         results['deleted_ids'].append(item_id)
-                        logger.info(f"Deleted item {item_id} from catalog")
+                        logger.info(f"{action_word} item {item_id} (from_disk={delete_from_disk})")
                     except Exception as del_err:
-                        logger.error(f"Failed to delete item {item_id}: {del_err}")
+                        logger.error(f"Failed to remove/delete item {item_id}: {del_err}")
                         results['errors'] += 1
                 
             except Exception as e:

@@ -192,3 +192,76 @@ class GroqPackageClient:
 
     def test_connection(self) -> bool:
         return self.available
+
+    def chat_with_image_rotating(self, engine_config, model: str, prompt: str,
+                                  image_path: str = None, base64_image: str = None) -> str:
+        """Send a prompt with an image, automatically rotating API keys on errors.
+
+        This method wraps chat_with_image and provides automatic key rotation:
+        - On success, returns the response text as usual.
+        - On rate-limit / quota / auth errors it rotates to the next key and retries.
+        - It tries every available key at most once before giving up.
+
+        Args:
+            engine_config: The EngineConfig dataclass instance (provides key list + rotation).
+            model: Groq model identifier.
+            prompt: Text prompt to send.
+            image_path: Optional path to the image file.
+            base64_image: Optional base64-encoded image string.
+
+        Returns:
+            Response text from the first successful call, or the last error message.
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        keys = engine_config.get_groq_key_list()
+        if not keys:
+            return "Error: No Groq API keys configured."
+
+        num_keys = len(keys)
+        last_error = ""
+
+        for attempt in range(num_keys):
+            current_key = engine_config.groq_api_key  # property reads current index
+            self.api_key = current_key  # update client key
+
+            logger.info(f"Groq API attempt {attempt + 1}/{num_keys} using key ...{current_key[-4:] if len(current_key) >= 4 else '****'}")
+
+            response = self.chat_with_image(
+                model=model,
+                prompt=prompt,
+                image_path=image_path,
+                base64_image=base64_image,
+            )
+
+            # Check if the response indicates an error that warrants key rotation
+            if isinstance(response, str) and response.startswith("Error"):
+                last_error = response
+                # Check for rate-limit / quota / auth errors
+                error_lower = response.lower()
+                should_rotate = any(kw in error_lower for kw in [
+                    "rate_limit", "rate limit", "quota", "429",
+                    "too many requests", "limit exceeded",
+                    "authentication", "invalid api key", "401", "403",
+                    "insufficient_quota", "tokens per",
+                ])
+                if should_rotate and num_keys > 1:
+                    old_key_suffix = current_key[-4:] if len(current_key) >= 4 else "****"
+                    new_key = engine_config.rotate_groq_key()
+                    new_key_suffix = new_key[-4:] if len(new_key) >= 4 else "****"
+                    logger.warning(
+                        f"Groq API error with key ...{old_key_suffix}, rotating to ...{new_key_suffix}: {response}"
+                    )
+                    continue
+                else:
+                    # Non-rotatable error or only one key — return immediately
+                    return response
+            else:
+                # Success
+                return response
+
+        # All keys exhausted
+        logger.error(f"All {num_keys} Groq API keys exhausted. Last error: {last_error}")
+        return f"Error: All {num_keys} API keys exhausted (quota/rate-limit). Last error: {last_error}"
+
