@@ -167,13 +167,27 @@ class ImageDeduplicator:
         Finds groups of similar images using the configured threshold (or override).
         Uses Union-Find to group transitively similar items.
         """
+        import logging
+        _logger = logging.getLogger(__name__)
+        
         eff_threshold = threshold if threshold is not None else self.similarity_threshold
 
         items = list(hash_map.keys())
         uf = UnionFind(items)
 
+        # Log sample hash values for diagnostics
+        sample_size = min(5, len(items))
+        for idx in range(sample_size):
+            item_id = items[idx]
+            hr = hash_map[item_id]
+            _logger.debug(f"[DEDUP HASH SAMPLE] item={item_id}, hash={hr.hash_value}, algo={hr.algorithm}, bits={hr.bit_length}")
+
         # Compare all pairs O(N^2)
-        # This is a potential bottleneck for large datasets
+        comparisons = 0
+        matches = 0
+        max_similarity = 0.0
+        max_sim_pair = (None, None)
+
         for i in range(len(items)):
             for j in range(i + 1, len(items)):
                 id1 = items[i]
@@ -186,8 +200,23 @@ class ImageDeduplicator:
                 if res1.algorithm != res2.algorithm:
                     continue
 
-                if are_hashes_similar(res1.hash_value, res2.hash_value, threshold=eff_threshold):
-                    uf.union(id1, id2)
+                comparisons += 1
+
+                # Calculate similarity for diagnostics
+                try:
+                    dist = calculate_hamming_distance(res1.hash_value, res2.hash_value)
+                    sim = calculate_similarity_percentage(dist, res1.bit_length)
+                    if sim > max_similarity:
+                        max_similarity = sim
+                        max_sim_pair = (id1, id2)
+                    if sim >= eff_threshold:
+                        matches += 1
+                        uf.union(id1, id2)
+                except ValueError:
+                    continue
+
+        _logger.info(f"[DEDUP COMPARE] {comparisons} comparisons, {matches} matches at threshold={eff_threshold}%")
+        _logger.info(f"[DEDUP COMPARE] Highest similarity: {max_similarity:.1f}% between items {max_sim_pair[0]} and {max_sim_pair[1]}")
 
         # Build groups
         components = uf.get_components()

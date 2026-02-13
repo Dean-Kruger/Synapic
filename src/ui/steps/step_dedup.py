@@ -501,10 +501,19 @@ class StepDedup(ctk.CTkFrame):
                 
                 # Determine scope from saved datasource config
                 scope = getattr(ds, 'daminion_scope', 'all') or 'all'
-                ss_id = getattr(ds, 'daminion_saved_search_id', None)
-                col_id = getattr(ds, 'daminion_collection_id', None)
-                search_term = getattr(ds, 'daminion_search_term', None)
                 status = getattr(ds, 'status_filter', 'all') or 'all'
+                
+                # Only pass scope-relevant IDs (mirrors Step1 logic)
+                ss_id = None
+                col_id = None
+                search_term = None
+                
+                if scope == 'saved_search':
+                    ss_id = getattr(ds, 'daminion_saved_search_id', None)
+                elif scope == 'collection':
+                    col_id = getattr(ds, 'daminion_collection_id', None)
+                elif scope == 'search':
+                    search_term = getattr(ds, 'daminion_search_term', None)
                 
                 untagged = []
                 if getattr(ds, 'daminion_untagged_keywords', False):
@@ -514,13 +523,13 @@ class StepDedup(ctk.CTkFrame):
                 if getattr(ds, 'daminion_untagged_description', False):
                     untagged.append("Description")
                 
-                logger.info(f"[DEDUP REFRESH] Refreshing items: scope={scope}, status={status}")
+                logger.info(f"[DEDUP REFRESH] Refreshing items: scope={scope}, ss_id={ss_id}, col_id={col_id}, status={status}")
                 
                 fresh_items = client.get_items_filtered(
                     scope=scope,
                     saved_search_id=ss_id,
                     collection_id=col_id,
-                    search_term=search_term if scope == "search" else None,
+                    search_term=search_term,
                     untagged_fields=untagged,
                     status_filter=status,
                     max_items=500
