@@ -272,7 +272,7 @@ class StepDedup(ctk.CTkFrame):
     def _build_ui(self):
         """Build the deduplication UI."""
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)  # Results area expands
+        self.grid_rowconfigure(3, weight=1)  # Results area expands
         
         # ===== Header =====
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -360,9 +360,9 @@ class StepDedup(ctk.CTkFrame):
         )
         self.scan_btn.grid(row=0, column=7, padx=(20, 15), pady=10)
         
-        # ===== Progress Bar =====
+        # ===== Progress Bar (own row below settings) =====
         self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.progress_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
+        self.progress_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=5)
         self.progress_frame.grid_remove()  # Hidden initially
         
         self.progress_bar = ctk.CTkProgressBar(self.progress_frame, width=400)
@@ -383,7 +383,7 @@ class StepDedup(ctk.CTkFrame):
         
         # ===== Results Area =====
         results_container = ctk.CTkFrame(self)
-        results_container.grid(row=2, column=0, sticky="nsew", padx=20, pady=10)
+        results_container.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
         results_container.grid_columnconfigure(0, weight=1)
         results_container.grid_rowconfigure(0, weight=1)
         
@@ -404,7 +404,7 @@ class StepDedup(ctk.CTkFrame):
         
         # ===== Footer =====
         footer_frame = ctk.CTkFrame(self, fg_color="transparent")
-        footer_frame.grid(row=3, column=0, sticky="ew", padx=20, pady=(10, 20))
+        footer_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(10, 20))
         
         self.stats_label = ctk.CTkLabel(
             footer_frame,
