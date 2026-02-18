@@ -7,9 +7,9 @@ Supports connecting to local or remote Ollama servers.
 """
 
 import logging
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 import base64
-import os, Any, Optional
+import os
 
 # Known vision models
 VISION_MODEL_PATTERNS = [
@@ -47,9 +47,15 @@ class OllamaClient:
             
             # Configure headers if API key provided
             # Official docs: headers={'Authorization': 'Bearer ' + api_key}
+            # Configure headers if API key provided
+            # Official docs: headers={'Authorization': 'Bearer ' + api_key}
             headers = {}
             if api_key:
-                headers["Authorization"] = f"Bearer {api_key.strip()}"
+                clean_key = api_key.strip()
+                if clean_key.startswith("ssh-"):
+                    self.logger.warning("Configured API key starts with 'ssh-', which indicates an SSH key. " 
+                                      "Ollama Cloud requires an HTTP API key (token), not an SSH key.")
+                headers["Authorization"] = f"Bearer {clean_key}"
             
             # Initialize Client
             # If host is provided, use it. Otherwise let Client use defaults (env vars or localhost)

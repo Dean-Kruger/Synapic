@@ -30,9 +30,10 @@ def check_models():
                 lines.append(f"Models: {models}")
                 
                 # Check server count for the first few models
-                for model in models[:3]:
-                    servers = client.get_model_servers(model)
-                    lines.append(f"  {model}: {len(servers)} servers")
+                for model in models:
+                    if model == 'gemma2:27b':
+                        servers = client.get_model_servers(model)
+                        lines.append(f"  {model}: {len(servers)} servers")
             except Exception as e:
                 lines.append(f"Error: {e}")
 

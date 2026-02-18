@@ -1,0 +1,64 @@
+thon314\Lib\threading.py", line 1023, in run
+    self._target(*self._args, **self._kwargs)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
+    self.logger.log(self.log_level, line.rstrip())
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: '    ^^^^^^^^^^^^'
+Arguments: ()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
+    stream.write(msg + self.terminator)
+    ^^^^^^^^^^^^
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1043, in _bootstrap
+    self._bootstrap_inner()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1081, in _bootstrap_inner
+    self._context.run(self.run)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1023, in run
+    self._target(*self._args, **self._kwargs)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
+    self.logger.log(self.log_level, line.rstrip())
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: "AttributeError: 'NoneType' object has no attribute 'write'"
+Arguments: ()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
+    stream.write(msg + self.terminator)
+    ^^^^^^^^^^^^
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1043, in _bootstrap
+    self._bootstrap_inner()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1081, in _bootstrap_inner
+    self._context.run(self.run)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1023, in run
+    self._target(*self._args, **self._kwargs)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
+    self.logger.log(self.log_level, line.rstrip())
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: 'Call stack:'
+Arguments: ()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
+    stream.write(msg + self.terminator)
+    ^^^^^^^^^^^^
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1043, in _bootstrap
+    self._bootstrap_inner()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1081, in _bootstrap_inner
+    self._context.run(self.run)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1023, in run
+    self._target(*self._args, **self._kwargs)
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
+    self.logger.log(self.log_level, line.rstrip())
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: '  File "C:\\Python314\\Lib\\threading.py", line 1043, in _bootstrap'
+Arguments: ()
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
+    stream.write(msg + self.terminator)
+    ^^^^^^^^^^^^
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
+2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
