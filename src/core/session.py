@@ -103,9 +103,10 @@ class EngineConfig:
                             Lower = more permissive, Higher = more strict
         device: Inference device for local models - 'cpu' or 'cuda' (GPU)
     """
-    provider: str = "huggingface"  # 'local', 'huggingface', 'openrouter', 'groq_package', 'ollama_free'
+    provider: str = "huggingface"  # 'local', 'huggingface', 'openrouter', 'groq_package', 'ollama', 'nvidia'
     model_id: str = ""
     api_key: str = ""
+    nvidia_api_key: str = ""  # New field for Nvidia NIM
     system_prompt: str = ""  # For OpenRouter/LLMs
     task: str = "image-to-text"  # Default task
     confidence_threshold: int = 50  # Confidence threshold (1-100) for category/keyword filtering

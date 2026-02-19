@@ -62,6 +62,14 @@ except ImportError:
     OllamaClient = None
     OLLAMA_AVAILABLE = False
 
+# Optional Nvidia integration
+try:
+    from src.integrations.nvidia_client import NvidiaClient
+    NVIDIA_AVAILABLE = True
+except ImportError:
+    NvidiaClient = None
+    NVIDIA_AVAILABLE = False
+
 # Optional metadata verification (for testing/debugging)
 # This module may not be available in packaged distributions
 try:
@@ -634,6 +642,43 @@ class ProcessingManager:
                 
                 # Call Ollama with the image path
                 response_text = ollama_client.chat_with_image(
+                    model_name=model_id,
+                    prompt=prompt,
+                    image_path=str(path)
+                )
+                
+                # Format result to match expected structure for tag extraction
+                result = [{"generated_text": response_text}]
+
+            elif engine.provider == "nvidia":
+                # ---------------------------------------------------------------
+                # NVIDIA NIM INFERENCE (Cloud-based via Nvidia Integrate API)
+                # ---------------------------------------------------------------
+                if not NVIDIA_AVAILABLE:
+                    raise RuntimeError("Nvidia client not available.")
+                
+                # Initialize Nvidia client with configured API key
+                nvidia_client = NvidiaClient(api_key=engine.nvidia_api_key)
+                if not nvidia_client.is_available():
+                    raise RuntimeError("Nvidia API key not configured.")
+                
+                # Use configured model
+                model_id = engine.model_id or "mistralai/mistral-large-3-675b-instruct-2512"
+                
+                # Create a detailed prompt for image analysis
+                # We reuse the same detailed prompt pattern
+                prompt = (
+                    "Analyze this image and provide a detailed response in "
+                    "JSON format with these keys:\n"
+                    "- 'description': A detailed description of the image content\n"
+                    "- 'category': A single broad category "
+                    "(e.g., 'Nature', 'Architecture', 'People')\n"
+                    "- 'keywords': A list of 5-10 relevant tags/keywords\n\n"
+                    "Return ONLY the raw JSON object, no additional text."
+                )
+                
+                # Call Nvidia NIM with the image path
+                response_text = nvidia_client.chat_with_image(
                     model_name=model_id,
                     prompt=prompt,
                     image_path=str(path)

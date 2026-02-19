@@ -73,6 +73,7 @@ class Step2Tagging(ctk.CTkFrame):
         self.create_engine_card(self.cards_frame, "OpenRouter", "openrouter", 2)
         self.create_engine_card(self.cards_frame, "Groq", "groq_package", 3)
         self.create_engine_card(self.cards_frame, "Ollama", "ollama", 4)
+        self.create_engine_card(self.cards_frame, "Nvidia", "nvidia", 5)
 
         # Configure Button (renamed to "Select Engine")
         self.btn_config = ctk.CTkButton(self.container, text="Select Engine", command=self.open_config_dialog, width=200)
@@ -270,6 +271,9 @@ class Step2Tagging(ctk.CTkFrame):
                 is_ready = client.is_available()
             except:
                 is_ready = False
+        elif engine == "nvidia":
+            # Nvidia: check if API key is set
+            is_ready = bool(self.controller.session.engine.nvidia_api_key)
         if is_ready:
             self.btn_config.configure(fg_color="#2FA572", hover_color="#288E62") # Green
         else:
@@ -366,6 +370,8 @@ class ConfigDialog(ctk.CTkToplevel):
         self.tab_groq = self.tabview.add("Groq")
         # Ollama tab (official client)
         self.tab_ollama = self.tabview.add("Ollama")
+        # Nvidia tab
+        self.tab_nvidia = self.tabview.add("Nvidia")
         
         
         # Init Tabs
@@ -374,6 +380,7 @@ class ConfigDialog(ctk.CTkToplevel):
         self.init_or_tab()
         self.init_groq_tab()
         self.init_ollama_tab()
+        self.init_nvidia_tab()
         
         # Select current
         map_name = {
@@ -384,6 +391,7 @@ class ConfigDialog(ctk.CTkToplevel):
             "groq_package": "Groq",
             "ollama_free": "Ollama",
             "ollama": "Ollama",
+            "nvidia": "Nvidia",
         }
         self.tabview.set(map_name.get(initial_tab, "Hugging Face"))
         # Auto-load Groq models when the Groq tab is opened (delay 1000ms)
@@ -392,6 +400,9 @@ class ConfigDialog(ctk.CTkToplevel):
         # Auto-load Ollama models (delay 1200ms to stagger with Groq)
         self._ollama_models_loaded = False
         self.after(1200, self._load_and_display_ollama_models)
+        # Auto-load Nvidia models (delay 1400ms)
+        self._nvidia_models_loaded = False
+        self.after(1400, self._load_and_display_nvidia_models)
 
     # Groq auto-load methods moved to ConfigDialog
 
@@ -772,6 +783,182 @@ class ConfigDialog(ctk.CTkToplevel):
             pass
             
         self._ollama_status.configure(
+            text=f"Saved: {model_id}", text_color="green"
+        )
+        self.destroy()
+
+    # ================================================================
+    # NVIDIA NIM TAB METHODS
+    # ================================================================
+
+    def init_nvidia_tab(self):
+        """Initialize the Nvidia NIM configuration tab."""
+        self.tab_nvidia.grid_columnconfigure(0, weight=1)
+        self.tab_nvidia.grid_rowconfigure(2, weight=1)
+
+        # Info banner
+        info_frame = ctk.CTkFrame(self.tab_nvidia, fg_color="#34495E", corner_radius=8)
+        info_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 10))
+
+        ctk.CTkLabel(
+            info_frame,
+            text="🟢 Nvidia NIM — High-performance inference via NVIDIA Inference Microservices.",
+            wraplength=550,
+            font=("Roboto", 11),
+            text_color="white"
+        ).pack(padx=10, pady=8)
+
+        # API Key Configuration
+        row_key = ctk.CTkFrame(self.tab_nvidia, fg_color="transparent")
+        row_key.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        row_key.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(row_key, text="API Key:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+        self.nvidia_key_var = ctk.StringVar(value=self.session.engine.nvidia_api_key or "")
+        ctk.CTkEntry(row_key, textvariable=self.nvidia_key_var, show="*", width=300).grid(row=0, column=1, sticky="ew", padx=5)
+
+        ctk.CTkButton(
+            row_key,
+            text="Refresh Models",
+            command=self._load_and_display_nvidia_models,
+            width=120
+        ).grid(row=0, column=2, padx=(10, 0))
+        
+        self._nvidia_status = ctk.CTkLabel(row_key, text="", text_color="gray")
+        self._nvidia_status.grid(row=0, column=3, padx=10)
+
+        # Models list
+        self._nvidia_models_list = ctk.CTkScrollableFrame(
+            self.tab_nvidia,
+            label_text="Available Nvidia models"
+        )
+        self._nvidia_models_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
+        # Selection row
+        row_sel = ctk.CTkFrame(self.tab_nvidia, fg_color="transparent")
+        row_sel.grid(row=3, column=0, sticky="ew", padx=10, pady=(5, 20))
+
+        ctk.CTkLabel(row_sel, text="Selected:").pack(side="left")
+        self._nvidia_model_entry = ctk.CTkEntry(row_sel, width=300)
+        
+        default_model = (
+            self.session.engine.model_id
+            if self.session.engine.provider == "nvidia" and self.session.engine.model_id
+            else "mistralai/mistral-large-3-675b-instruct-2512"
+        )
+        self._nvidia_model_entry.insert(0, default_model)
+        self._nvidia_model_entry.pack(side="left", padx=10, fill="x", expand=True)
+
+        ctk.CTkButton(
+            row_sel,
+            text="Save Config",
+            command=self._save_nvidia_config
+        ).pack(side="right")
+
+    def _load_and_display_nvidia_models(self):
+        """Load models from Nvidia NIM in a background thread."""
+        self._nvidia_status.configure(text="Connecting...", text_color="gray")
+        key = self.nvidia_key_var.get().strip()
+
+        def worker():
+            try:
+                from src.integrations.nvidia_client import NvidiaClient
+                client = NvidiaClient(api_key=key)
+
+                if not client.is_available():
+                    self.after(0, lambda: self._display_nvidia_models([]))
+                    return
+
+                models = client.list_models()
+                self.after(0, lambda m=models: self._display_nvidia_models(m))
+
+            except Exception as e:
+                self.after(
+                    0,
+                    lambda err=str(e): self._nvidia_status.configure(
+                        text=f"Error: {err}", text_color="red"
+                    )
+                )
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _display_nvidia_models(self, models):
+        """Display Nvidia models in the scrollable list."""
+        for w in self._nvidia_models_list.winfo_children():
+            w.destroy()
+
+        # Header
+        header_text = f"{'Model ID':<40} | {'Provider':^15} | {'Capability':>15}"
+        ctk.CTkLabel(
+            self._nvidia_models_list,
+            text=header_text,
+            font=("Courier New", 12, "bold"),
+            text_color="gray",
+            anchor="w"
+        ).pack(fill="x", pady=(5, 10), padx=5)
+
+        if not models:
+            ctk.CTkLabel(
+                self._nvidia_models_list,
+                text="No models found or connection failed.\n"
+                     "Check your API key.",
+                text_color="gray",
+                justify="center"
+            ).pack(pady=20)
+            self._nvidia_status.configure(text="Connection Failed", text_color="red")
+            return
+
+        self._nvidia_status.configure(
+            text=f"{len(models)} models found",
+            text_color="#2FA572"
+        )
+
+        for m in models:
+            mid = m.get('id', '')
+            prov = m.get('provider', 'Nvidia')
+            cap = m.get('capability', 'Vision')
+
+            display_id = mid[:38] + ".." if len(mid) > 40 else mid
+            display_text = f"{display_id:<40} | {prov:^15} | {cap:>15}"
+
+            btn = ctk.CTkButton(
+                self._nvidia_models_list,
+                text=display_text,
+                font=("Courier New", 12),
+                fg_color="transparent",
+                border_width=1,
+                anchor="w",
+                width=0,
+                command=lambda m_id=mid: self._select_nvidia_model(m_id)
+            )
+            btn.pack(fill="x", pady=2)
+
+    def _select_nvidia_model(self, model_id):
+        self._nvidia_model_entry.delete(0, "end")
+        self._nvidia_model_entry.insert(0, model_id)
+
+    def _save_nvidia_config(self):
+        model_id = self._nvidia_model_entry.get().strip()
+        key = self.nvidia_key_var.get().strip()
+        
+        if not model_id:
+            self._nvidia_status.configure(text="Select a model", text_color="red")
+            return
+
+        self.session.engine.provider = "nvidia"
+        self.session.engine.model_id = model_id
+        self.session.engine.nvidia_api_key = key
+        # Nvidia vision models are multi-modal
+        self.session.engine.task = "image-to-text"
+        
+        from src.utils.config_manager import save_config
+        try:
+            save_config(self.session)
+        except Exception:
+            pass
+            
+        self._nvidia_status.configure(
             text=f"Saved: {model_id}", text_color="green"
         )
         self.destroy()
