@@ -245,11 +245,33 @@ class ProcessingManager:
                 pct = (i + 1) / len(items)
                 self.progress(pct, i + 1, len(items))
 
-            # ================================================================
-            # STAGE 4: COMPLETION
-            # ================================================================
+            self.logger.debug("Hit end of processing loop")
+            # ================================================================================
+            # STAGE 4: COMPLETION & CLEANUP
+            # ================================================================================
             self.logger.info(f"Processing job completed - Processed: {self.session.processed_items}, Failed: {self.session.failed_items}")
             self.log("Job finished.")
+
+            # Explicitly unload model to free memory/VRAM
+            if hasattr(self, 'model') and self.model:
+                self.logger.info("Unloading local model and performing memory cleanup")
+                self.model = None  # Release reference
+                
+                # Force garbage collection
+                import gc
+                gc.collect()
+                
+                # Clear CUDA cache if GPU was used
+                if self.session.engine.device == "cuda":
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            self.logger.info("CUDA cache cleared")
+                    except ImportError:
+                        pass
+                
+                self.log("Memory cleanup completed.")
 
         except Exception as e:
             # Catch any unexpected errors in the processing pipeline
