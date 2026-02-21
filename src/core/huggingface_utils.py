@@ -617,14 +617,16 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
         except Exception: pass
 
         # Load pipeline (transformers handles processor/tokenizer automatically for multi-modal)
-        # Note: low_cpu_mem_usage is NOT a valid pipeline() kwarg for vision pipelines;
-        # memory reduction is handled by torch_dtype="auto" and device_map.
+        # Note: low_cpu_mem_usage must go in model_kwargs, NOT as a top-level kwarg,
+        # because pipeline() forwards unknown kwargs to _sanitize_parameters() which
+        # rejects them for task-specific pipelines like ImageClassificationPipeline.
         model = pipeline(
             task, 
             model=local_model_path, 
             device_map="auto" if device != -1 else None,
             device=device if device == -1 else None,
-            torch_dtype="auto"
+            torch_dtype="auto",
+            model_kwargs={"low_cpu_mem_usage": True}
         )
         
         logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id}")
@@ -797,17 +799,19 @@ def load_model(
         except Exception:
             logging.debug("No AutoProcessor found, falling back to default pipeline behavior.")
 
-        # Load model using memory optimizations: 
+        # Load model using memory optimizations:
+        # - low_cpu_mem_usage: reduces peak RAM (passed via model_kwargs to avoid
+        #   _sanitize_parameters() rejection in task-specific pipelines)
         # - torch_dtype="auto": uses float16 on GPU if available
         # - device_map="auto": handles complex device placement (requires accelerate)
-        # Note: low_cpu_mem_usage is not a valid kwarg for pipeline() on vision pipelines.
         model = pipeline(
             pipeline_task, 
             model=local_model_path, 
             processor=processor, 
             device_map="auto" if device != -1 else None,
             device=device if device == -1 else None,
-            torch_dtype="auto"
+            torch_dtype="auto",
+            model_kwargs={"low_cpu_mem_usage": True}
         )
 
         logging.info(f"Model pipeline ({pipeline_task}) loaded successfully for: {model_id} on device {device}")
