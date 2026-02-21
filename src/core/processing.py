@@ -112,7 +112,13 @@ class ProcessingManager:
         >>> manager.abort()  # Signals thread to stop
     """
     
-    def __init__(self, session: Session, log_callback: Callable[[str], None], progress_callback: Callable[[float, int, int], None]):
+    def __init__(
+        self,
+        session: Session,
+        log_callback: Callable[[str], None],
+        progress_callback: Callable[[float, int, int], None],
+        auto_paginate: bool = False
+    ):
         """
         Initialize the processing manager.
         
@@ -120,6 +126,8 @@ class ProcessingManager:
             session: Session object with datasource and engine configuration
             log_callback: Function to call with log messages for UI display
             progress_callback: Function to call with progress updates (percentage, current, total)
+            auto_paginate: When True the Daminion fetch loop repeats in 500-record
+                           pages until the server has no more items to return.
         """
         self.session = session
         self.log = log_callback  # UI log callback
@@ -127,6 +135,7 @@ class ProcessingManager:
         self.stop_event = threading.Event()  # Signal for aborting
         self.thread = None  # Background processing thread
         self.logger = logging.getLogger(__name__)  # File logger
+        self.auto_paginate = auto_paginate  # Whether to page through all 500-record batches
 
     def start(self):
         """
@@ -190,67 +199,124 @@ class ProcessingManager:
     def _run_job(self):
         """
         Main processing loop (runs in background thread).
-        
-        This method orchestrates the entire processing workflow:
-        1. Fetches items from the configured datasource
-        2. Initializes the AI model (if using local inference)
-        3. Processes each item sequentially
-        4. Updates progress after each item
-        5. Handles errors and abortion gracefully
-        
-        The method runs in a separate thread and communicates with the UI
-        via the log and progress callbacks.
+
+        Orchestrates the entire workflow:
+        1. Fetch a page of items from the datasource
+        2. Initialize the AI model (local only, once)
+        3. Process each item in the page
+        4. If auto_paginate is enabled and the page was full (500 items),
+           fetch the next page and repeat until exhausted
+        5. Cleanup on completion
         """
+        DAMINION_PAGE_SIZE = 500  # Hard limit imposed by Daminion API
+
         try:
             self.log("Job started.")
             self.session.reset_stats()  # Clear previous run statistics
 
             # ================================================================
-            # STAGE 1: FETCH ITEMS
+            # STAGE 1: INITIALIZE MODEL (LOCAL ONLY) — done once before loop
             # ================================================================
-            items = self._fetch_items()
-            if not items:
-                self.log("No items found to process.")
-                return
-
-            # Update session statistics
-            self.session.total_items = len(items)
-            self.logger.info(f"Processing job initialized - {len(items)} items queued")
-            self.log(f"Found {len(items)} items to process.")
-            self.progress(0, 0, len(items))  # Initialize progress bar
-
-            # ================================================================
-            # STAGE 2: INITIALIZE MODEL (LOCAL ONLY)
-            # ================================================================
-            # For local inference, load the model into memory once
-            # For API-based inference, no initialization needed
             if self.session.engine.provider == "local":
                 self._init_local_model()
 
             # ================================================================
-            # STAGE 3: PROCESS EACH ITEM
+            # STAGE 2: PAGINATED FETCH + PROCESS LOOP
             # ================================================================
-            for i, item in enumerate(items):
-                # Check if user requested abortion
-                if self.stop_event.is_set():
-                    self.logger.info(f"Job aborted by user after processing {i} items")
-                    self.log("Job aborted by user.")
+            # For Daminion sources the API caps every response at 500 records.
+            # When auto_paginate=True we keep requesting the next page until we
+            # get a partial (< 500) response, meaning we have reached the end.
+            # For local sources offset is ignored and only one pass is made.
+            offset = 0
+            page_num = 0
+            grand_total_processed = 0
+
+            while True:
+                page_num += 1
+                if page_num == 1:
+                    self.log("Fetching items...")
+                else:
+                    self.log(f"Fetching next page (offset {offset})...")
+
+                # ============================================================
+                # FETCH ONE PAGE
+                # ============================================================
+                items = self._fetch_items(offset=offset)
+
+                if not items:
+                    if page_num == 1:
+                        self.log("No items found to process.")
+                    else:
+                        self.log("No more items — all pages processed.")
                     break
 
-                # Process this item (inference + metadata writing)
-                self._process_single_item(item)
-                
-                # Update progress tracking
-                self.session.processed_items += 1
-                pct = (i + 1) / len(items)
-                self.progress(pct, i + 1, len(items))
+                page_count = len(items)
+                self.session.total_items += page_count
+                self.logger.info(
+                    f"Page {page_num}: {page_count} items fetched "
+                    f"(offset={offset}, auto_paginate={self.auto_paginate})"
+                )
+                self.log(f"Page {page_num}: {page_count} item(s) to process.")
 
+                # Reset per-page counter; overall progress uses session counters
+                self.progress(
+                    self.session.processed_items / max(self.session.total_items, 1),
+                    self.session.processed_items,
+                    self.session.total_items,
+                )
+
+                # ============================================================
+                # PROCESS EACH ITEM IN THIS PAGE
+                # ============================================================
+                for i, item in enumerate(items):
+                    if self.stop_event.is_set():
+                        self.logger.info(
+                            f"Job aborted by user after processing "
+                            f"{grand_total_processed} items total"
+                        )
+                        self.log("Job aborted by user.")
+                        break
+
+                    self._process_single_item(item)
+
+                    self.session.processed_items += 1
+                    grand_total_processed += 1
+                    pct = self.session.processed_items / max(self.session.total_items, 1)
+                    self.progress(
+                        pct,
+                        self.session.processed_items,
+                        self.session.total_items,
+                    )
+
+                # Stop pagination if abort was requested
+                if self.stop_event.is_set():
+                    break
+
+                # Stop if auto-pagination is off OR this was a partial page
+                # (partial page = server has no more records)
+                if not self.auto_paginate or page_count < DAMINION_PAGE_SIZE:
+                    if self.auto_paginate and page_count < DAMINION_PAGE_SIZE:
+                        self.log(
+                            f"Last page received ({page_count} items) — "
+                            "pagination complete."
+                        )
+                    break
+
+                # Advance to next page
+                offset += DAMINION_PAGE_SIZE
+
+            # ================================================================
+            # STAGE 3: COMPLETION & CLEANUP
+            # ================================================================
             self.logger.debug("Hit end of processing loop")
-            # ================================================================================
-            # STAGE 4: COMPLETION & CLEANUP
-            # ================================================================================
-            self.logger.info(f"Processing job completed - Processed: {self.session.processed_items}, Failed: {self.session.failed_items}")
-            self.log("Job finished.")
+            self.logger.info(
+                f"Processing job completed — Processed: {self.session.processed_items}, "
+                f"Failed: {self.session.failed_items}, Pages: {page_num}"
+            )
+            self.log(
+                f"Job finished. "
+                f"Processed {self.session.processed_items} item(s) across {page_num} page(s)."
+            )
 
             # Explicitly unload model to free memory/VRAM
             if hasattr(self, 'model') and self.model:
@@ -280,31 +346,26 @@ class ProcessingManager:
             self.log(f"Error: {e}")
             self.session.failed_items += 1
 
-    def _fetch_items(self):
+    def _fetch_items(self, offset: int = 0):
         """
         Fetch items to process from the configured datasource.
-        
-        This method handles two types of datasources:
-        1. Local filesystem - Scans a folder for image files
-        2. Daminion DAM - Queries the Daminion server for items
-        
-        For local sources, it scans for common image formats (.jpg, .jpeg, .png, .tif, .tiff)
-        either recursively or in a single directory.
-        
-        For Daminion sources, it builds a complex query based on:
-        - Scope (all items, saved search, collection, etc.)
-        - Status filter (approved, rejected, unassigned)
-        - Untagged fields filter (items missing keywords, categories, or descriptions)
-        - Search terms
-        - Maximum item limit
-        
+
+        For Daminion sources the ``offset`` parameter controls which page of
+        500 records is returned.  Pass ``offset=0`` for the first page,
+        ``offset=500`` for the second, etc.  For local filesystem sources
+        this parameter is ignored — all matching files are returned in one
+        call.
+
+        Args:
+            offset: Starting index for Daminion pagination (default 0).
+
         Returns:
-            list: List of items to process. For local: list of Path objects.
-                  For Daminion: list of item dictionaries with metadata.
-        
+            list: Items to process.  For local sources: list of Path objects.
+                  For Daminion sources: list of item dicts.
+
         Raises:
-            FileNotFoundError: If local path doesn't exist
-            ValueError: If Daminion client is not connected
+            FileNotFoundError: If local path doesn't exist.
+            ValueError: If Daminion client is not connected.
         """
         ds = self.session.datasource
         
@@ -340,11 +401,13 @@ class ProcessingManager:
             if not self.session.daminion_client:
                 raise ValueError("Daminion client not connected")
             
-            self.logger.info(f"Fetching items from Daminion - Scope: {ds.daminion_scope}, Status: {ds.status_filter}")
+            self.logger.info(
+                f"Fetching items from Daminion — Scope: {ds.daminion_scope}, "
+                f"Status: {ds.status_filter}, Offset: {offset}"
+            )
             self.log("Fetching items from Daminion...")
             
             # Build list of fields to filter for untagged items
-            # Only items missing ALL selected fields will be included
             untagged_fields = []
             if ds.daminion_untagged_keywords: untagged_fields.append("Keywords")
             if ds.daminion_untagged_categories: untagged_fields.append("Category")
@@ -353,7 +416,8 @@ class ProcessingManager:
             # Determine maximum items to fetch (0 = unlimited)
             max_to_fetch = ds.max_items if ds.max_items > 0 else None
             
-            # Query Daminion with all configured filters
+            # Query Daminion. When offset > 0 we are in a pagination pass
+            # and only want the single next page of 500 records.
             items = self.session.daminion_client.get_items_filtered(
                 scope=ds.daminion_scope,
                 saved_search_id=ds.daminion_saved_search_id or ds.daminion_saved_search,
@@ -361,10 +425,11 @@ class ProcessingManager:
                 search_term=ds.daminion_search_term,
                 untagged_fields=untagged_fields,
                 status_filter=ds.status_filter,
-                max_items=max_to_fetch
+                max_items=max_to_fetch,
+                start_index=offset,
             )
             
-            self.logger.info(f"Retrieved {len(items)} items from Daminion")
+            self.logger.info(f"Retrieved {len(items)} items from Daminion (offset={offset})")
             self.log(f"Retrieved {len(items)} items from Daminion.")
             return items
         

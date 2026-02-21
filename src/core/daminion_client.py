@@ -405,14 +405,28 @@ class DaminionClient:
         untagged_fields: Optional[List[str]] = None,
         status_filter: str = "all",
         max_items: Optional[int] = None,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        start_index: int = 0
     ) -> List[Dict]:
-        """Retrieve items matching filters with pagination."""
+        """Retrieve items matching filters with pagination.
+        
+        Args:
+            start_index: Offset to start fetching from. When the caller manages
+                         pagination externally (e.g. ProcessingManager page loop)
+                         this should be set to `page_number * 500`.  The method
+                         will fetch exactly one batch of up to 500 items starting
+                         at this offset.
+        """
         try:
             items = []
+            # When start_index is provided the caller drives pagination, so we
+            # only fetch ONE page of 500 items (not an unlimited internal loop).
             limit = max_items if max_items and max_items > 0 else float('inf')
             batch_size = 500 if limit > 500 else int(limit)
-            current_index = 0
+            current_index = start_index
+            # If the caller supplies start_index > 0 they are doing external
+            # pagination — stop after a single batch.
+            single_page = start_index > 0
             
             logger.info(f"[FETCH DEBUG] get_items_filtered called: scope={scope}, max_items={max_items}, limit={limit}, batch_size={batch_size}")
             logger.info(f"[FETCH DEBUG] saved_search_id={saved_search_id}, collection_id={collection_id}, search_term={search_term}")
@@ -450,8 +464,8 @@ class DaminionClient:
                     items.extend(batch)
                     current_index += len(batch)
                     if progress_callback: progress_callback(len(items))
-                    if len(batch) < batch_size: 
-                        logger.debug(f"[FETCH DEBUG] Keyword Search: breaking - batch size {len(batch)} < {batch_size}")
+                    if single_page or len(batch) < batch_size: 
+                        logger.debug(f"[FETCH DEBUG] Keyword Search: breaking - batch size {len(batch)} < {batch_size} or single_page={single_page}")
                         break
                     logger.debug(f"[FETCH DEBUG] Keyword Search: collected {len(items)} so far, limit={limit}")
             
@@ -471,8 +485,8 @@ class DaminionClient:
                     items.extend(batch)
                     current_index += len(batch)
                     if progress_callback: progress_callback(len(items))
-                    if len(batch) < batch_size: 
-                        logger.debug(f"[FETCH DEBUG] Global Scan: breaking - batch size {len(batch)} < {batch_size}")
+                    if single_page or len(batch) < batch_size: 
+                        logger.debug(f"[FETCH DEBUG] Global Scan: breaking - batch size {len(batch)} < {batch_size} or single_page={single_page}")
                         break
                     logger.debug(f"[FETCH DEBUG] Global Scan: collected {len(items)} so far, limit={limit}")
             
@@ -513,8 +527,8 @@ class DaminionClient:
                         break
                     items.extend(batch)
                     current_index += len(batch)
-                    if len(batch) < batch_size: 
-                        logger.debug(f"[FETCH DEBUG] Saved Search: breaking - batch size {len(batch)} < {batch_size}")
+                    if single_page or len(batch) < batch_size: 
+                        logger.debug(f"[FETCH DEBUG] Saved Search: breaking - batch size {len(batch)} < {batch_size} or single_page={single_page}")
                         break
                     logger.debug(f"[FETCH DEBUG] Saved Search: collected {len(items)} so far, limit={limit}")
                 

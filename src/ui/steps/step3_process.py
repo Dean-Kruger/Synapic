@@ -18,6 +18,7 @@ Key Responsibilities:
 Author: Synapic Project
 """
 
+import tkinter as tk
 import customtkinter as ctk
 
 class Step3Process(ctk.CTkFrame):
@@ -57,6 +58,16 @@ class Step3Process(ctk.CTkFrame):
         
         self.btn_stop = ctk.CTkButton(controls_frame, text="ABORT", fg_color="red", width=150, height=50, font=("Roboto", 16, "bold"), state="disabled", command=self.stop_process)
         self.btn_stop.pack(side="left", padx=20)
+
+        # Pagination option (Daminion API returns max 500 records per request)
+        self.auto_paginate_var = tk.BooleanVar(value=True)
+        self.chk_paginate = ctk.CTkCheckBox(
+            controls_frame,
+            text="Auto-paginate (500-record batches)",
+            variable=self.auto_paginate_var,
+            font=("Roboto", 13),
+        )
+        self.chk_paginate.pack(side="left", padx=20)
 
         # Progress Area
         progress_frame = ctk.CTkFrame(self.container)
@@ -105,7 +116,8 @@ class Step3Process(ctk.CTkFrame):
         self.manager = ProcessingManager(
             session=self.controller.session,
             log_callback=self.safe_log,
-            progress_callback=self.safe_update_progress
+            progress_callback=self.safe_update_progress,
+            auto_paginate=self.auto_paginate_var.get()
         )
         self.manager.start()
 

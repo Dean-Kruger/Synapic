@@ -386,7 +386,7 @@ def get_suggested_task(model_config: dict) -> str:
     
     # 3. Check model_type for known multi-modal models
     mtype = model_config.get("model_type", "").lower()
-    if mtype in ["blip", "blip-2", "git", "qwen2_vl", "llava"]:
+    if mtype in ["blip", "blip-2", "git", "qwen2_vl", "qwen2_5_vl", "qwen3_vl", "llava"]:
         return config.MODEL_TASK_IMAGE_TO_TEXT
     
 def get_model_capability(task: str) -> str:
@@ -617,14 +617,14 @@ def load_model_with_progress(model_id, task, q, token=None, device=-1):
         except Exception: pass
 
         # Load pipeline (transformers handles processor/tokenizer automatically for multi-modal)
-        # Use memory optimizations: low_cpu_mem_usage, auto-precision, and auto device placement
+        # Note: low_cpu_mem_usage is NOT a valid pipeline() kwarg for vision pipelines;
+        # memory reduction is handled by torch_dtype="auto" and device_map.
         model = pipeline(
             task, 
             model=local_model_path, 
             device_map="auto" if device != -1 else None,
             device=device if device == -1 else None,
-            torch_dtype="auto",
-            low_cpu_mem_usage=True
+            torch_dtype="auto"
         )
         
         logging.info(f"Model pipeline ({task}) loaded successfully for: {model_id}")
@@ -772,7 +772,7 @@ def load_model(
         except Exception: pass
             
         # Initialize pipeline with processor for multi-modal stability
-        # For modern VLMs (Qwen2-VL, LLaVA), 'image-text-to-text' is preferred
+        # For modern VLMs (Qwen*-VL, LLaVA), 'image-text-to-text' is preferred
         pipeline_task = task
         try:
             cfg_path = os.path.join(local_model_path, "config.json")
@@ -780,10 +780,11 @@ def load_model(
                 with open(cfg_path, "r", encoding="utf-8") as cf:
                     m_cfg = json.load(cf)
                 m_type = m_cfg.get("model_type", "").lower()
-                if "qwen2" in m_type and "vl" in m_type:
+                # Match any Qwen VL variant (qwen2_vl, qwen2_5_vl, qwen3_vl, …)
+                if "qwen" in m_type and "vl" in m_type:
                     pipeline_task = "image-text-to-text"
                     logging.info(f"Using '{pipeline_task}' pipeline for model type '{m_type}'")
-                elif m_type in ["llava", "qwen2_vl", "qwen2_5_vl"]: # Explicit knowns
+                elif m_type in ["llava", "idefics", "paligemma"]: # Other known VLMs
                     pipeline_task = "image-text-to-text"
                     logging.info(f"Using '{pipeline_task}' pipeline for model type '{m_type}'")
         except Exception: pass
@@ -797,17 +798,16 @@ def load_model(
             logging.debug("No AutoProcessor found, falling back to default pipeline behavior.")
 
         # Load model using memory optimizations: 
-        # - low_cpu_mem_usage: reduces peak RAM
         # - torch_dtype="auto": uses float16 on GPU if available
         # - device_map="auto": handles complex device placement (requires accelerate)
+        # Note: low_cpu_mem_usage is not a valid kwarg for pipeline() on vision pipelines.
         model = pipeline(
             pipeline_task, 
             model=local_model_path, 
             processor=processor, 
             device_map="auto" if device != -1 else None,
             device=device if device == -1 else None,
-            torch_dtype="auto",
-            low_cpu_mem_usage=True
+            torch_dtype="auto"
         )
 
         logging.info(f"Model pipeline ({pipeline_task}) loaded successfully for: {model_id} on device {device}")

@@ -1,64 +1,80 @@
-thon314\Lib\threading.py", line 1023, in run
-    self._target(*self._args, **self._kwargs)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
-    self.logger.log(self.log_level, line.rstrip())
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: '    ^^^^^^^^^^^^'
-Arguments: ()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
-    stream.write(msg + self.terminator)
-    ^^^^^^^^^^^^
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1043, in _bootstrap
-    self._bootstrap_inner()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1081, in _bootstrap_inner
-    self._context.run(self.run)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1023, in run
-    self._target(*self._args, **self._kwargs)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
-    self.logger.log(self.log_level, line.rstrip())
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: "AttributeError: 'NoneType' object has no attribute 'write'"
-Arguments: ()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
-    stream.write(msg + self.terminator)
-    ^^^^^^^^^^^^
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1043, in _bootstrap
-    self._bootstrap_inner()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1081, in _bootstrap_inner
-    self._context.run(self.run)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1023, in run
-    self._target(*self._args, **self._kwargs)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
-    self.logger.log(self.log_level, line.rstrip())
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: 'Call stack:'
-Arguments: ()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
-    stream.write(msg + self.terminator)
-    ^^^^^^^^^^^^
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1043, in _bootstrap
-    self._bootstrap_inner()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1081, in _bootstrap_inner
-    self._context.run(self.run)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\threading.py", line 1023, in run
-    self._target(*self._args, **self._kwargs)
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Users\Dean\source\repos\Synapic\src\utils\logger.py", line 249, in _process_queue
-    self.logger.log(self.log_level, line.rstrip())
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Message: '  File "C:\\Python314\\Lib\\threading.py", line 1043, in _bootstrap'
-Arguments: ()
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - --- Logging error ---
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Traceback (most recent call last):
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] -   File "C:\Python314\Lib\logging\__init__.py", line 1154, in emit
-    stream.write(msg + self.terminator)
-    ^^^^^^^^^^^^
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - AttributeError: 'NoneType' object has no attribute 'write'
-2026-02-18 07:29:51 - STDERR - ERROR - [logger.py:277] - Call stack:
+tokens do not match: tokens: {n_image_tokens}, features {image_features.shape[0]}"
+    )
+ValueError: Image features and image tokens do not match: tokens: 0, features 154
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "c:\Users\Dean\source\repos\Synapic\src\core\processing.py", line 556, in _process_single_item
+    result = self.model(img)
+  File "C:\Users\Dean\source\repos\Synapic\.venv\Lib\site-packages\transformers\pipelines\image_to_text.py", line 158, in __call__
+    return super().__call__(inputs, **kwargs)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dean\source\repos\Synapic\.venv\Lib\site-packages\transformers\pipelines\base.py", line 1467, in __call__
+    return self.run_single(inputs, preprocess_params, forward_params, postprocess_params)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Dean\source\repos\Synapic\.venv\Lib\site-packages\transformers\pipelines\base.py", line 1474, in run_single
+    model_outputs = self.forward(model_inputs, **forward_params)
+  File "C:\Users\Dean\source\repos\Synapic\.venv\Lib\site-packages\transformers\pipelines\base.py", line 1374, in forward
+    model_outputs = self._forward(model_inputs, **forward_params)
+  File "C:\Users\Dean\source\repos\Synapic\.venv\Lib\site-packages\transformers\pipelines\image_to_text.py", line 229, in _forward
+    inputs = model_inputs.pop(self.model.main_input_name)
+  File "<frozen _collections_abc>", line 934, in pop
+  File "C:\Python314\Lib\collections\__init__.py", line 1148, in __getitem__
+    raise KeyError(key)
+KeyError: 'input_ids'
+2026-02-21 10:28:32 - root - ERROR - [processing.py:833] - Failed to process willian-justen-de-vasconcellos--8GRQA46TGw-unsplash.jpg: 'input_ids'
+2026-02-21 10:28:32 - src.core.processing - DEBUG - [processing.py:849] - Cleaned up temporary thumbnail: C:\Users\Dean\AppData\Local\Temp\daminion_cache\22155.jpg
+2026-02-21 10:28:32 - src.core.processing - INFO - [processing.py:236] - Job aborted by user after processing 7 items
+2026-02-21 10:28:32 - src.core.processing - DEBUG - [processing.py:248] - Hit end of processing loop
+2026-02-21 10:28:32 - src.core.processing - INFO - [processing.py:252] - Processing job completed - Processed: 7, Failed: 7
+2026-02-21 10:28:32 - src.core.processing - INFO - [processing.py:257] - Unloading local model and performing memory cleanup
+2026-02-21 10:28:49 - src.ui.app - INFO - [app.py:163] - Application close requested - starting shutdown sequence
+2026-02-21 10:28:49 - src.ui.app - DEBUG - [app.py:168] - Shutting down step: Step1Datasource
+2026-02-21 10:28:49 - src.utils.background_worker - DEBUG - [background_worker.py:191] - Worker 'Step1Worker' shutting down...
+2026-02-21 10:28:49 - src.utils.background_worker - DEBUG - [background_worker.py:205] - Worker 'Step1Worker' shutdown complete
+2026-02-21 10:28:49 - src.ui.app - DEBUG - [app.py:168] - Shutting down step: Step3Process
+2026-02-21 10:28:49 - src.ui.app - DEBUG - [app.py:168] - Shutting down step: StepDedup
+2026-02-21 10:28:49 - src.utils.config_manager - INFO - [logger.py:464] - Configuration: Saving Configuration
+2026-02-21 10:28:49 - src.utils.config_manager - DEBUG - [logger.py:465] - Saving Configuration details: {
+  "datasource": {
+    "type": "daminion",
+    "local_path": "//damserver/Assets/2026/02",
+    "local_recursive": 1,
+    "daminion_url": "http://damserver.local/daminion",
+    "daminion_user": "admin",
+    "daminion_pass": "***",
+    "daminion_catalog_id": "2026-01-21",
+    "current_collection_id": "",
+    "daminion_scope": "saved_search",
+    "daminion_saved_search": "Imported today",
+    "daminion_saved_search_id": 2,
+    "daminion_collection_id": 2,
+    "daminion_untagged_keywords": 1,
+    "daminion_untagged_categories": 1,
+    "daminion_untagged_description": 1,
+    "daminion_search_term": "city",
+    "status_filter": "all",
+    "max_items": 0
+  },
+  "engine": {
+    "provider": "local",
+    "model_id": "Qwen/Qwen3-VL-2B-Instruct",
+    "api_key": "***",
+    "nvidia_api_key": "***",
+    "system_prompt": "",
+    "task": "image-to-text",
+    "confidence_threshold": 5,
+    "device": "cuda",
+    "groq_base_url": "",
+    "groq_api_keys": "***WU5F",
+    "ollama_host": "https://ollama.com",
+    "ollama_api_key": "***be8n"
+  }
+}
+2026-02-21 10:28:49 - src.utils.config_manager - INFO - [config_manager.py:59] - Configuration saved successfully to C:\Users\Dean\.synapic_v2_config.json
+2026-02-21 10:28:49 - src.ui.app - INFO - [app.py:178] - Configuration saved
+2026-02-21 10:28:49 - src.ui.app - INFO - [app.py:183] - Destroying window and exiting
+2026-02-21 10:28:49 - __main__ - INFO - [main.py:126] - Application shutdown
+2026-02-21 10:28:49 - root - INFO - [logger.py:426] - Shutting down logging system...
+2026-02-21 10:28:49 - root - INFO - [logger.py:443] - Logging system shutdown complete
