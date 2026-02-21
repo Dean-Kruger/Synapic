@@ -85,10 +85,10 @@ class NvidiaClient:
             str: The model's response text.
         """
         if not self.api_key:
-            return "Nvidia API key not configured"
+            raise RuntimeError("Nvidia API key not configured")
         
         if not os.path.exists(image_path):
-            return f"Image path not found: {image_path}"
+            raise FileNotFoundError(f"Image path not found: {image_path}")
 
         try:
             with open(image_path, "rb") as f:
@@ -127,11 +127,13 @@ class NvidiaClient:
             if choices:
                 return choices[0].get('message', {}).get('content', '')
             
-            return "No response from Nvidia NIM"
+            raise RuntimeError("No response from Nvidia NIM (empty choices)")
 
+        except (RuntimeError, FileNotFoundError):
+            raise  # Re-raise our own exceptions as-is
         except Exception as e:
             self.logger.error(f"Error calling Nvidia NIM: {e}")
-            return f"Error calling Nvidia NIM: {str(e)}"
+            raise RuntimeError(f"Error calling Nvidia NIM: {str(e)}") from e
 
     def test_connection(self) -> bool:
         """Simple test to verify API key and connectivity."""
