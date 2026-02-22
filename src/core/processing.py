@@ -32,6 +32,7 @@ Workflow Stages:
 Author: Dean
 """
 
+import gc
 import logging
 import threading
 import time
@@ -215,10 +216,41 @@ class ProcessingManager:
             self.session.reset_stats()  # Clear previous run statistics
 
             # ================================================================
-            # STAGE 1: INITIALIZE MODEL (LOCAL ONLY) — done once before loop
+            # STAGE 1: INITIALIZE MODEL / API CLIENT — done once before loop
             # ================================================================
-            if self.session.engine.provider == "local":
+            self._api_client = None  # Will hold the reusable API client
+            engine = self.session.engine
+
+            if engine.provider == "local":
                 self._init_local_model()
+            elif engine.provider == "groq_package":
+                if not GROQ_AVAILABLE:
+                    raise RuntimeError("Groq SDK not available. Please install it with: pip install groq")
+                import os
+                groq_api_key = engine.groq_api_key
+                if groq_api_key:
+                    os.environ["GROQ_API_KEY"] = groq_api_key
+                self._api_client = GroqPackageClient(api_key=groq_api_key)
+                if not self._api_client.is_available():
+                    raise RuntimeError("Groq SDK is not available or not properly configured.")
+                self.logger.info("Groq client initialized (reused for all items)")
+            elif engine.provider == "ollama":
+                if not OLLAMA_AVAILABLE:
+                    raise RuntimeError("Ollama client not available. Please install 'ollama' package.")
+                self._api_client = OllamaClient(
+                    host=engine.ollama_host,
+                    api_key=engine.ollama_api_key
+                )
+                if not self._api_client.is_available():
+                    raise RuntimeError("Ollama client could not be initialized.")
+                self.logger.info("Ollama client initialized (reused for all items)")
+            elif engine.provider == "nvidia":
+                if not NVIDIA_AVAILABLE:
+                    raise RuntimeError("Nvidia client not available.")
+                self._api_client = NvidiaClient(api_key=engine.nvidia_api_key)
+                if not self._api_client.is_available():
+                    raise RuntimeError("Nvidia API key not configured.")
+                self.logger.info("Nvidia client initialized (reused for all items)")
 
             # ================================================================
             # STAGE 2: PAGINATED FETCH + PROCESS LOOP
@@ -323,10 +355,6 @@ class ProcessingManager:
                 self.logger.info("Unloading local model and performing memory cleanup")
                 self.model = None  # Release reference
                 
-                # Force garbage collection
-                import gc
-                gc.collect()
-                
                 # Clear CUDA cache if GPU was used
                 if self.session.engine.device == "cuda":
                     try:
@@ -336,8 +364,20 @@ class ProcessingManager:
                             self.logger.info("CUDA cache cleared")
                     except ImportError:
                         pass
-                
-                self.log("Memory cleanup completed.")
+
+            # Close API client to free connection pools / HTTP sessions
+            if self._api_client is not None:
+                self.logger.info("Closing API client and freeing connection pools")
+                if hasattr(self._api_client, 'close'):
+                    try:
+                        self._api_client.close()
+                    except Exception:
+                        pass
+                self._api_client = None
+
+            # Force garbage collection after all cleanup
+            gc.collect()
+            self.log("Memory cleanup completed.")
 
         except Exception as e:
             # Catch any unexpected errors in the processing pipeline
@@ -639,25 +679,11 @@ class ProcessingManager:
                 # ---------------------------------------------------------------
                 # GROQ SDK INFERENCE (Cloud-based via Groq Python SDK)
                 # ---------------------------------------------------------------
-                # Uses the Groq Python SDK to send images to Groq's vision models
-                # Requires GROQ_API_KEY environment variable or configured in session
+                # Uses the reusable Groq client initialized in _run_job()
+                groq_client = self._api_client
                 
-                if not GROQ_AVAILABLE:
-                    raise RuntimeError("Groq SDK not available. Please install it with: pip install groq")
-                
-                # Set GROQ_API_KEY environment variable from session config if provided
-                # This allows the GroqPackageClient to authenticate without a global env var
-                import os
-                groq_api_key = engine.groq_api_key  # property returns current active key
-                if groq_api_key:
-                    os.environ["GROQ_API_KEY"] = groq_api_key
-                    self.logger.debug(f"Set GROQ_API_KEY from session config")
-                
-                # Initialize Groq client with current key
-                groq_client = GroqPackageClient(api_key=groq_api_key)
-                if not groq_client.is_available():
-                    self.logger.error(f"Groq SDK unavailable. GROQ_AVAILABLE={GROQ_AVAILABLE}, has_groq_class={groq_client._groq_class is not None}")
-                    raise RuntimeError("Groq SDK is not available or not properly configured. Check that 'groq' package is installed.")
+                # Update API key if it has rotated
+                groq_client.api_key = engine.groq_api_key
                 
                 # Default model for vision tasks (Groq's vision model)
                 model_id = engine.model_id or "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -695,23 +721,8 @@ class ProcessingManager:
                 # ---------------------------------------------------------------
                 # OLLAMA INFERENCE (Local or Remote)
                 # ---------------------------------------------------------------
-                # Uses the official Ollama Python library to connect to an Ollama server.
-                # Supports configurable host (e.g. localhost or remote IP).
-                
-                if not OLLAMA_AVAILABLE:
-                    raise RuntimeError("Ollama client not available. Please install 'ollama' package.")
-                
-                # Initialize Ollama client with configured host and api key
-                # If host is empty, it defaults to standard localhost:11434
-                ollama_client = OllamaClient(
-                    host=engine.ollama_host,
-                    api_key=engine.ollama_api_key
-                )
-                if not ollama_client.is_available():
-                    raise RuntimeError(
-                        "Ollama client could not be initialized. "
-                        "Check that 'ollama' package is installed and server is reachable."
-                    )
+                # Uses the reusable Ollama client initialized in _run_job()
+                ollama_client = self._api_client
                 
                 # Use configured model
                 model_id = engine.model_id or "llama3:latest"
@@ -741,19 +752,13 @@ class ProcessingManager:
                 # ---------------------------------------------------------------
                 # NVIDIA NIM INFERENCE (Cloud-based via Nvidia Integrate API)
                 # ---------------------------------------------------------------
-                if not NVIDIA_AVAILABLE:
-                    raise RuntimeError("Nvidia client not available.")
-                
-                # Initialize Nvidia client with configured API key
-                nvidia_client = NvidiaClient(api_key=engine.nvidia_api_key)
-                if not nvidia_client.is_available():
-                    raise RuntimeError("Nvidia API key not configured.")
+                # Uses the reusable Nvidia client initialized in _run_job()
+                nvidia_client = self._api_client
                 
                 # Use configured model
                 model_id = engine.model_id or "mistralai/mistral-large-3-675b-instruct-2512"
                 
                 # Create a detailed prompt for image analysis
-                # We reuse the same detailed prompt pattern
                 prompt = (
                     "Analyze this image and provide a detailed response in "
                     "JSON format with these keys:\n"
@@ -815,6 +820,9 @@ class ProcessingManager:
             # - Extracting top predictions as keywords
             cat, kws, desc = image_processing.extract_tags_from_result(result, engine.task, threshold=threshold)
             self.logger.debug(f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}")
+            
+            # Free the (potentially large) model result now that tags are extracted
+            del result
             
             # If extraction returned no useful data, write a placeholder so the item
             # is marked as processed and won't be reprocessed in subsequent runs
@@ -915,3 +923,9 @@ class ProcessingManager:
                 except Exception:
                     # Ignore cleanup errors - not critical
                     pass
+            
+            # Periodic garbage collection to free base64 strings, API response
+            # objects, and other large short-lived allocations.
+            # Every 10 items to avoid GC overhead on every single image.
+            if hasattr(self, 'session') and self.session.processed_items % 10 == 0:
+                gc.collect()

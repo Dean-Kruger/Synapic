@@ -317,6 +317,8 @@ def run_inference_api(
             "type": "image_url",
             "image_url": {"url": f"data:image/jpeg;base64,{b64_image}", "detail": "auto"}
         }
+        # Free the large base64 string now that it's embedded in the payload
+        del b64_image
 
         # Construct messages & instructions depending on task
         messages = []

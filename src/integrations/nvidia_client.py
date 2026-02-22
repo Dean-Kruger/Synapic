@@ -148,5 +148,13 @@ class NvidiaClient:
         except Exception:
             return False
 
+    def close(self):
+        """Close the requests session and free connection pools."""
+        if self.session is not None:
+            try:
+                self.session.close()
+            except Exception:
+                pass
+
     def __repr__(self) -> str:
         return f"<NvidiaClient base_url={self.base_url} has_api_key={bool(self.api_key)}>"

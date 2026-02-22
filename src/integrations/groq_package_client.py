@@ -42,6 +42,7 @@ class GroqPackageClient:
     def __init__(self, api_key: Optional[str] = None):
         self._client = None
         self._groq_class = None
+        self._cached_key = None  # Track which API key the cached client was created with
         self.available = False
         self.api_key = api_key
         import logging
@@ -73,21 +74,47 @@ class GroqPackageClient:
             logging.getLogger(__name__).warning("Groq class is None - SDK not imported")
             return None
         try:
-            # Groq accepts api_key via env or constructor; not all combos required
             import logging
             # Checks self.api_key first, then env var
             key = self.api_key or os.environ.get("GROQ_API_KEY")
             logging.getLogger(__name__).debug(f"GROQ_API_KEY resolution: {'Found' if key else 'Not found'}")
             
-            if key:
-                return self._groq_class(api_key=key)
+            # Reuse cached client if key hasn't changed
+            if self._client is not None and key == self._cached_key:
+                return self._client
             
-            # If no key found, this will likely fail unless implicit env var works
-            return self._groq_class()
+            # Close previous client if it exists (free connection pools)
+            if self._client is not None:
+                try:
+                    if hasattr(self._client, 'close'):
+                        self._client.close()
+                except Exception:
+                    pass
+                self._client = None
+            
+            if key:
+                self._client = self._groq_class(api_key=key)
+            else:
+                # If no key found, this will likely fail unless implicit env var works
+                self._client = self._groq_class()
+            
+            self._cached_key = key
+            return self._client
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Failed to create Groq client: {e}")
             return None
+
+    def close(self):
+        """Close the cached Groq SDK client and free connection pools."""
+        if self._client is not None:
+            try:
+                if hasattr(self._client, 'close'):
+                    self._client.close()
+            except Exception:
+                pass
+            self._client = None
+            self._cached_key = None
 
     def chat_with_image(self, model: str, prompt: str, image_path: str = None, base64_image: str = None) -> str:
         """Send a prompt with an image (base64) to Groq chat API and return the response text.
