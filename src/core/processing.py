@@ -924,8 +924,8 @@ class ProcessingManager:
                     # Ignore cleanup errors - not critical
                     pass
             
-            # Periodic garbage collection to free base64 strings, API response
-            # objects, and other large short-lived allocations.
-            # Every 10 items to avoid GC overhead on every single image.
-            if hasattr(self, 'session') and self.session.processed_items % 10 == 0:
+            # Periodic garbage collection to free any residual base64 strings,
+            # API response objects, and other short-lived allocations.
+            # Every 3 items balances GC overhead with memory pressure.
+            if hasattr(self, 'session') and self.session.processed_items % 3 == 0:
                 gc.collect()

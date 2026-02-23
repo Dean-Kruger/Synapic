@@ -920,7 +920,9 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
     logger.info(f"[HuggingFace API] Starting inference - Model: {model_id}, Task: {task}")
     start_time = time.time()
     
-    client = InferenceClient(token=token)
+    # Note: InferenceClient is only needed for zero-shot (other paths use direct HTTP).
+    # We create it lazily below to avoid allocating connection pools unnecessarily.
+    client = None
     
     # Map internal task names to API tasks if needed, though they usually match.
     # We mainly need to handle the input type.
@@ -940,11 +942,12 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
         
         if task == config.MODEL_TASK_IMAGE_CLASSIFICATION:
              try:
-                # Fallback to manual POST to avoid StopIteration issues in some client versions
                 with open(image_path, "rb") as img_f:
                     b64_image = base64.b64encode(img_f.read()).decode("utf-8")
                 
                 payload = {"inputs": b64_image}
+                # Free the standalone base64 copy now that it's in the payload
+                del b64_image
 
                 # Using the router endpoint
                 api_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
@@ -953,12 +956,14 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                 log_api_request(logger, "POST", api_url, headers=headers, data=payload)
 
                 response = requests.post(api_url, headers=headers, json=payload)
+                del payload  # Free the payload immediately after sending
                 elapsed = time.time() - start_time
                 
                 log_api_response(logger, response.status_code, elapsed_time=elapsed)
                 response.raise_for_status()
                 
                 result = response.json()
+                response.close()  # Release socket buffers
                 logger.info(f"[HuggingFace API] Inference successful - Duration: {elapsed:.3f}s")
                 return result
 
@@ -973,6 +978,8 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                   raise ValueError("candidate_labels required for zero-shot api")
              
              try:
+                 # Lazily create InferenceClient only when needed
+                 client = InferenceClient(token=token)
                  return client.zero_shot_image_classification(
                       image_path, 
                       model=model_id, 
@@ -989,6 +996,8 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                      "inputs": b64_image,
                      "parameters": {"candidate_labels": parameters["candidate_labels"]}
                  }
+                 # Free the standalone base64 copy
+                 del b64_image
                  
                  # Direct API call to bypass client library issues and deprecated endpoints
                  # Using the new router endpoint
@@ -996,6 +1005,7 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                  headers = {"Authorization": f"Bearer {token}"}
                  
                  response = requests.post(api_url, headers=headers, json=payload)
+                 del payload  # Free immediately after sending
                  try:
                      response.raise_for_status()
                  except requests.exceptions.HTTPError as e:
@@ -1003,14 +1013,13 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                          raise ValueError(f"Model {model_id} is not available on the free Hugging Face Inference API (Status {response.status_code}). Please use 'Local' mode or try a different model.")
                      raise e
                      
-                 return response.json()
+                 result = response.json()
+                 response.close()  # Release socket buffers
+                 return result
 
 
         elif task == config.MODEL_TASK_IMAGE_TO_TEXT:
             try:
-                # The client.image_to_text() convenience method doesn't support all generation parameters
-                # correctly or consistently across versions. We fallback to manual POST.
-                 
                 with open(image_path, "rb") as img_f:
                     b64_image = base64.b64encode(img_f.read()).decode("utf-8")
 
@@ -1020,14 +1029,19 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                      "inputs": b64_image,
                      "parameters": gen_kwargs
                 }
+                # Free the standalone base64 copy
+                del b64_image
 
                 # Using the router endpoint
                 api_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
                 headers = {"Authorization": f"Bearer {token}"}
 
                 response = requests.post(api_url, headers=headers, json=payload)
+                del payload  # Free immediately after sending
                 response.raise_for_status()
-                return response.json()
+                result = response.json()
+                response.close()  # Release socket buffers
+                return result
             
             except requests.exceptions.HTTPError as e:
                  if e.response.status_code in [404, 410]:
@@ -1035,7 +1049,8 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                  raise e
         
         else:
-             # Fallback to generic
+             # Fallback to generic — lazily create client
+             client = InferenceClient(token=token)
              return client.post(json={"inputs": image_path}, model=model_id, task=task)
 
     except Exception as e:

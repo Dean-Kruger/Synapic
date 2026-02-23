@@ -374,6 +374,8 @@ def run_inference_api(
             "stream": False,
             "max_tokens": parameters.get("max_new_tokens") if parameters else None
         }
+        # Free the messages list (which contains the embedded base64 image)
+        del messages
 
         headers_json = headers.copy()
         headers_json["Content-Type"] = "application/json"
@@ -387,6 +389,8 @@ def run_inference_api(
             logger.warning("No API key provided!")
 
         resp = requests.post(chat_url, headers=headers_json, json=body, timeout=60)
+        # Free the large body dict immediately after sending
+        del body
         elapsed = time.time() - start_time
         
         # DEBUG: Check redirects
@@ -403,6 +407,7 @@ def run_inference_api(
             raise re
         
         resp_json = resp.json()
+        resp.close()  # Release socket buffers
 
         # Extract the assistant content
         outputs = None
@@ -559,6 +564,7 @@ def run_inference_api(
                     raise
 
                 resp_json = resp.json()
+                resp.close()  # Release socket buffers
 
             # try to extract outputs from common wrapper keys
             outputs = None

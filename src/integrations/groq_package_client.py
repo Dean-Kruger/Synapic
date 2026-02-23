@@ -156,16 +156,23 @@ class GroqPackageClient:
                 ],
             }
         ]
+        # Free the standalone base64 copy now that it's embedded in the payload
+        del b64
+
         try:
             client = self._ensure_client()
             if client is None:
                 return "Groq Python package not available"
             # Prefer the Groq API shipped via the groq package (newer models typically use chat completions)
             chat_completion = client.chat.completions.create(messages=messages, model=model)
-            # Groq returns a list of choices; extract the content if present
-            return getattr(chat_completion.choices[0].message, 'content', str(chat_completion))
+            # Extract result before freeing the large payload
+            result = getattr(chat_completion.choices[0].message, 'content', str(chat_completion))
+            return result
         except Exception as e:
             return f"Error calling Groq chat: {e}"
+        finally:
+            # Free the large messages dict containing the embedded base64 image
+            del messages
 
     def list_models(self, dataset: Optional[str] = None, limit: int = 40) -> List[Dict[str, Any]]:
         """Fetch available models from Groq API.

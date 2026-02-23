@@ -8,6 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from src.core.processing import ProcessingManager
 from src.core.session import Session
+from collections import deque
 
 
 class TestMemoryCleanup(unittest.TestCase):
@@ -79,9 +80,9 @@ class TestMemoryCleanup(unittest.TestCase):
         mock_client.is_available.return_value = True
         mock_client.chat_with_image.return_value = '{"description":"test","category":"Test","keywords":["a"]}'
 
-        # Create 10 fake items (triggers gc.collect at item 10)
+        # Create 6 fake items (triggers gc.collect at items 3 and 6 with new interval)
         from pathlib import Path
-        fake_items = [Path(f"fake_{i}.jpg") for i in range(10)]
+        fake_items = [Path(f"fake_{i}.jpg") for i in range(6)]
 
         with patch('src.core.processing.NvidiaClient', return_value=mock_client), \
              patch.object(ProcessingManager, '_fetch_items', return_value=fake_items), \
@@ -92,8 +93,8 @@ class TestMemoryCleanup(unittest.TestCase):
             manager._run_job()
 
         # gc.collect should have been called multiple times:
-        # once per 10 items in the finally block, plus once at end of job
-        self.assertGreaterEqual(mock_gc_collect.call_count, 2)
+        # at items 3 and 6 (every 3 items), plus once at end of job
+        self.assertGreaterEqual(mock_gc_collect.call_count, 3)
 
     @patch('src.core.processing.gc.collect')
     def test_groq_client_reused_across_items(self, mock_gc_collect):
@@ -126,6 +127,35 @@ class TestMemoryCleanup(unittest.TestCase):
         MockClass.assert_called_once()
         # Client closed at end
         mock_client.close.assert_called_once()
+
+    def test_session_results_bounded(self):
+        """Session results list is bounded to prevent unbounded growth."""
+        session = Session()
+        
+        # Verify results is a deque with maxlen
+        self.assertIsInstance(session.results, deque)
+        self.assertEqual(session.results.maxlen, 500)
+        
+        # Fill beyond capacity
+        for i in range(600):
+            session.results.append({"filename": f"test_{i}.jpg", "status": "Success", "tags": "test"})
+        
+        # Should be capped at 500
+        self.assertEqual(len(session.results), 500)
+        # Oldest items should have been dropped
+        self.assertEqual(session.results[0]["filename"], "test_100.jpg")
+
+    def test_session_results_reset_preserves_bound(self):
+        """reset_stats creates a fresh bounded deque."""
+        session = Session()
+        session.results.append({"filename": "test.jpg", "status": "Success", "tags": "test"})
+        
+        session.reset_stats()
+        
+        # Results should be empty but still bounded
+        self.assertEqual(len(session.results), 0)
+        self.assertIsInstance(session.results, deque)
+        self.assertEqual(session.results.maxlen, 500)
 
 
 if __name__ == '__main__':

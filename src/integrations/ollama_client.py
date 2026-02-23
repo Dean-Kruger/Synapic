@@ -146,6 +146,8 @@ class OllamaClient:
                     with open(image_path, "rb") as img_f:
                         b64_data = base64.b64encode(img_f.read()).decode("utf-8")
                         message['images'] = [b64_data]
+                    # Free the standalone base64 copy (message dict holds the reference)
+                    del b64_data
                 except Exception as e:
                     self.logger.error(f"Failed to encode image {image_path}: {e}")
             else:
@@ -154,8 +156,6 @@ class OllamaClient:
         messages = [message]
 
         try:
-            # For cloud models or newer library versions, ensure stream is handled if needed
-            # We are not using streaming here to keep it simple for now
             # Log masked messages to avoid flooding logs with base64 data
             log_msgs = []
             for m in messages:
@@ -165,10 +165,11 @@ class OllamaClient:
                 log_msgs.append(m_copy)
             
             self.logger.debug(f"Sending chat request to {model_name} with messages: {log_msgs}")
+            del log_msgs  # Free the logging copy immediately
+            
             response = self.client.chat(model=model_name, messages=messages)
             
-            # Extract content from response
-            # Response is ChatResponse object or dict
+            # Extract content from response before cleanup
             if hasattr(response, 'message'):
                 content = response.message.content
             elif isinstance(response, dict):
@@ -181,6 +182,9 @@ class OllamaClient:
         except Exception as e:
             self.logger.error(f"Error calling Ollama chat: {e}")
             return f"Error calling Ollama: {e}"
+        finally:
+            # Free the large messages list containing embedded base64 image data
+            del messages
 
     def test_connection(self) -> bool:
         """Test connectivity to the Ollama server."""

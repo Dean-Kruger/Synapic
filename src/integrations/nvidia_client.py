@@ -101,9 +101,7 @@ class NvidiaClient:
             
             mime_type = f"image/{ext if ext != 'jpg' else 'jpeg'}"
 
-            # Nvidia NIM specific prompt format as per user's snippet:
-            # content: f"Describe this image <img src=\"data:image/png;base64,{image_b64}\" />"
-            
+            # Nvidia NIM specific prompt format: embed base64 in an img tag
             payload = {
                 "model": model_name,
                 "messages": [
@@ -117,12 +115,20 @@ class NvidiaClient:
                 "top_p": 1.00,
                 "stream": False
             }
+            # Free the standalone base64 copy now that it's embedded in the payload
+            del image_b64
 
             url = f"{self.base_url}/chat/completions"
             resp = self.session.post(url, json=payload, timeout=60)
-            resp.raise_for_status()
-            
-            data = resp.json()
+            # Free the large payload dict immediately after the request is sent
+            del payload
+
+            try:
+                resp.raise_for_status()
+                data = resp.json()
+            finally:
+                resp.close()  # Release socket buffers
+
             choices = data.get('choices', [])
             if choices:
                 return choices[0].get('message', {}).get('content', '')

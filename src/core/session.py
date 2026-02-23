@@ -13,6 +13,7 @@ The configuration is persisted between sessions using the config_manager utility
 """
 
 from dataclasses import dataclass, field
+from collections import deque
 from typing import Optional, List
 import logging
 from .daminion_client import DaminionClient
@@ -197,7 +198,7 @@ class Session:
         self.total_items = 0
         self.processed_items = 0
         self.failed_items = 0
-        self.results: List[dict] = []
+        self.results: deque = deque(maxlen=500)  # Bounded: keeps last 500 results for export
         
         self.logger.debug(f"Session initialized - Datasource: {self.datasource.type}, Engine: {self.engine.provider}")
         
@@ -278,6 +279,6 @@ class Session:
         self.total_items = 0
         self.processed_items = 0
         self.failed_items = 0
-        self.results = []
+        self.results = deque(maxlen=500)  # Bounded: keeps last 500 results
         
         self.logger.info("Session statistics reset complete")
