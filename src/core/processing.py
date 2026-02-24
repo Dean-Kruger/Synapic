@@ -307,6 +307,7 @@ class ProcessingManager:
                             f"{grand_total_processed} items total"
                         )
                         self.log("Job aborted by user.")
+                        del items
                         break
 
                     self._process_single_item(item)
@@ -322,6 +323,7 @@ class ProcessingManager:
 
                 # Stop pagination if abort was requested
                 if self.stop_event.is_set():
+                    del items
                     break
 
                 # Stop if auto-pagination is off OR this was a partial page
@@ -332,10 +334,12 @@ class ProcessingManager:
                             f"Last page received ({page_count} items) — "
                             "pagination complete."
                         )
+                    del items
                     break
 
                 # Advance to next page
                 offset += DAMINION_PAGE_SIZE
+                del items  # Free before fetching next page
 
             # ================================================================
             # STAGE 3: COMPLETION & CLEANUP
@@ -385,6 +389,18 @@ class ProcessingManager:
             logging.exception("Processing failed")
             self.log(f"Error: {e}")
             self.session.failed_items += 1
+
+            # Ensure cleanup even on failure
+            if hasattr(self, 'model') and self.model:
+                self.model = None
+            if hasattr(self, '_api_client') and self._api_client:
+                if hasattr(self._api_client, 'close'):
+                    try:
+                        self._api_client.close()
+                    except Exception:
+                        pass
+                self._api_client = None
+            gc.collect()
 
     def _fetch_items(self, offset: int = 0):
         """
@@ -716,6 +732,7 @@ class ProcessingManager:
                 
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]
+                del response_text  # Free the original string copy
 
             elif engine.provider == "ollama":
                 # ---------------------------------------------------------------
@@ -747,6 +764,7 @@ class ProcessingManager:
                 
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]
+                del response_text  # Free the original string copy
 
             elif engine.provider == "nvidia":
                 # ---------------------------------------------------------------
@@ -778,6 +796,7 @@ class ProcessingManager:
                 
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]
+                del response_text  # Free the original string copy
 
             elif engine.provider in ["huggingface", "openrouter"]:
                 # ---------------------------------------------------------------

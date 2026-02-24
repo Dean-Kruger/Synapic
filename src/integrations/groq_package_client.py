@@ -249,6 +249,15 @@ class GroqPackageClient:
         import logging
         logger = logging.getLogger(__name__)
 
+        # Pre-encode image once to avoid re-reading/encoding on each retry
+        if image_path and not base64_image:
+            try:
+                with open(image_path, "rb") as f:
+                    base64_image = base64.b64encode(f.read()).decode()
+                image_path = None  # Use cached b64 for all attempts
+            except Exception:
+                pass  # Fall through to per-call encoding
+
         keys = engine_config.get_groq_key_list()
         if not keys:
             return "Error: No Groq API keys configured."
