@@ -11,6 +11,7 @@ imagehash>=4.3.1
 
 # Progress/Utilities
 tqdm>=4.66.0
+psutil>=5.9.0
 
 # Hugging Face Ecosystem
 huggingface_hub>=0.20.0

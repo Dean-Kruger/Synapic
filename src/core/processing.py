@@ -36,6 +36,13 @@ import gc
 import logging
 import threading
 import time
+
+try:
+    import psutil
+    _PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None
+    _PSUTIL_AVAILABLE = False
 from pathlib import Path
 from typing import Callable, Optional
 from PIL import Image
@@ -329,6 +336,16 @@ class ProcessingManager:
 
                     self.session.processed_items += 1
                     grand_total_processed += 1
+
+                    # Log memory consumption after each image for debugging
+                    if _PSUTIL_AVAILABLE:
+                        mem_mb = psutil.Process().memory_info().rss / (1024 * 1024)
+                        self.logger.info(
+                            f"Memory usage after image "
+                            f"{self.session.processed_items}/{self.session.total_items}: "
+                            f"{mem_mb:.2f} MB"
+                        )
+
                     pct = self.session.processed_items / max(self.session.total_items, 1)
                     self.progress(
                         pct,
