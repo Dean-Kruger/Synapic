@@ -9,7 +9,7 @@ for images, including categories, keywords, and descriptions.
 The application can work with:
 - Local image folders
 - Daminion Digital Asset Management (DAM) system
-
+yt
 Author: Dean
 License: Proprietary
 """

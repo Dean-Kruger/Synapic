@@ -71,6 +71,14 @@ except ImportError:
     NvidiaClient = None
     NVIDIA_AVAILABLE = False
 
+# Optional Google AI Studio integration
+try:
+    from src.integrations.google_ai_client import GoogleAIClient
+    GOOGLE_AI_AVAILABLE = True
+except ImportError:
+    GoogleAIClient = None
+    GOOGLE_AI_AVAILABLE = False
+
 # Optional metadata verification (for testing/debugging)
 # This module may not be available in packaged distributions
 try:
@@ -251,6 +259,13 @@ class ProcessingManager:
                 if not self._api_client.is_available():
                     raise RuntimeError("Nvidia API key not configured.")
                 self.logger.info("Nvidia client initialized (reused for all items)")
+            elif engine.provider == "google_ai":
+                if not GOOGLE_AI_AVAILABLE:
+                    raise RuntimeError("Google AI client not available.")
+                self._api_client = GoogleAIClient(api_key=engine.google_ai_api_key)
+                if not self._api_client.is_available():
+                    raise RuntimeError("Google AI API key not configured.")
+                self.logger.info("Google AI client initialized (reused for all items)")
 
             # ================================================================
             # STAGE 2: PAGINATED FETCH + PROCESS LOOP
@@ -789,6 +804,38 @@ class ProcessingManager:
                 
                 # Call Nvidia NIM with the image path
                 response_text = nvidia_client.chat_with_image(
+                    model_name=model_id,
+                    prompt=prompt,
+                    image_path=str(path)
+                )
+                
+                # Format result to match expected structure for tag extraction
+                result = [{"generated_text": response_text}]
+                del response_text  # Free the original string copy
+
+            elif engine.provider == "google_ai":
+                # ---------------------------------------------------------------
+                # GOOGLE AI STUDIO INFERENCE (Cloud-based via Gemini API)
+                # ---------------------------------------------------------------
+                # Uses the reusable Google AI client initialized in _run_job()
+                google_client = self._api_client
+                
+                # Use configured model
+                model_id = engine.model_id or "gemini-2.5-flash"
+                
+                # Create a detailed prompt for image analysis
+                prompt = (
+                    "Analyze this image and provide a detailed response in "
+                    "JSON format with these keys:\n"
+                    "- 'description': A detailed description of the image content\n"
+                    "- 'category': A single broad category "
+                    "(e.g., 'Nature', 'Architecture', 'People')\n"
+                    "- 'keywords': A list of 5-10 relevant tags/keywords\n\n"
+                    "Return ONLY the raw JSON object, no additional text."
+                )
+                
+                # Call Google AI with the image path
+                response_text = google_client.chat_with_image(
                     model_name=model_id,
                     prompt=prompt,
                     image_path=str(path)

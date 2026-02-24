@@ -85,16 +85,18 @@ class EngineConfig:
     """
     Configuration for the AI tagging engine.
     
-    Supports five types of providers:
+    Supports seven types of providers:
     1. Local - Run models locally using Hugging Face Transformers
     2. Hugging Face - Use Hugging Face Inference API (requires API key)
     3. OpenRouter - Use OpenRouter API for LLM-based tagging (requires API key)
     4. Groq - Use Groq SDK for fast inference (requires API key)
     5. Ollama - Access to local or remote Ollama models (requires running Ollama server)
+    6. Nvidia - High-performance inference via NVIDIA NIM (requires API key)
+    7. Google AI - Google Gemini API with free tier (requires API key)
     
     Attributes:
         provider: Engine type - 'local', 'huggingface', 'openrouter',
-                  'groq_package', or 'ollama'
+                  'groq_package', 'ollama', 'nvidia', or 'google_ai'
         model_id: Identifier for the model (e.g., 'Qwen/Qwen2-VL-2B-Instruct')
         api_key: API key for cloud providers (not used for local/ollama_free)
         system_prompt: Custom system prompt for LLM-based models
@@ -108,6 +110,7 @@ class EngineConfig:
     model_id: str = ""
     api_key: str = ""
     nvidia_api_key: str = ""  # New field for Nvidia NIM
+    google_ai_api_key: str = ""  # Google AI Studio (Gemini API) key
     system_prompt: str = ""  # For OpenRouter/LLMs
     task: str = "image-to-text"  # Default task
     confidence_threshold: int = 50  # Confidence threshold (1-100) for category/keyword filtering
