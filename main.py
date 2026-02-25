@@ -18,6 +18,19 @@ import os
 import logging
 
 # ============================================================================
+# PYTHONW COMPATIBILITY - NULL STREAM SAFETY
+# ============================================================================
+# When launched via pythonw.exe (e.g. from start_synapic.bat), sys.stdout and
+# sys.stderr are None. This silently breaks logging.StreamHandler, print(),
+# and any cleanup code that relies on logging for error reporting — causing
+# memory leak fixes to be silently skipped.
+# Replace None streams with devnull wrappers so all downstream code works.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, 'w')
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, 'w')
+
+# ============================================================================
 # WINDOWS COMPATIBILITY - HUGGING FACE CACHE SYMLINKS
 # ============================================================================
 # On Windows, Hugging Face Hub tries to use symlinks for caching which requires

@@ -139,7 +139,7 @@ echo.
 :: 4. Launch Main
 if exist "main.py" (
     echo [*] Launching application...
-    start "" pythonw "main.py"
+    start "" python "main.py"
 ) else (
     color 0C
     echo [ERROR] main.py not found in current directory!

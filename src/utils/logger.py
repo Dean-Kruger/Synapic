@@ -349,11 +349,14 @@ def setup_logging(
     root_logger.addHandler(file_handler)
     
     # Console handler - captures INFO and above
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(console_level)
-    console_handler.setFormatter(formatter)
-    console_handler.addFilter(SensitiveDataFilter())
-    root_logger.addHandler(console_handler)
+    # Only add if stdout is a real writable stream (not None/devnull from pythonw)
+    _real_stdout = sys.stdout is not None and hasattr(sys.stdout, 'write') and not getattr(sys.stdout, 'name', '') == os.devnull
+    if _real_stdout:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(console_level)
+        console_handler.setFormatter(formatter)
+        console_handler.addFilter(SensitiveDataFilter())
+        root_logger.addHandler(console_handler)
     
     # Store original streams before redirection (for restoration during shutdown)
     global _stdout_logger, _stderr_logger, _original_stdout, _original_stderr
@@ -362,11 +365,13 @@ def setup_logging(
     
     # Redirect stdout and stderr to also write to log file
     # Only redirect if not already redirected to avoid double wrapping
-    if not isinstance(sys.stdout, StreamToLogger):
+    # Skip redirection under pythonw where streams are devnull placeholders
+    if _real_stdout and not isinstance(sys.stdout, StreamToLogger):
         _stdout_logger = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO, sys.stdout)
         sys.stdout = _stdout_logger
         
-    if not isinstance(sys.stderr, StreamToLogger):
+    _real_stderr = sys.stderr is not None and hasattr(sys.stderr, 'write') and not getattr(sys.stderr, 'name', '') == os.devnull
+    if _real_stderr and not isinstance(sys.stderr, StreamToLogger):
         _stderr_logger = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR, sys.stderr)
         sys.stderr = _stderr_logger
     
