@@ -123,9 +123,8 @@ class EngineConfig:
     # Index for Groq API key rotation (not persisted)
     groq_current_key_index: int = 0
 
-    # Ollama settings
-    ollama_host: str = ""  # Host URL for Ollama (e.g., http://localhost:11434)
-    ollama_api_key: str = ""  # API key for cloud/remote Ollama instances
+    # Set of exhausted Groq API keys for the current run cycle (not persisted)
+    groq_exhausted_keys: set = field(default_factory=set)
 
     @property
     def groq_api_key(self) -> str:
@@ -133,8 +132,18 @@ class EngineConfig:
         keys = self.get_groq_key_list()
         if not keys:
             return ""
+            
+        available_keys = [k for k in keys if k not in self.groq_exhausted_keys]
+        if not available_keys:
+            return keys[self.groq_current_key_index % len(keys)]
+            
         idx = self.groq_current_key_index % len(keys)
-        return keys[idx]
+        candidate = keys[idx]
+        while candidate in self.groq_exhausted_keys:
+            idx = (idx + 1) % len(keys)
+            candidate = keys[idx]
+            
+        return candidate
 
     @groq_api_key.setter
     def groq_api_key(self, value: str):
@@ -148,13 +157,25 @@ class EngineConfig:
         return [k.strip() for k in self.groq_api_keys.splitlines() if k.strip()]
 
     def rotate_groq_key(self) -> str:
-        """Advance to the next Groq API key and return it. Returns '' if no keys."""
+        """Advance to the next non-exhausted Groq API key and return it. Returns '' if no keys."""
         keys = self.get_groq_key_list()
         if not keys:
             return ""
+            
+        start_idx = self.groq_current_key_index
         self.groq_current_key_index = (self.groq_current_key_index + 1) % len(keys)
-        new_key = keys[self.groq_current_key_index]
-        return new_key
+        
+        while keys[self.groq_current_key_index] in self.groq_exhausted_keys:
+            self.groq_current_key_index = (self.groq_current_key_index + 1) % len(keys)
+            if self.groq_current_key_index == start_idx:
+                break
+                
+        return keys[self.groq_current_key_index]
+
+    def mark_groq_key_exhausted(self, key: str):
+        """Mark a Groq API key as exhausted for the current run cycle."""
+        if key:
+            self.groq_exhausted_keys.add(key)
 
 # ============================================================================
 # SESSION CLASS
@@ -283,5 +304,8 @@ class Session:
         self.processed_items = 0
         self.failed_items = 0
         self.results = deque(maxlen=500)  # Bounded: keeps last 500 results
+        
+        # Clear exhausted API keys for the new run cycle
+        self.engine.groq_exhausted_keys.clear()
         
         self.logger.info("Session statistics reset complete")

@@ -49,6 +49,7 @@ def save_config(session: Session):
         }
         # Remove transient runtime fields that shouldn't be persisted
         data["engine"].pop("groq_current_key_index", None)
+        data["engine"].pop("groq_exhausted_keys", None)
         
         # Log the configuration being saved (with sensitive data masked)
         log_config("Saving Configuration", data, logger)

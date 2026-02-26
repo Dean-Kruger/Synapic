@@ -262,10 +262,14 @@ class GroqPackageClient:
         if not keys:
             return "Error: No Groq API keys configured."
 
+        available_keys_count = len([k for k in keys if k not in engine_config.groq_exhausted_keys])
+        if available_keys_count == 0:
+            return "Error: All configured Groq API keys have been exhausted for this run cycle."
+
         num_keys = len(keys)
         last_error = ""
 
-        for attempt in range(num_keys):
+        for attempt in range(available_keys_count):
             current_key = engine_config.groq_api_key  # property reads current index
             self.api_key = current_key  # update client key
 
@@ -289,16 +293,21 @@ class GroqPackageClient:
                     "authentication", "invalid api key", "401", "403",
                     "insufficient_quota", "tokens per",
                 ])
-                if should_rotate and num_keys > 1:
-                    old_key_suffix = current_key[-4:] if len(current_key) >= 4 else "****"
-                    new_key = engine_config.rotate_groq_key()
-                    new_key_suffix = new_key[-4:] if len(new_key) >= 4 else "****"
-                    logger.warning(
-                        f"Groq API error with key ...{old_key_suffix}, rotating to ...{new_key_suffix}: {response}"
-                    )
-                    continue
+                if should_rotate:
+                    engine_config.mark_groq_key_exhausted(current_key)
+                    if num_keys > 1:
+                        old_key_suffix = current_key[-4:] if len(current_key) >= 4 else "****"
+                        new_key = engine_config.rotate_groq_key()
+                        new_key_suffix = new_key[-4:] if len(new_key) >= 4 else "****"
+                        logger.warning(
+                            f"Groq API error with key ...{old_key_suffix}, marking exhausted and rotating to ...{new_key_suffix}: {response}"
+                        )
+                        continue
+                    else:
+                        # Only one key which is now exhausted — return immediately
+                        return response
                 else:
-                    # Non-rotatable error or only one key — return immediately
+                    # Non-rotatable error — return immediately
                     return response
             else:
                 # Success

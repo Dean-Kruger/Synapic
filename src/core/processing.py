@@ -746,21 +746,23 @@ class ProcessingManager:
                 )
                 
                 # Call Groq API with the image — uses key rotation on quota/rate-limit errors
-                num_keys = len(engine.get_groq_key_list())
-                if num_keys > 1:
-                    self.logger.info(f"Using Groq API key rotation ({num_keys} keys available)")
-                    response_text = groq_client.chat_with_image_rotating(
-                        engine_config=engine,
-                        model=model_id,
-                        prompt=prompt,
-                        image_path=str(path)
-                    )
-                else:
-                    response_text = groq_client.chat_with_image(
-                        model=model_id,
-                        prompt=prompt,
-                        image_path=str(path)
-                    )
+                self.logger.info("Using Groq API key rotation")
+                response_text = groq_client.chat_with_image_rotating(
+                    engine_config=engine,
+                    model=model_id,
+                    prompt=prompt,
+                    image_path=str(path)
+                )
+
+                if isinstance(response_text, str) and "Error: All configured Groq API keys have been exhausted" in response_text:
+                    self.logger.error("Groq API key exhaustion reached. Aborting pipeline.")
+                    self.log("Groq API quota exhausted. Aborting job.")
+                    # Setting stop_event will halt the main fetch loop
+                    if hasattr(self, 'stop_event') and not self.stop_event.is_set():
+                        self.stop_event.set()
+                    # Raising RuntimeError breaks out of this specific item correctly marking it failed,
+                    # and the loop checks stop_event on the next iteration.
+                    raise RuntimeError("All Groq API keys have been exhausted for this run cycle.")
                 
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]
