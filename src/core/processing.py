@@ -329,7 +329,8 @@ class ProcessingManager:
                             f"{grand_total_processed} items total"
                         )
                         self.log("Job aborted by user.")
-                        del items
+                        # items will be freed by the outer stop_event guard below;
+                        # do NOT del here to avoid UnboundLocalError at line 358.
                         break
 
                     self._process_single_item(item)
@@ -355,7 +356,8 @@ class ProcessingManager:
 
                 # Stop pagination if abort was requested
                 if self.stop_event.is_set():
-                    del items
+                    if 'items' in dir():
+                        del items
                     break
 
                 # Stop if auto-pagination is off OR this was a partial page

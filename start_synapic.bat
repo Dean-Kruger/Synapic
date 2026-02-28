@@ -136,10 +136,15 @@ echo                               LAUNCHING APP
 echo ===============================================================================
 echo.
 
-:: 4. Launch Main
+:: 4. Launch Main (windowless — no console will appear)
 if exist "main.py" (
-    echo [*] Launching application...
-    start "" python "main.py"
+    :: Prefer pythonw.exe from the venv (suppresses console window).
+    :: Fall back to the system pythonw if the venv one is missing.
+    if exist ".venv\Scripts\pythonw.exe" (
+        start "" .venv\Scripts\pythonw.exe "main.py"
+    ) else (
+        start "" pythonw "main.py"
+    )
 ) else (
     color 0C
     echo [ERROR] main.py not found in current directory!
@@ -148,3 +153,4 @@ if exist "main.py" (
 )
 
 endlocal
+exit
