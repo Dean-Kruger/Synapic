@@ -85,7 +85,7 @@ class EngineConfig:
     """
     Configuration for the AI tagging engine.
     
-    Supports seven types of providers:
+    Supports eight types of providers:
     1. Local - Run models locally using Hugging Face Transformers
     2. Hugging Face - Use Hugging Face Inference API (requires API key)
     3. OpenRouter - Use OpenRouter API for LLM-based tagging (requires API key)
@@ -93,10 +93,11 @@ class EngineConfig:
     5. Ollama - Access to local or remote Ollama models (requires running Ollama server)
     6. Nvidia - High-performance inference via NVIDIA NIM (requires API key)
     7. Google AI - Google Gemini API with free tier (requires API key)
+    8. Cerebras - Ultra-fast LLM inference via Cerebras Cloud (requires API key)
     
     Attributes:
         provider: Engine type - 'local', 'huggingface', 'openrouter',
-                  'groq_package', 'ollama', 'nvidia', or 'google_ai'
+                  'groq_package', 'ollama', 'nvidia', 'google_ai', or 'cerebras'
         model_id: Identifier for the model (e.g., 'Qwen/Qwen2-VL-2B-Instruct')
         api_key: API key for cloud providers (not used for local/ollama_free)
         system_prompt: Custom system prompt for LLM-based models
@@ -106,11 +107,12 @@ class EngineConfig:
                             Lower = more permissive, Higher = more strict
         device: Inference device for local models - 'cpu' or 'cuda' (GPU)
     """
-    provider: str = "huggingface"  # 'local', 'huggingface', 'openrouter', 'groq_package', 'ollama', 'nvidia'
+    provider: str = "huggingface"  # 'local', 'huggingface', 'openrouter', 'groq_package', 'ollama', 'nvidia', 'google_ai', 'cerebras'
     model_id: str = ""
     api_key: str = ""
-    nvidia_api_key: str = ""  # New field for Nvidia NIM
+    nvidia_api_key: str = ""  # Nvidia NIM API key
     google_ai_api_key: str = ""  # Google AI Studio (Gemini API) key
+    cerebras_api_key: str = ""  # Cerebras Inference API key
     system_prompt: str = ""  # For OpenRouter/LLMs
     task: str = "image-to-text"  # Default task
     confidence_threshold: int = 50  # Confidence threshold (1-100) for category/keyword filtering
@@ -119,6 +121,9 @@ class EngineConfig:
     # Groq integration settings (optional)
     groq_base_url: str = ""  # Base URL for Groq API
     groq_api_keys: str = ""  # Newline-separated list of Groq API keys (supports rotation)
+
+    # Ollama integration settings
+    ollama_host: str = "http://localhost:11434"  # Ollama server host URL
 
     # Index for Groq API key rotation (not persisted)
     groq_current_key_index: int = 0

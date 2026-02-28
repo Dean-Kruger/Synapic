@@ -86,6 +86,14 @@ except ImportError:
     GoogleAIClient = None
     GOOGLE_AI_AVAILABLE = False
 
+# Optional Cerebras Inference integration
+try:
+    from src.integrations.cerebras_client import CerebrasClient
+    CEREBRAS_AVAILABLE = True
+except ImportError:
+    CerebrasClient = None
+    CEREBRAS_AVAILABLE = False
+
 # Optional metadata verification (for testing/debugging)
 # This module may not be available in packaged distributions
 try:
@@ -273,6 +281,18 @@ class ProcessingManager:
                 if not self._api_client.is_available():
                     raise RuntimeError("Google AI API key not configured.")
                 self.logger.info("Google AI client initialized (reused for all items)")
+            elif engine.provider == "cerebras":
+                if not CEREBRAS_AVAILABLE:
+                    raise RuntimeError(
+                        "Cerebras SDK not available. "
+                        "Please install it with: pip install cerebras_cloud_sdk"
+                    )
+                self._api_client = CerebrasClient(api_key=engine.cerebras_api_key)
+                if not self._api_client.is_available():
+                    raise RuntimeError(
+                        "Cerebras API key not configured or SDK not installed."
+                    )
+                self.logger.info("Cerebras client initialized (reused for all items)")
 
             # ================================================================
             # STAGE 2: PAGINATED FETCH + PROCESS LOOP
@@ -862,6 +882,38 @@ class ProcessingManager:
                     image_path=str(path)
                 )
                 
+                # Format result to match expected structure for tag extraction
+                result = [{"generated_text": response_text}]
+                del response_text  # Free the original string copy
+
+            elif engine.provider == "cerebras":
+                # ---------------------------------------------------------------
+                # CEREBRAS INFERENCE (Cloud-based via Cerebras SDK — world's fastest LLM)
+                # ---------------------------------------------------------------
+                # Uses the reusable Cerebras client initialized in _run_job()
+                cerebras_client = self._api_client
+
+                # Use configured model (default: fast 8B model)
+                model_id = engine.model_id or "llama3.1-8b"
+
+                # Create a detailed prompt for image analysis
+                prompt = (
+                    "Analyze this image and provide a detailed response in "
+                    "JSON format with these keys:\n"
+                    "- 'description': A detailed description of the image content\n"
+                    "- 'category': A single broad category "
+                    "(e.g., 'Nature', 'Architecture', 'People')\n"
+                    "- 'keywords': A list of 5-10 relevant tags/keywords\n\n"
+                    "Return ONLY the raw JSON object, no additional text."
+                )
+
+                # Call Cerebras with the image path
+                response_text = cerebras_client.chat_with_image(
+                    model_name=model_id,
+                    prompt=prompt,
+                    image_path=str(path)
+                )
+
                 # Format result to match expected structure for tag extraction
                 result = [{"generated_text": response_text}]
                 del response_text  # Free the original string copy
