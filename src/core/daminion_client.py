@@ -409,24 +409,26 @@ class DaminionClient:
         start_index: int = 0
     ) -> List[Dict]:
         """Retrieve items matching filters with pagination.
-        
+
+        **Contract:** This method always returns *at most one batch* of up to
+        500 items starting at ``start_index``.  External callers (e.g.
+        ``ProcessingManager._run_job``) are responsible for advancing
+        ``start_index`` by 500 on each call until an empty or partial batch
+        signals that all records have been returned.
+
         Args:
-            start_index: Offset to start fetching from. When the caller manages
-                         pagination externally (e.g. ProcessingManager page loop)
-                         this should be set to `page_number * 500`.  The method
-                         will fetch exactly one batch of up to 500 items starting
-                         at this offset.
+            start_index: Offset to start fetching from. Pass ``0`` for the
+                         first page, ``500`` for the second, etc.
         """
         try:
             items = []
-            # When start_index is provided the caller drives pagination, so we
-            # only fetch ONE page of 500 items (not an unlimited internal loop).
+            # Always return a single batch – the ProcessingManager outer loop
+            # is responsible for driving pagination across pages.
             limit = max_items if max_items and max_items > 0 else float('inf')
             batch_size = 500 if limit > 500 else int(limit)
             current_index = start_index
-            # If the caller supplies start_index > 0 they are doing external
-            # pagination — stop after a single batch.
-            single_page = start_index > 0
+            # Always stop after one batch; the caller advances start_index.
+            single_page = True
             
             logger.info(f"[FETCH DEBUG] get_items_filtered called: scope={scope}, max_items={max_items}, limit={limit}, batch_size={batch_size}")
             logger.info(f"[FETCH DEBUG] saved_search_id={saved_search_id}, collection_id={collection_id}, search_term={search_term}")
