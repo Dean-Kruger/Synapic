@@ -59,7 +59,6 @@ from src.utils.logger import setup_logging
 log_file = setup_logging()
 
 # Import the main application UI after logging is configured
-# Import the main application UI after logging is configured
 import customtkinter
 import tkinter
 
