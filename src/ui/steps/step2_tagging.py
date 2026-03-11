@@ -356,7 +356,7 @@ class ConfigDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.session = session
         self.title("Select Engine")
-        self.geometry("700x550")
+        self.geometry("820x600")
         
         # Background worker for thread management (single persistent thread)
         self._worker = BackgroundWorker(name="ConfigDialogWorker")
@@ -625,49 +625,51 @@ class ConfigDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             info_frame,
             text="🦙 Ollama — Run LLMs locally or connect to a remote server.",
-            wraplength=550,
+            wraplength=600,
             font=("Roboto", 11),
             text_color="white"
         ).pack(padx=10, pady=8)
 
-        # Host Configuration
-        row_host = ctk.CTkFrame(self.tab_ollama, fg_color="transparent")
-        row_host.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        
-        # Grid layout for host row to handle multiple inputs
-        row_host.grid_columnconfigure(1, weight=1)
-        
-        # Host Field
-        ctk.CTkLabel(row_host, text="Host URL:").grid(row=0, column=0, padx=(0,5), sticky="w")
+        # Host / Key Configuration — split into two sub-rows for breathing room
+        config_frame = ctk.CTkFrame(self.tab_ollama, fg_color="transparent")
+        config_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        config_frame.grid_columnconfigure(1, weight=1)
+
+        # ── Sub-row 0: Host URL + Cloud / Local shortcuts
+        ctk.CTkLabel(config_frame, text="Host URL:").grid(row=0, column=0, padx=(0, 5), sticky="w")
         self.ollama_host_var = ctk.StringVar(value=self.session.engine.ollama_host or "http://localhost:11434")
-        ctk.CTkEntry(row_host, textvariable=self.ollama_host_var, width=200).grid(row=0, column=1, sticky="ew", padx=5)
+        ctk.CTkEntry(config_frame, textvariable=self.ollama_host_var).grid(
+            row=0, column=1, sticky="ew", padx=5
+        )
 
-        # Helper Buttons (Cloud/Local)
-        btn_frame = ctk.CTkFrame(row_host, fg_color="transparent")
-        btn_frame.grid(row=0, column=2, padx=5)
-        
-        ctk.CTkButton(btn_frame, text="Cloud", width=50, height=24, 
-                      font=("Roboto", 10), fg_color="#4B4B4B", hover_color="#5B5B5B",
-                      command=lambda: self.ollama_host_var.set("https://ollama.com")).pack(side="left", padx=2)
-        
-        ctk.CTkButton(btn_frame, text="Local", width=50, height=24,
-                      font=("Roboto", 10), fg_color="#4B4B4B", hover_color="#5B5B5B",
-                      command=lambda: self.ollama_host_var.set("http://localhost:11434")).pack(side="left", padx=2)
-
-        # API Key Field
-        ctk.CTkLabel(row_host, text="API Key:").grid(row=0, column=3, padx=(10,5), sticky="w")
-        self.ollama_key_var = ctk.StringVar(value=self.session.engine.ollama_api_key or "")
-        ctk.CTkEntry(row_host, textvariable=self.ollama_key_var, show="*", width=150).grid(row=0, column=4, sticky="ew", padx=5)
-
+        shortcut_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        shortcut_frame.grid(row=0, column=2, padx=5)
         ctk.CTkButton(
-            row_host,
-            text="Refresh",
-            command=self._load_and_display_ollama_models,
-            width=80
-        ).grid(row=0, column=5, padx=(10,0))
-        
-        self._ollama_status = ctk.CTkLabel(row_host, text="", text_color="gray")
-        self._ollama_status.grid(row=0, column=6, padx=10)
+            shortcut_frame, text="Cloud", width=55, height=26,
+            font=("Roboto", 10), fg_color="#4B4B4B", hover_color="#5B5B5B",
+            command=lambda: self.ollama_host_var.set("https://ollama.com")
+        ).pack(side="left", padx=2)
+        ctk.CTkButton(
+            shortcut_frame, text="Local", width=55, height=26,
+            font=("Roboto", 10), fg_color="#4B4B4B", hover_color="#5B5B5B",
+            command=lambda: self.ollama_host_var.set("http://localhost:11434")
+        ).pack(side="left", padx=2)
+
+        # ── Sub-row 1: API Key + Refresh + Status
+        ctk.CTkLabel(config_frame, text="API Key:").grid(row=1, column=0, padx=(0, 5), pady=(6, 0), sticky="w")
+        self.ollama_key_var = ctk.StringVar(value=self.session.engine.ollama_api_key or "")
+        ctk.CTkEntry(config_frame, textvariable=self.ollama_key_var, show="*").grid(
+            row=1, column=1, sticky="ew", padx=5, pady=(6, 0)
+        )
+
+        key_btn_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
+        key_btn_frame.grid(row=1, column=2, padx=5, pady=(6, 0))
+        ctk.CTkButton(
+            key_btn_frame, text="Refresh",
+            command=self._load_and_display_ollama_models, width=80
+        ).pack(side="left", padx=2)
+        self._ollama_status = ctk.CTkLabel(key_btn_frame, text="", text_color="gray")
+        self._ollama_status.pack(side="left", padx=6)
 
         # Models list
         self._ollama_models_list = ctk.CTkScrollableFrame(
@@ -682,7 +684,7 @@ class ConfigDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(row_sel, text="Selected:").pack(side="left")
         self._ollama_model_entry = ctk.CTkEntry(row_sel, width=300)
-        
+
         default_model = (
             self.session.engine.model_id
             if self.session.engine.provider == "ollama" and self.session.engine.model_id
@@ -1161,12 +1163,6 @@ class ConfigDialog(ctk.CTkToplevel):
         )
         self.destroy()
 
-    def destroy(self):
-        """Override destroy to clean up worker thread."""
-        if hasattr(self, '_worker'):
-            self._worker.shutdown()
-        super().destroy()
-
     # ================================================================
     # CEREBRAS INFERENCE TAB METHODS
     # ================================================================
@@ -1344,6 +1340,16 @@ class ConfigDialog(ctk.CTkToplevel):
             text=f"Saved: {model_id}", text_color="green"
         )
         self.destroy()
+
+    # ================================================================
+    # CLEANUP
+    # ================================================================
+
+    def destroy(self):
+        """Override destroy to clean up worker thread."""
+        if hasattr(self, '_worker'):
+            self._worker.shutdown()
+        super().destroy()
 
 
     def init_local_tab(self):
