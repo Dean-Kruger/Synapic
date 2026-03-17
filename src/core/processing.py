@@ -298,24 +298,60 @@ class ProcessingManager:
             # STAGE 2: PAGINATED FETCH + PROCESS LOOP
             # ================================================================
             # For Daminion sources the API caps every response at 500 records.
-            # When auto_paginate=True we keep requesting the next page until we
-            # get a partial (< 500) response, meaning we have reached the end.
+            # When auto_paginate=True we use a "reload-search" strategy:
+            # after each batch is processed we re-fetch from offset 0 instead
+            # of advancing the offset.  Items that were just tagged are
+            # excluded by the server's own untagged filter, so each fresh
+            # fetch naturally returns the next set of untagged items without
+            # any risk of re-processing already-tagged records.
             # For local sources offset is ignored and only one pass is made.
-            offset = 0
             page_num = 0
             grand_total_processed = 0
+            last_page_ids: set = set()  # Guard against infinite loops
+
+            # ================================================================
+            # PRE-FLIGHT COUNT — log the server-side total before fetching
+            # ================================================================
+            # For Daminion sources: ask the server how many records match the
+            # current filters so we can confirm every page is retrieved.
+            ds = self.session.datasource
+            if ds.type == "daminion" and self.session.daminion_client:
+                try:
+                    untagged_fields = []
+                    if ds.daminion_untagged_keywords: untagged_fields.append("Keywords")
+                    if ds.daminion_untagged_categories: untagged_fields.append("Category")
+                    if ds.daminion_untagged_description: untagged_fields.append("Description")
+                    expected_total = self.session.daminion_client.get_filtered_item_count(
+                        scope=ds.daminion_scope,
+                        saved_search_id=ds.daminion_saved_search_id or ds.daminion_saved_search,
+                        collection_id=ds.daminion_collection_id or ds.daminion_catalog_id,
+                        search_term=ds.daminion_search_term,
+                        untagged_fields=untagged_fields,
+                        status_filter=ds.status_filter,
+                        force_refresh=True,
+                    )
+                    self.logger.info(
+                        f"PRE-FLIGHT COUNT: server reports {expected_total} record(s) "
+                        f"matching current filters (scope={ds.daminion_scope})"
+                    )
+                    self.log(
+                        f"Server record count: {expected_total} item(s) "
+                        f"matching filters before processing starts."
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Pre-flight count failed (non-fatal): {e}")
 
             while True:
                 page_num += 1
                 if page_num == 1:
                     self.log("Fetching items...")
                 else:
-                    self.log(f"Fetching next page (offset {offset})...")
+                    self.log("Reloading search for next batch...")
 
                 # ============================================================
-                # FETCH ONE PAGE
+                # FETCH ONE PAGE (always from offset 0 – reload-search strategy)
                 # ============================================================
-                items = self._fetch_items(offset=offset)
+                items = self._fetch_items(offset=0)
 
                 if not items:
                     if page_num == 1:
@@ -325,18 +361,42 @@ class ProcessingManager:
                     break
 
                 page_count = len(items)
+
+                # ── Infinite-loop guard ──────────────────────────────────────
+                # If the server returns the same IDs as the previous batch
+                # (e.g. the untagged filter is not applied server-side), stop
+                # rather than re-processing the same records forever.
+                current_ids = {item.get('id') if isinstance(item, dict) else str(item)
+                               for item in items}
+                if current_ids and current_ids == last_page_ids:
+                    self.logger.warning(
+                        "Reload-search returned identical items as the previous batch — "
+                        "stopping to avoid infinite loop. "
+                        "The server-side filter may not be filtering tagged items."
+                    )
+                    self.log(
+                        "Warning: same items returned after reload — pagination stopped. "
+                        "Check that the untagged filter is applied server-side."
+                    )
+                    del items
+                    break
+                last_page_ids = current_ids
+                # ─────────────────────────────────────────────────────────────
+
                 self.session.total_items += page_count
                 self.logger.info(
                     f"Page {page_num}: {page_count} items fetched "
-                    f"(offset={offset}, auto_paginate={self.auto_paginate})"
+                    f"(reload-search, auto_paginate={self.auto_paginate})"
                 )
                 self.log(f"Page {page_num}: {page_count} item(s) to process.")
 
                 # Reset per-page counter; overall progress uses session counters
+                # more_pages=True: this is a page boundary, job is not done yet
                 self.progress(
                     self.session.processed_items / max(self.session.total_items, 1),
                     self.session.processed_items,
                     self.session.total_items,
+                    more_pages=True,
                 )
 
                 # ============================================================
@@ -352,7 +412,7 @@ class ProcessingManager:
                         )
                         self.log("Job aborted by user.")
                         # items will be freed by the outer stop_event guard below;
-                        # do NOT del here to avoid UnboundLocalError at line 358.
+                        # do NOT del here to avoid UnboundLocalError.
                         break
 
                     self._process_single_item(item)
@@ -370,10 +430,21 @@ class ProcessingManager:
                         )
 
                     pct = self.session.processed_items / max(self.session.total_items, 1)
+                    # Determine whether more pages will follow this one.
+                    # A page is "definitely the last" if:
+                    #   - auto_paginate is off (never fetches more), OR
+                    #   - this page is partial (< 500 items, server is exhausted)
+                    # Otherwise we conservatively keep more_pages=True even on the
+                    # last item of a full page — the empty fetch that follows will
+                    # simply exit the loop without emitting a misleading pct=1.0.
+                    _is_last_page = (not self.auto_paginate) or (page_count < DAMINION_PAGE_SIZE)
+                    _last_item_on_page = (i == page_count - 1)
+                    _job_truly_done = _is_last_page and _last_item_on_page
                     self.progress(
                         pct,
                         self.session.processed_items,
                         self.session.total_items,
+                        more_pages=not _job_truly_done,
                     )
 
                 # Stop pagination if abort was requested
@@ -383,42 +454,17 @@ class ProcessingManager:
                     break
 
                 # Stop if auto-pagination is off OR this was a partial page
-                # (partial page = server has no more records)
+                # (partial page = server has no more untagged records)
                 if not self.auto_paginate or page_count < DAMINION_PAGE_SIZE:
                     if self.auto_paginate and page_count < DAMINION_PAGE_SIZE:
                         self.log(
-                            f"Last page received ({page_count} items) — "
-                            "pagination complete."
+                            f"Last batch received ({page_count} items) — "
+                            "all items processed."
                         )
                     del items
                     break
 
-                # Advance to next page
-                ds = self.session.datasource
-                is_consuming_results = (
-                    ds.type == "daminion" and
-                    (getattr(ds, 'daminion_untagged_keywords', False) or
-                     getattr(ds, 'daminion_untagged_categories', False) or
-                     getattr(ds, 'daminion_untagged_description', False))
-                )
-
-                if is_consuming_results:
-                    # When filtering for untagged items, processing removes them from the
-                    # result set. Thus, the next page of untagged items shifts into
-                    # the current offset. We only advance the offset by the number of
-                    # items that FAILED to process (since they remain untagged and stay in results).
-                    failed_in_batch = page_count - (self.session.processed_items - processed_before_batch)
-                    offset += max(0, failed_in_batch)
-
-                    self.logger.debug(
-                        f"Consuming results mode: advanced offset by {failed_in_batch} "
-                        f"(failed items). New offset={offset}"
-                    )
-                else:
-                    # Standard pagination: advance by page size
-                    offset += DAMINION_PAGE_SIZE
-
-                del items  # Free before fetching next page
+                del items  # Free before fetching next batch
 
             # ================================================================
             # STAGE 3: COMPLETION & CLEANUP
@@ -436,6 +482,7 @@ class ProcessingManager:
             # Explicitly unload model to free memory/VRAM
             if hasattr(self, 'model') and self.model:
                 self.logger.info("Unloading local model and performing memory cleanup")
+                self.log("Cleaning up: unloading model from memory (this may take a moment)...")
                 self.model = None  # Release reference
                 
                 # Clear CUDA cache if GPU was used
@@ -443,6 +490,7 @@ class ProcessingManager:
                     try:
                         import torch
                         if torch.cuda.is_available():
+                            self.log("Cleaning up: flushing GPU VRAM cache...")
                             torch.cuda.empty_cache()
                             self.logger.info("CUDA cache cleared")
                     except ImportError:
