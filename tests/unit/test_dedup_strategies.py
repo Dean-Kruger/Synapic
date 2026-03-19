@@ -1,3 +1,11 @@
+"""
+Legacy Dedup Strategy Unit Tests
+================================
+
+This file covers dedup strategy behavior from the higher-level unit-test layer.
+It complements the narrower tests under `tests/unit/core/dedup`.
+"""
+
 import unittest
 from unittest.mock import MagicMock
 import sys

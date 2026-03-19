@@ -1,3 +1,11 @@
+"""
+Unit Tests for Dedup Keep-Selection Strategies
+==============================================
+
+These tests verify that the dedup strategy helpers choose the expected "keep"
+item when duplicate groups are evaluated under different selection rules.
+"""
+
 import pytest
 from unittest.mock import patch, MagicMock
 import os

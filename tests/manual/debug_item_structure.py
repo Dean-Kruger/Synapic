@@ -1,3 +1,12 @@
+"""
+Manual Daminion Item Structure Debugger
+=======================================
+
+Developer helper for printing and inspecting raw Daminion item payloads so the
+application's parsing logic can be updated confidently when the API shape
+changes.
+"""
+
 import sys
 import logging
 from pathlib import Path

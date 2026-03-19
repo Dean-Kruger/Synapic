@@ -272,10 +272,14 @@ class StepDedup(ctk.CTkFrame):
     def _build_ui(self):
         """Build the deduplication UI."""
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1)  # Results area expands
+        self.grid_rowconfigure(0, weight=1)
+
+        self.container = ctk.CTkScrollableFrame(self)
+        self.container.grid(row=0, column=0, sticky="nsew")
+        self.container.grid_columnconfigure(0, weight=1)
         
         # ===== Header =====
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
+        header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
         
         title = ctk.CTkLabel(
@@ -294,8 +298,11 @@ class StepDedup(ctk.CTkFrame):
         back_btn.pack(side="right")
         
         # ===== Settings Panel =====
-        settings_frame = ctk.CTkFrame(self)
+        settings_frame = ctk.CTkFrame(self.container)
         settings_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
+        settings_frame.grid_columnconfigure(1, weight=1)
+        settings_frame.grid_columnconfigure(3, weight=1)
+        settings_frame.grid_columnconfigure(6, weight=1)
         
         # Algorithm selection
         algo_label = ctk.CTkLabel(settings_frame, text="Algorithm:")
@@ -347,7 +354,7 @@ class StepDedup(ctk.CTkFrame):
             settings_frame, text="", font=ctk.CTkFont(size=10),
             text_color="red"
         )
-        self.action_warning_label.grid(row=1, column=5, columnspan=2, padx=5, pady=0, sticky="w")
+        self.action_warning_label.grid(row=1, column=0, columnspan=6, padx=15, pady=0, sticky="w")
         
         # Scan button
         self.scan_btn = ctk.CTkButton(
@@ -358,10 +365,10 @@ class StepDedup(ctk.CTkFrame):
             hover_color=("darkgreen", "green"),
             width=160
         )
-        self.scan_btn.grid(row=0, column=7, padx=(20, 15), pady=10)
+        self.scan_btn.grid(row=0, column=7, rowspan=2, padx=(20, 15), pady=10, sticky="e")
         
         # ===== Progress Bar (own row below settings) =====
-        self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.progress_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         self.progress_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=5)
         self.progress_frame.grid_remove()  # Hidden initially
         
@@ -382,7 +389,7 @@ class StepDedup(ctk.CTkFrame):
         self.abort_btn.pack(side="right", padx=10)
         
         # ===== Results Area =====
-        results_container = ctk.CTkFrame(self)
+        results_container = ctk.CTkFrame(self.container)
         results_container.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
         results_container.grid_columnconfigure(0, weight=1)
         results_container.grid_rowconfigure(0, weight=1)
@@ -403,7 +410,7 @@ class StepDedup(ctk.CTkFrame):
         self.initial_label.pack(pady=50)
         
         # ===== Footer =====
-        footer_frame = ctk.CTkFrame(self, fg_color="transparent")
+        footer_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         footer_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(10, 20))
         
         self.stats_label = ctk.CTkLabel(
@@ -473,7 +480,7 @@ class StepDedup(ctk.CTkFrame):
         )
         
         # Show progress
-        self.progress_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
+        self.progress_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=5)
         self.progress_bar.set(0)
         self.progress_label.configure(text="Refreshing items from Daminion...")
         self.scan_btn.configure(state="disabled")

@@ -1,3 +1,11 @@
+"""
+Manual Hugging Face Model Listing Probe
+======================================
+
+Ad hoc script for inspecting raw Hugging Face Hub model listing behavior during
+provider-search tuning. It is intentionally lightweight and developer-facing.
+"""
+
 from huggingface_hub import list_models, HfApi
 import logging
 

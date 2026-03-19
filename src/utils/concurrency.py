@@ -1,3 +1,23 @@
+"""
+Daemon-Friendly Concurrency Primitives
+======================================
+
+This module provides a deliberately small executor implementation tailored to
+Synapic's shutdown requirements.
+
+Why this exists instead of using `ThreadPoolExecutor` directly:
+- GUI applications often need worker threads that never block interpreter exit.
+- Standard executors use non-daemon threads, which can keep the process alive
+  if a window is closed while background work is still queued.
+- Synapic only needs a narrow subset of the futures interface, so a compact
+  purpose-built implementation keeps behavior easier to audit.
+
+The `DaemonThreadPoolExecutor` is intentionally conservative:
+- It supports `submit`, `map`, `shutdown`, and context-manager usage.
+- It favors predictable teardown over feature completeness.
+- It should be used where "finish quickly or let the process exit" is more
+  important than full parity with `concurrent.futures.ThreadPoolExecutor`.
+"""
 
 import threading
 import queue
@@ -13,7 +33,14 @@ class DaemonThreadPoolExecutor(Executor):
     """
     def __init__(self, max_workers=None, thread_name_prefix='DaemonWorker'):
         """
-        Initializes the executor with a maximum number of daemon worker threads.
+        Initialize the executor with daemon worker threads only.
+
+        Args:
+            max_workers: Maximum number of concurrent daemon workers to spawn.
+                A modest default is used because this executor mainly services
+                lightweight background tasks inside the desktop app.
+            thread_name_prefix: Prefix used when naming worker threads for
+                easier debugging in logs and thread dumps.
         """
         if max_workers is None:
             max_workers = 5  # Default
@@ -45,6 +72,7 @@ class DaemonThreadPoolExecutor(Executor):
         return f
 
     def _adjust_thread_count(self):
+        """Spawn daemon workers until the configured capacity is reached."""
         with self._lock:
             # If we haven't reached max workers, spawn a new one if needed
             # We just ensure we have max_workers running if queue is not empty, 
@@ -60,6 +88,7 @@ class DaemonThreadPoolExecutor(Executor):
                 self._threads.append(t)
 
     def _worker_loop(self):
+        """Continuously pull queued work items and resolve their futures."""
         while True:
             try:
                 item = self._work_queue.get()
@@ -86,6 +115,7 @@ class DaemonThreadPoolExecutor(Executor):
                 pass
 
     def shutdown(self, wait=True, cancel_futures=False):
+        """Stop accepting new work and optionally wait for active workers."""
         with self._lock:
             self._shutdown = True
             
@@ -120,4 +150,5 @@ class DaemonThreadPoolExecutor(Executor):
             yield f.result()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        """Ensure executor cleanup when used as a context manager."""
         self.shutdown(wait=True)

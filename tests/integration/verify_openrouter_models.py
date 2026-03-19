@@ -80,3 +80,10 @@ def test_openrouter_validation():
 
 if __name__ == "__main__":
     test_openrouter_validation()
+"""
+OpenRouter Model Discovery Smoke Checks
+======================================
+
+This script exercises the OpenRouter model discovery path and is intended for
+manual validation while iterating on provider integration behavior.
+"""

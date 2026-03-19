@@ -2,8 +2,19 @@
 Ollama Client
 =============
 
-Wrapper around the official 'ollama' Python library.
-Supports connecting to local or remote Ollama servers.
+Wrapper around the official `ollama` Python library.
+
+This client abstracts the differences between:
+- Local Ollama instances running on a workstation.
+- Remote or cloud-hosted Ollama-compatible endpoints.
+- Vision-capable versus text-only model selections.
+
+The rest of the application only needs a consistent interface for:
+- Connection testing
+- Model listing
+- Multimodal chat requests
+
+That keeps provider-specific request formatting isolated to one place.
 """
 
 import logging
@@ -17,7 +28,7 @@ VISION_MODEL_PATTERNS = [
 ]
 
 def is_vision_model(model_name: str) -> bool:
-    """Check if a model name indicates vision/multimodal capability."""
+    """Return True when a model name strongly suggests image understanding support."""
     if not model_name:
         return False
     return any(pattern in model_name.lower() for pattern in VISION_MODEL_PATTERNS)
@@ -82,7 +93,13 @@ class OllamaClient:
         return self.available
 
     def list_models(self) -> List[Dict[str, Any]]:
-        """List available models from the Ollama server."""
+        """
+        List available models from the configured Ollama endpoint.
+
+        The official client may return either rich objects or plain dict-like
+        responses depending on version, so this method normalises both shapes
+        into a UI-friendly list of metadata dictionaries.
+        """
         models = []
         if not self.available or not self.client:
             return models
@@ -131,7 +148,13 @@ class OllamaClient:
         return models
 
     def chat_with_image(self, model_name: str, prompt: str, image_path: str = None) -> str:
-        """Send a prompt with an image to an Ollama model."""
+        """
+        Send a multimodal request to an Ollama model.
+
+        Images are embedded as base64 rather than passed by file path so the
+        same code works for remote endpoints that cannot access the local file
+        system of the desktop app.
+        """
         if not self.available or not self.client:
             return "Ollama client not available"
         
@@ -197,7 +220,7 @@ class OllamaClient:
             return False
 
     def _format_size(self, size_bytes: int) -> str:
-        """Format bytes to human readable string (GB/MB)."""
+        """Format raw model size bytes into a short user-facing label."""
         if not size_bytes: return ""
         try:
             size_bytes = int(size_bytes)
@@ -210,4 +233,5 @@ class OllamaClient:
             return str(size_bytes)
 
     def __repr__(self) -> str:
+        """Return a concise diagnostic representation of the client."""
         return f"<OllamaClient host={self.host} available={self.available}>"

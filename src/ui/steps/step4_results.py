@@ -45,7 +45,7 @@ class Step4Results(ctk.CTkFrame):
         self.container = ctk.CTkFrame(self)
         self.container.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         self.container.grid_columnconfigure(0, weight=1)
-        self.container.grid_rowconfigure(2, weight=1)
+        self.container.grid_rowconfigure(3, weight=1)
 
         # Title
         title = ctk.CTkLabel(self.container, text="Step 4: Results & Review", font=("Roboto", 24, "bold"))
@@ -65,6 +65,16 @@ class Step4Results(ctk.CTkFrame):
         
         self.results_frame = ctk.CTkScrollableFrame(self.container, label_text="Filename | Status | Tags")
         self.results_frame.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
+
+        self.action_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.action_frame.grid(row=4, column=0, pady=20, sticky="ew")
+        self.action_frame.grid_columnconfigure(1, weight=1)
+        self.open_log_btn = ctk.CTkButton(self.action_frame, text="Open Log File", command=self.open_logs, fg_color="gray")
+        self.open_log_btn.grid(row=0, column=0, padx=20, sticky="w")
+        self.export_btn = ctk.CTkButton(self.action_frame, text="Export CSV", command=self.export_report)
+        self.export_btn.grid(row=0, column=1, padx=20, sticky="w")
+        self.new_session_btn = ctk.CTkButton(self.action_frame, text="New Session", command=self.new_session, fg_color="green", width=200)
+        self.new_session_btn.grid(row=0, column=2, padx=20, sticky="e")
         
     def tkraise(self, *args, **kwargs):
         super().tkraise(*args, **kwargs)
@@ -96,14 +106,6 @@ class Step4Results(ctk.CTkFrame):
         for res in s.results:
             self.add_result_row(res.get("filename", "?"), res.get("status", "?"), res.get("tags", ""))
 
-        # Actions
-        action_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        action_frame.grid(row=4, column=0, pady=20, sticky="ew")
-        
-        ctk.CTkButton(action_frame, text="Open Log File", command=self.open_logs, fg_color="gray").pack(side="left", padx=20)
-        ctk.CTkButton(action_frame, text="Export CSV", command=self.export_report).pack(side="left", padx=20)
-        ctk.CTkButton(action_frame, text="New Session", command=self.new_session, fg_color="green", width=200).pack(side="right", padx=20)
-
     def create_metric(self, parent, label: str, value: str, col: int, color: str = "white"):
         """
         Create a styled metric card.
@@ -125,13 +127,14 @@ class Step4Results(ctk.CTkFrame):
     def add_result_row(self, filename, status, tags):
         row = ctk.CTkFrame(self.results_frame)
         row.pack(fill="x", pady=2)
+        row.grid_columnconfigure(2, weight=1)
         
-        ctk.CTkLabel(row, text=filename, width=150, anchor="w").pack(side="left", padx=5)
+        ctk.CTkLabel(row, text=filename, width=150, anchor="w").grid(row=0, column=0, padx=5, sticky="w")
         
         color = "green" if status == "Success" else "red"
-        ctk.CTkLabel(row, text=status, width=80, text_color=color).pack(side="left", padx=5)
+        ctk.CTkLabel(row, text=status, width=80, text_color=color).grid(row=0, column=1, padx=5, sticky="w")
         
-        ctk.CTkLabel(row, text=tags, anchor="w").pack(side="left", fill="x", expand=True, padx=5)
+        ctk.CTkLabel(row, text=tags, anchor="w", justify="left", wraplength=700).grid(row=0, column=2, padx=5, sticky="ew")
 
     def open_logs(self):
         """Open the detailed log file (synapic.log)."""

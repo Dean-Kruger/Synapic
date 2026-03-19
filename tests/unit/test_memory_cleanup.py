@@ -1,3 +1,12 @@
+"""
+Tests for Memory Cleanup Behavior
+=================================
+
+These tests target code paths where large images, model outputs, or payloads
+must be released promptly to keep the desktop application stable over long
+batch-processing runs.
+"""
+
 import unittest
 from unittest.mock import patch, MagicMock, PropertyMock
 import sys

@@ -1,3 +1,11 @@
+"""
+Unit Tests for Hash Comparison Utilities
+=======================================
+
+These tests cover similarity and comparison helpers that sit underneath the
+duplicate-grouping logic.
+"""
+
 import pytest
 import sys
 from unittest.mock import MagicMock

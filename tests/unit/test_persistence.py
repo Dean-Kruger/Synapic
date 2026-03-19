@@ -1,3 +1,15 @@
+"""
+Manual Persistence Verification
+===============================
+
+This file performs an integration-style check against a live Daminion server to
+confirm that metadata updates persist and can be read back after a short delay.
+
+It is kept under `tests/unit` for historical reasons, but in practice it is a
+manual verification script that depends on real server connectivity and a known
+catalog item.
+"""
+
 import os
 import sys
 import logging
@@ -16,6 +28,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 def test_persistence():
+    """Write a unique keyword to a known item and verify it can be read back."""
     # Use real credentials from environment or defaults
     server_url = "http://researchserver.juicefilm.local/daminion"
     username = "admin"

@@ -1,3 +1,19 @@
+"""
+Metadata Verification Helpers for Integration Scenarios
+======================================================
+
+This module provides read-back helpers used to confirm that metadata written to
+Daminion actually persisted as expected.
+
+Why it exists:
+- Some API calls acknowledge updates before they are easy to observe in other
+  endpoints.
+- These helpers centralise the logic for extracting categories, keywords, and
+  descriptions from Daminion's nested property structure.
+- Tests and manual verification scripts can share one interpretation of the
+  server response shape.
+"""
+
 import logging
 from typing import Dict, List, Optional, Any
 
@@ -6,7 +22,8 @@ logger = logging.getLogger(__name__)
 def get_record_metadata(client, item_id: int) -> Dict[str, Any]:
     """
     Fetch metadata (categories, keywords, description) for a Daminion media item.
-    Uses ItemData/GetAll for complete property retrieval.
+    Uses `ItemData/GetAll` for complete property retrieval because lighter
+    endpoints may omit nested value data needed for verification.
     """
     try:
         # Use ItemData/GetAll which returns full properties in nested structure
@@ -31,6 +48,7 @@ def get_record_metadata(client, item_id: int) -> Dict[str, Any]:
         
         # Helper to extract values from a property
         def parse_prop_values(prop):
+            """Normalise Daminion property payloads into plain text lists."""
             if not prop: return []
             # 'values' list in property object contains tag value objects with 'text' field
             values = prop.get('values')
@@ -119,6 +137,7 @@ def verify_metadata_update(
     return success
 
 if __name__ == "__main__":
+    """Explain direct invocation behavior when run as a script."""
     # Example usage / manual test
     import os
     import sys

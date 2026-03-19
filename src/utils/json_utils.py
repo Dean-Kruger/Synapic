@@ -1,10 +1,32 @@
+"""
+Safe Literal and JSON Parsing Helpers
+=====================================
+
+This module contains defensive parsing helpers for model responses and other
+loosely structured text inputs.
+
+Why these helpers matter:
+- LLM output may look like JSON, Python literals, or a mixture of both.
+- `ast.literal_eval` is safer than `eval`, but deeply nested input can still
+  cause excessive resource usage.
+- Centralising the parsing rules keeps the rest of the codebase free from
+  repeated ad-hoc `try/except` parsing logic.
+
+The main entry point, `safe_parse_python_literal`, applies a layered strategy:
+1. Reject obviously dangerous input sizes.
+2. Reject unreasonable nesting depth before parsing.
+3. Attempt standard JSON parsing first.
+4. Fall back to `ast.literal_eval` for Python-style literals.
+"""
+
 import ast
 import json
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-def safe_parse_python_literal(text: str, max_depth: int = 100, max_length: int = 100000) -> any:
+def safe_parse_python_literal(text: str, max_depth: int = 100, max_length: int = 100000) -> Any:
     """
     Safely parse a string that might be a Python literal (e.g., from an LLM) or JSON.
 
@@ -55,7 +77,12 @@ def safe_parse_python_literal(text: str, max_depth: int = 100, max_length: int =
         raise ValueError(f"Failed to parse literal: {e}")
 
 def _check_nesting_depth(text: str, max_depth: int) -> bool:
-    """Check if the nesting depth of [], {}, and () exceeds max_depth."""
+    """
+    Estimate bracket nesting depth without fully parsing the payload.
+
+    The check is intentionally lightweight and string-aware so quoted JSON
+    fragments do not falsely increase the measured structural depth.
+    """
     depth = 0
     in_string = False
     quote_char = None

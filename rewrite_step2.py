@@ -1,3 +1,19 @@
+"""
+One-Off Step 2 Refactor Helper
+==============================
+
+This script was used during development to rewrite portions of
+`src/ui/steps/step2_tagging.py` from a dialog-based configuration flow to the
+current inline-panel layout.
+
+Important:
+- It is not part of the runtime application.
+- It performs broad regular-expression replacements and should be treated as a
+  migration helper, not a general-purpose maintenance tool.
+- Keeping the script documented is useful because it explains where some of the
+  current Step 2 structure came from.
+"""
+
 import re
 
 file_path = "src/ui/steps/step2_tagging.py"

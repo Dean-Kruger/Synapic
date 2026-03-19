@@ -53,7 +53,7 @@ class Step2Tagging(ctk.CTkFrame):
         self.grid_rowconfigure(0, weight=1)
         
         # Main container
-        self.container = ctk.CTkFrame(self)
+        self.container = ctk.CTkScrollableFrame(self)
         self.container.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         self.container.grid_columnconfigure(0, weight=1)
 
@@ -66,7 +66,9 @@ class Step2Tagging(ctk.CTkFrame):
         
         # Engine Cards (using Radio buttons for simplicity but styled)
         self.cards_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.cards_frame.grid(row=1, column=0, pady=10)
+        self.cards_frame.grid(row=1, column=0, pady=10, padx=20, sticky="ew")
+        for col in range(4):
+            self.cards_frame.grid_columnconfigure(col, weight=1)
         
         self.create_engine_card(self.cards_frame, "Local Inference", "local", 0)
         self.create_engine_card(self.cards_frame, "Hugging Face", "huggingface", 1)
@@ -298,8 +300,10 @@ class Step2Tagging(ctk.CTkFrame):
         self.update_model_info()
 
     def create_engine_card(self, parent, text, value, col):
+        row = col // 4
+        column = col % 4
         card = ctk.CTkRadioButton(parent, text=text, variable=self.engine_var, value=value, font=("Roboto", 16))
-        card.grid(row=0, column=col, padx=20, pady=20)
+        card.grid(row=row, column=column, padx=20, pady=12, sticky="w")
         
             
     def update_model_info(self):

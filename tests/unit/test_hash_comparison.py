@@ -1,3 +1,11 @@
+"""
+Compatibility Tests for Hash Comparison Behavior
+================================================
+
+This module verifies hash-comparison logic from the broader unit-test suite and
+acts as a guard against regressions in duplicate detection scoring.
+"""
+
 import sys
 from unittest.mock import MagicMock
 

@@ -1,3 +1,11 @@
+"""
+Manual Hugging Face Model Info Probe
+====================================
+
+Utility script for inspecting detailed model metadata from the Hugging Face
+Hub while refining model selection heuristics.
+"""
+
 from huggingface_hub import HfApi
 import logging
 

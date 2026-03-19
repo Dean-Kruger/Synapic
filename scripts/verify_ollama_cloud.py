@@ -1,3 +1,18 @@
+"""
+Manual Ollama Cloud Verification Script
+=======================================
+
+This script loads the saved Synapic configuration and performs a simple
+connectivity check against the configured Ollama endpoint.
+
+It is intended for manual troubleshooting when users are unsure whether:
+- the saved host points to the expected cloud URL,
+- an API key is present,
+- the client can successfully list models.
+
+The script prints human-readable diagnostics instead of using a formal test
+framework because it is primarily a support and debugging aid.
+"""
 
 import sys
 import os
@@ -11,6 +26,7 @@ from src.utils.config_manager import load_config
 from src.core.session import Session
 
 def verify():
+    """Run a best-effort connectivity probe for the configured Ollama setup."""
     print("--- Verifying Ollama Cloud Connection ---")
     
     # Load config directly from file to simulate app startup

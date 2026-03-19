@@ -1,3 +1,11 @@
+"""
+Tests for the NVIDIA Client Integration
+=======================================
+
+These tests exercise the NVIDIA provider wrapper so request formatting,
+availability checks, and response handling stay predictable.
+"""
+
 import unittest
 from unittest.mock import patch, MagicMock
 from src.integrations.nvidia_client import NvidiaClient

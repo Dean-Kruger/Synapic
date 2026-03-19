@@ -1,3 +1,11 @@
+"""
+Tests for Default Configuration Values
+======================================
+
+These tests make sure the application starts with sensible defaults for engine
+selection, thresholds, and related baseline settings.
+"""
+
 import pytest
 
 from src.core.session import DatasourceConfig, EngineConfig, Session

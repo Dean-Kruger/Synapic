@@ -1,3 +1,11 @@
+"""
+Tests for API Metrics and Usage Accounting
+==========================================
+
+These tests verify that API-related counters or usage information are computed
+and exposed consistently.
+"""
+
 import unittest
 import json
 

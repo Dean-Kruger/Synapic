@@ -1,3 +1,11 @@
+"""
+Tests for API Error Handling and Observability
+==============================================
+
+This module checks that provider integrations surface useful failures and emit
+enough information for debugging and operational support.
+"""
+
 import unittest
 from urllib.error import HTTPError, URLError
 

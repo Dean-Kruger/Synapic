@@ -1,3 +1,17 @@
+"""
+UI Logic Tests for Dedup Navigation
+===================================
+
+These tests isolate dedup-related UI behavior from the real CustomTkinter
+stack by replacing windowing modules with mocks.
+
+The goal is to keep the tests focused on controller/session interactions:
+- Does Step 1 gather the expected inputs before opening dedup?
+- Does the dedup screen initialise the processor correctly?
+
+This file intentionally uses test doubles instead of real widgets so it can
+run in headless CI environments.
+"""
 
 import pytest
 from unittest.mock import MagicMock, patch, ANY
@@ -10,6 +24,7 @@ module_mock = MagicMock()
 
 # Define a real class for CTkFrame so inheritance works normally
 class MockCTkFrame:
+    """Tiny stand-in base class that satisfies the widget API used by the tests."""
     def __init__(self, *args, **kwargs): pass
     def grid(self, *args, **kwargs): pass
     def pack(self, *args, **kwargs): pass
@@ -37,6 +52,7 @@ import src.ui.steps.step1_datasource as step1_module
 # -------------------------------------------------------------------------
 
 class TestableStep1(Step1Datasource):
+    """Minimal Step 1 variant that skips heavy UI construction."""
     def __init__(self, controller):
         # SKIP SUPER INIT by calling object init or MockFrame init directly if needed
         # But simply setting attributes is enough if we don't call super().__init__
@@ -69,6 +85,7 @@ class TestableStep1(Step1Datasource):
         self.after = MagicMock(side_effect=lambda d, f: f())
 
 class TestableStepDedup(StepDedup):
+    """Minimal dedup step variant that exposes only logic under test."""
     def __init__(self, controller):
         self.controller = controller
         self.session = controller.session
@@ -101,6 +118,7 @@ def mock_controller():
     return controller
 
 class TestStep1DatasourceDedupe:
+    """Tests covering the transition from datasource selection into dedup mode."""
     
     def test_open_dedup_step_navigates_correctly(self, mock_controller):
         # Setup
@@ -136,6 +154,7 @@ class TestStep1DatasourceDedupe:
         mock_controller.show_step.assert_not_called()
 
 class TestStepDedupScan:
+    """Tests covering dedup scan startup behavior."""
     def test_start_scan_initializes_processor(self, mock_controller):
         mock_controller.session.dedup_items = [{"id": 1}]
         step_dedup = TestableStepDedup(mock_controller)

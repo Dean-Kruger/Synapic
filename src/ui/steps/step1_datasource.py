@@ -89,7 +89,8 @@ class Step1Datasource(ctk.CTkFrame):
         self.content_area = ctk.CTkFrame(self.canvas, fg_color="transparent")
         
         self.content_area.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.content_area, anchor="nw", width=700) # Fixed width for scrollable area
+        self._content_window = self.canvas.create_window((0, 0), window=self.content_area, anchor="nw")
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
         self.canvas.grid(row=2, column=0, sticky="nsew", pady=20, padx=(20, 5))
@@ -111,6 +112,10 @@ class Step1Datasource(ctk.CTkFrame):
         # Debounce timer for search
         self._debounce_timer = None
         self._current_total_count = 0
+
+    def _on_canvas_resize(self, event):
+        """Keep the scroll content sized to the visible canvas width."""
+        self.canvas.itemconfigure(self._content_window, width=event.width)
 
     def init_local_frame(self):
         ds = self.controller.session.datasource

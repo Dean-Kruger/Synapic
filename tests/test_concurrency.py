@@ -1,3 +1,14 @@
+"""
+Tests for Daemon Executor Semantics
+===================================
+
+These tests verify the most important contract of
+`DaemonThreadPoolExecutor`: background workers must be daemon threads so they
+never block application shutdown.
+
+That behavior is particularly important in a GUI app where users may close the
+window while asynchronous work is still pending.
+"""
 
 import unittest
 import threading
@@ -10,6 +21,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src.utils.concurrency import DaemonThreadPoolExecutor
 
 class TestDaemonThreadPoolExecutor(unittest.TestCase):
+    """Validate the executor's daemon-thread guarantees."""
+
     def test_daemon_submit(self):
         """Verify that submitted tasks run in daemon threads."""
         def check_daemon():

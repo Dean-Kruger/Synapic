@@ -1,3 +1,11 @@
+"""
+Tests for Model Loading Parameter Selection
+===========================================
+
+This suite verifies the rules used to derive model-loading arguments for local
+inference, especially around hardware and compatibility constraints.
+"""
+
 import unittest
 from unittest.mock import patch, MagicMock
 import sys

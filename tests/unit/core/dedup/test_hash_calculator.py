@@ -1,3 +1,10 @@
+"""
+Unit Tests for Perceptual Hash Calculation
+==========================================
+
+These tests validate the low-level hashing helpers used by the dedup pipeline.
+"""
+
 import pytest
 import base64
 from io import BytesIO

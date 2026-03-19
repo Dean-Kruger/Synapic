@@ -2,9 +2,19 @@
 Groq API Client
 ================
 
-Minimal client to interact with Groq's API from Synapic.
-This wrapper handles authentication, request formatting, and basic response parsing.
-The actual Groq endpoint paths should be adjusted to match your Groq deployment.
+This module provides a lightweight HTTP client for Groq-style endpoints used
+by Synapic during experimentation and diagnostics.
+
+Unlike `groq_package_client.py`, which targets the official SDK flow used by
+the main application, this wrapper is intentionally generic:
+- It can point at alternate base URLs.
+- It uses plain `requests` sessions.
+- It exposes a small surface for query execution, model discovery, and health
+  checks.
+
+That makes it useful for local testing, self-hosted compatibility work, or
+future deployments where the endpoint shape is Groq-like but not identical to
+the official cloud service.
 """
 
 import json
@@ -15,12 +25,17 @@ from typing import List, Dict, Any, Optional
 
 class GroqClient:
     """
-    Lightweight Groq client.
-    - Automatically reads API key/base URL from environment if not provided.
-    - Provides a simple query(dataset, groq_query, limit) interface.
+    Lightweight Groq-oriented REST client.
+
+    Design goals:
+    - Keep dependencies minimal.
+    - Support environment-driven configuration for quick local testing.
+    - Normalise several possible API response envelopes into predictable Python
+      lists for downstream callers.
     """
 
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, timeout: int = 15):
+        """Initialise the client from explicit values or environment defaults."""
         self.base_url = base_url or os.environ.get("GROQ_API_BASE_URL", "https://console.groq.com/api")
         self.api_key = api_key or os.environ.get("GROQ_API_KEY", "")
         self.timeout = timeout
@@ -31,8 +46,16 @@ class GroqClient:
 
     def query(self, dataset: str, groq_query: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Execute a Groq query against a dataset.
-        Returns a list of result dictionaries.
+        Execute a query request against the configured Groq-compatible API.
+
+        Args:
+            dataset: Logical dataset or collection name expected by the server.
+            groq_query: Provider-specific query text.
+            limit: Maximum number of records requested from the remote service.
+
+        Returns:
+            A list of result dictionaries regardless of whether the server
+            responded with `results`, `data`, a bare list, or a single object.
         """
         if not dataset:
             raise ValueError("dataset is required")
@@ -57,6 +80,7 @@ class GroqClient:
         return [data]
 
     def __repr__(self) -> str:
+        """Return a compact debugging representation without exposing secrets."""
         return f"<GroqClient base_url={self.base_url} has_api_key={'yes' if self.api_key else 'no'}>"
 
     def test_connection(self, timeout: int = 5) -> bool:
@@ -83,9 +107,9 @@ class GroqClient:
     def list_models(self, dataset: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
         """Fetch available Groq models via API.
 
-        Attempts a GET to /groq/models, with optional dataset filter and limit.
-        Falls back to POST if GET fails or endpoint differs.
-        Returns a list of model dicts.
+        The implementation is intentionally tolerant because different Groq-like
+        deployments may expose model discovery through either GET or POST and
+        may wrap the payload differently.
         """
         models: List[Dict[str, Any]] = []
         # Try GET first

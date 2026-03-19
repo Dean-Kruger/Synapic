@@ -1,3 +1,19 @@
+"""
+Development Log Tail Helper
+===========================
+
+This small utility copies the last portion of the application's primary log
+file into a local text file for quick inspection.
+
+Why it exists:
+- Speeds up manual debugging when the full log is large.
+- Produces a lightweight artifact (`latest_log.txt`) that can be shared or
+  attached to an issue without exposing the entire log history.
+- Avoids having to remember the exact PowerShell or shell command to tail the
+  bundled application log.
+
+This script is intentionally simple and is meant for local developer use.
+"""
 
 import os
 

@@ -1,3 +1,11 @@
+"""
+Manual Fixed-Size Image Verification
+====================================
+
+Developer script for validating image-size assumptions or resize behavior while
+debugging image processing edge cases.
+"""
+
 import sys
 import os
 from pathlib import Path

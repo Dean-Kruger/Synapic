@@ -57,7 +57,8 @@ class App(ctk.CTk):
         self.logger.info("Initializing main application window")
 
         self.title("Hugging Juice Face v2")
-        self.geometry("1100x700")
+        self.geometry("1280x840")
+        self.minsize(1100, 760)
         
         # Set theme
         ctk.set_appearance_mode("Dark")

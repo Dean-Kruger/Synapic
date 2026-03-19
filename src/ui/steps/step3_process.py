@@ -43,7 +43,7 @@ class Step3Process(ctk.CTkFrame):
         self.container = ctk.CTkFrame(self)
         self.container.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         self.container.grid_columnconfigure(0, weight=1)
-        self.container.grid_rowconfigure(3, weight=1) # Log expands
+        self.container.grid_rowconfigure(4, weight=1)  # Log expands
 
         # Title
         title = ctk.CTkLabel(self.container, text="Step 3: Processing", font=("Roboto", 24, "bold"))
@@ -51,13 +51,15 @@ class Step3Process(ctk.CTkFrame):
 
         # Controls
         controls_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        controls_frame.grid(row=1, column=0, pady=10)
+        controls_frame.grid(row=1, column=0, pady=10, padx=20, sticky="ew")
+        for col in range(3):
+            controls_frame.grid_columnconfigure(col, weight=1)
         
         self.btn_start = ctk.CTkButton(controls_frame, text="Start Processing", fg_color="green", width=200, height=50, font=("Roboto", 16, "bold"), command=self.start_process)
-        self.btn_start.pack(side="left", padx=20)
+        self.btn_start.grid(row=0, column=0, padx=10, pady=10, sticky="w")
         
         self.btn_stop = ctk.CTkButton(controls_frame, text="ABORT", fg_color="red", width=150, height=50, font=("Roboto", 16, "bold"), state="disabled", command=self.stop_process)
-        self.btn_stop.pack(side="left", padx=20)
+        self.btn_stop.grid(row=0, column=1, padx=10, pady=10)
 
         # Pagination option (Daminion API returns max 500 records per request)
         self.auto_paginate_var = tk.BooleanVar(value=True)
@@ -67,7 +69,7 @@ class Step3Process(ctk.CTkFrame):
             variable=self.auto_paginate_var,
             font=("Roboto", 13),
         )
-        self.chk_paginate.pack(side="left", padx=20)
+        self.chk_paginate.grid(row=0, column=2, padx=10, pady=10, sticky="e")
 
         # Progress Area
         progress_frame = ctk.CTkFrame(self.container)

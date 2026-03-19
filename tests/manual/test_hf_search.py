@@ -1,3 +1,11 @@
+"""
+Manual Hugging Face Search Experiment
+=====================================
+
+Small exploratory script used to observe Hub search results for vision and
+multimodal queries outside the main application UI.
+"""
+
 from huggingface_hub import list_models
 import logging
 
