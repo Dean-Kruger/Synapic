@@ -274,9 +274,10 @@ class StepDedup(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.container = ctk.CTkScrollableFrame(self)
+        self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.grid(row=0, column=0, sticky="nsew")
         self.container.grid_columnconfigure(0, weight=1)
+        self.container.grid_rowconfigure(3, weight=1)
         
         # ===== Header =====
         header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -300,72 +301,81 @@ class StepDedup(ctk.CTkFrame):
         # ===== Settings Panel =====
         settings_frame = ctk.CTkFrame(self.container)
         settings_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
-        settings_frame.grid_columnconfigure(1, weight=1)
-        settings_frame.grid_columnconfigure(3, weight=1)
-        settings_frame.grid_columnconfigure(6, weight=1)
-        
-        # Algorithm selection
-        algo_label = ctk.CTkLabel(settings_frame, text="Algorithm:")
-        algo_label.grid(row=0, column=0, padx=(15, 5), pady=10)
-        
+        settings_frame.grid_columnconfigure(0, weight=1)
+        settings_frame.grid_columnconfigure(1, weight=2)
+        settings_frame.grid_columnconfigure(2, weight=2)
+        settings_frame.grid_columnconfigure(3, weight=0)
+
+        algo_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        algo_frame.grid(row=0, column=0, padx=(15, 10), pady=(12, 6), sticky="ew")
+
+        algo_label = ctk.CTkLabel(algo_frame, text="Algorithm:")
+        algo_label.pack(anchor="w")
+
         self.algorithm_var = ctk.StringVar(value="phash")
         self.algorithm_dropdown = ctk.CTkOptionMenu(
-            settings_frame,
+            algo_frame,
             values=["phash", "dhash", "ahash", "whash"],
             variable=self.algorithm_var,
             width=120
         )
-        self.algorithm_dropdown.grid(row=0, column=1, padx=5, pady=10)
-        
-        # Threshold slider
-        threshold_label = ctk.CTkLabel(settings_frame, text="Threshold:")
-        threshold_label.grid(row=0, column=2, padx=(20, 5), pady=10)
-        
+        self.algorithm_dropdown.pack(fill="x", pady=(6, 0))
+
+        threshold_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        threshold_frame.grid(row=0, column=1, padx=10, pady=(12, 6), sticky="ew")
+        threshold_frame.grid_columnconfigure(0, weight=1)
+        threshold_frame.grid_columnconfigure(1, weight=0)
+
+        threshold_label = ctk.CTkLabel(threshold_frame, text="Threshold:")
+        threshold_label.grid(row=0, column=0, columnspan=2, sticky="w")
+
         self.threshold_var = ctk.DoubleVar(value=95.0)
         self.threshold_slider = ctk.CTkSlider(
-            settings_frame,
+            threshold_frame,
             from_=50,
             to=100,
             variable=self.threshold_var,
-            width=150,
             command=self._on_threshold_change
         )
-        self.threshold_slider.grid(row=0, column=3, padx=5, pady=10)
-        
-        self.threshold_value_label = ctk.CTkLabel(settings_frame, text="95%", width=50)
-        self.threshold_value_label.grid(row=0, column=4, padx=5, pady=10)
-        
-        # Action dropdown
-        action_label = ctk.CTkLabel(settings_frame, text="Action:")
-        action_label.grid(row=0, column=5, padx=(20, 5), pady=10)
-        
+        self.threshold_slider.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        self.threshold_value_label = ctk.CTkLabel(threshold_frame, text="95%", width=50)
+        self.threshold_value_label.grid(row=1, column=1, padx=(10, 0), pady=(6, 0), sticky="e")
+
+        action_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        action_frame.grid(row=0, column=2, padx=10, pady=(12, 6), sticky="ew")
+
+        action_label = ctk.CTkLabel(action_frame, text="Action:")
+        action_label.pack(anchor="w")
+
         self.action_var = ctk.StringVar(value="Tag as Duplicate")
         self.action_dropdown = ctk.CTkOptionMenu(
-            settings_frame,
+            action_frame,
             values=["Tag as Duplicate", "Remove from Catalog", "Delete from Disk", "Manual Review Only"],
             variable=self.action_var,
-            width=180,
             command=self._on_action_change
         )
-        self.action_dropdown.grid(row=0, column=6, padx=5, pady=10)
-        
+        self.action_dropdown.pack(fill="x", pady=(6, 0))
+
         # Warning label for destructive actions (hidden initially)
         self.action_warning_label = ctk.CTkLabel(
             settings_frame, text="", font=ctk.CTkFont(size=10),
             text_color="red"
         )
-        self.action_warning_label.grid(row=1, column=0, columnspan=6, padx=15, pady=0, sticky="w")
-        
-        # Scan button
+        self.action_warning_label.grid(row=1, column=0, columnspan=3, padx=15, pady=(0, 10), sticky="w")
+
+        scan_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        scan_frame.grid(row=0, column=3, rowspan=2, padx=(10, 15), pady=10, sticky="e")
+
         self.scan_btn = ctk.CTkButton(
-            settings_frame,
+            scan_frame,
             text="Scan for Duplicates",
             command=self._start_scan,
             fg_color=("green", "darkgreen"),
             hover_color=("darkgreen", "green"),
             width=160
         )
-        self.scan_btn.grid(row=0, column=7, rowspan=2, padx=(20, 15), pady=10, sticky="e")
+        self.scan_btn.pack(anchor="e", pady=8)
         
         # ===== Progress Bar (own row below settings) =====
         self.progress_frame = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -412,18 +422,21 @@ class StepDedup(ctk.CTkFrame):
         # ===== Footer =====
         footer_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         footer_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(10, 20))
-        
+        footer_frame.grid_columnconfigure(0, weight=1)
+        footer_frame.grid_columnconfigure(1, weight=1)
+        footer_frame.grid_columnconfigure(2, weight=0)
+
         self.stats_label = ctk.CTkLabel(
             footer_frame,
             text="",
             font=ctk.CTkFont(size=12),
             text_color=("gray50", "gray60")
         )
-        self.stats_label.pack(side="left")
-        
+        self.stats_label.grid(row=0, column=0, sticky="w")
+
         # Auto-select buttons frame
         self.select_btns_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
-        self.select_btns_frame.pack(side="left", padx=20)
+        self.select_btns_frame.grid(row=0, column=1, padx=20)
         
         select_label = ctk.CTkLabel(self.select_btns_frame, text="Select all:", font=ctk.CTkFont(size=11))
         select_label.pack(side="left", padx=(0, 5))
@@ -448,7 +461,7 @@ class StepDedup(ctk.CTkFrame):
             state="disabled",
             width=160
         )
-        self.apply_btn.pack(side="right")
+        self.apply_btn.grid(row=0, column=2, sticky="e")
     
     def _on_threshold_change(self, value):
         """Update threshold label when slider changes."""
@@ -752,7 +765,7 @@ class StepDedup(ctk.CTkFrame):
         self.action_dropdown.configure(state="disabled")
 
         # Show progress bar
-        self.progress_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
+        self.progress_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=5)
         self.progress_bar.set(0)
         self.progress_label.configure(text="Applying deduplication...")
         # Hide abort button during apply (processor.abort() could be wired but keep it simple)
