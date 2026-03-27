@@ -7,7 +7,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('release', 'release'), (ctk_path, 'customtkinter')],
+    datas=[('release', 'release'), ('release/Icon.ico', '.'), (ctk_path, 'customtkinter')],
     hiddenimports=[
         # Transformers and related
         'transformers',

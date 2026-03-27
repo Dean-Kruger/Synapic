@@ -37,6 +37,65 @@ import logging
 import os
 import sys
 
+
+WINDOWS_APP_ID = "Synapic.ImageTagger.v2.0"
+
+
+def _candidate_icon_paths():
+    module_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    executable_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else module_root
+    meipass_dir = getattr(sys, "_MEIPASS", None)
+
+    candidates = [
+        os.path.join(executable_dir, "Icon.ico"),
+        os.path.join(executable_dir, "release", "Icon.ico"),
+        os.path.join(executable_dir, "dist", "Icon.ico"),
+        os.path.join(executable_dir, "dist", "release", "Icon.ico"),
+    ]
+
+    if meipass_dir:
+        candidates.extend(
+            [
+                os.path.join(meipass_dir, "Icon.ico"),
+                os.path.join(meipass_dir, "release", "Icon.ico"),
+            ]
+        )
+
+    candidates.extend(
+        [
+            os.path.join(module_root, "dist", "Icon.ico"),
+            os.path.join(module_root, "dist", "release", "Icon.ico"),
+            os.path.join(module_root, "release", "Icon.ico"),
+        ]
+    )
+
+    seen = set()
+    for path in candidates:
+        normalized = os.path.normpath(path)
+        if normalized not in seen:
+            seen.add(normalized)
+            yield normalized
+
+
+def _resolve_icon_path():
+    for icon_path in _candidate_icon_paths():
+        if os.path.exists(icon_path):
+            return icon_path
+    return None
+
+
+def _set_windows_app_id(logger: logging.Logger):
+    if sys.platform != "win32":
+        return
+
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(WINDOWS_APP_ID)
+        logger.debug("Windows AppUserModelID set successfully")
+    except Exception as e:
+        logger.warning(f"Failed to set Windows AppUserModelID: {e}")
+
 class App(ctk.CTk):
     """
     Main application window and wizard coordinator.
@@ -51,10 +110,11 @@ class App(ctk.CTk):
     """
     
     def __init__(self):
-        super().__init__()
-        
         self.logger = logging.getLogger(__name__)
         self.logger.info("Initializing main application window")
+        _set_windows_app_id(self.logger)
+
+        super().__init__()
 
         self.title("Hugging Juice Face v2")
         self.geometry("1280x840")
@@ -65,36 +125,15 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
         self.logger.debug("UI theme configured: Dark mode with blue color theme")
 
-        # Set Icon
-        # Handle path for PyInstaller bundle
-        if getattr(sys, 'frozen', False):
-            # Running in a bundle
-            base_dir = sys._MEIPASS
-        else:
-            # Running in normal python environment
-            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            
-        icon_path = os.path.join(base_dir, "release", "Icon.ico")
-        if os.path.exists(icon_path):
+        icon_path = _resolve_icon_path()
+        if icon_path:
             try:
-                # Use iconbitmap for .ico files on Windows
-                self.iconbitmap(icon_path)
+                self.iconbitmap(default=icon_path)
                 self.logger.info(f"Loaded application icon from {icon_path}")
-                
-                # Windows-specific: Set AppUserModelID to ensure taskbar icon displays correctly
-                # This prevents Windows from grouping the app with Python and shows our custom icon
-                if sys.platform == 'win32':
-                    try:
-                        import ctypes
-                        # Set a unique AppUserModelID for this application
-                        myappid = 'Synapic.ImageTagger.v2.0'
-                        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-                        self.logger.debug("Windows AppUserModelID set successfully")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to set Windows AppUserModelID: {e}")
-                        
             except Exception as e:
                 self.logger.warning(f"Failed to set application icon: {e}")
+        else:
+            self.logger.warning("Application icon was not found in any expected location")
 
 
         self.grid_rowconfigure(0, weight=1)
