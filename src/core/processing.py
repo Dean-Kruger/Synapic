@@ -796,29 +796,40 @@ class ProcessingManager:
                 self.log(f"Processing Daminion Item: {filename}...")
 
                 # Download image (server-side resized for faster AI inference)
-                # Use original at 100%, proportionally scaled preview at lower scales
+                # Use original at 100%, proportionally scaled preview at lower scales,
+                # or a fixed 200px thumbnail when override is enabled
                 ds = self.session.datasource
-                scale = getattr(ds, "resize_scale", 100)
-                if scale >= 100:
-                    path = daminion_client.download_original(item_id)
+                if getattr(ds, "use_thumbnail_override", False):
+                    # Fixed 200px thumbnail — fast, consistent, minimal bandwidth
+                    path = daminion_client.download_thumbnail(
+                        item_id, width=200, height=200
+                    )
                     if not path or not path.exists():
                         raise RuntimeError(
-                            f"Could not download original for item {item_id}"
+                            f"Could not download thumbnail for item {item_id}"
                         )
                 else:
-                    # Get original dimensions first to calculate proportional target size
-                    dims = daminion_client.get_item_dimensions(item_id)
-                    if dims:
-                        orig_w, orig_h = dims
-                        target_w = max(75, int(orig_w * scale / 100))
+                    scale = getattr(ds, "resize_scale", 100)
+                    if scale >= 100:
+                        path = daminion_client.download_original(item_id)
+                        if not path or not path.exists():
+                            raise RuntimeError(
+                                f"Could not download original for item {item_id}"
+                            )
                     else:
-                        # Fallback: use scale of a base 2000px size
-                        target_w = max(75, int(2000 * scale / 100))
-                    path = daminion_client.download_preview(item_id, width=target_w)
-                    if not path or not path.exists():
-                        raise RuntimeError(
-                            f"Could not download preview for item {item_id}"
-                        )
+                        # Get original dimensions first to calculate proportional target size
+                        dims = daminion_client.get_item_dimensions(item_id)
+                        if dims:
+                            orig_w, orig_h = dims
+                            target_w = max(75, int(orig_w * scale / 100))
+                        else:
+                            # Fallback: use scale of a base 2000px size
+                            target_w = max(75, int(2000 * scale / 100))
+                        path = daminion_client.download_preview(item_id, width=target_w)
+                        if not path or not path.exists():
+                            raise RuntimeError(
+                                f"Could not download preview for item {item_id}"
+                            )
             else:
                 path = item
                 self.logger.debug(f"Processing local file: {path}")

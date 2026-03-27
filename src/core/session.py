@@ -84,6 +84,7 @@ class DatasourceConfig:
     status_filter: str = "all"  # 'all', 'approved', 'rejected', 'unassigned'
     max_items: int = 100
     resize_scale: int = 100  # AI inference image scale: 100, 75, 50, 25 (percentage)
+    use_thumbnail_override: bool = False  # Override scale to use fixed 200px thumbnail
 
 
 @dataclass

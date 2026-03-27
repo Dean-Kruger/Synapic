@@ -678,6 +678,16 @@ class Step1Datasource(ctk.CTkFrame):
         )
         resize_label.pack(side="left", padx=(0, 20))
 
+        # Checkbox to override with a fixed 200px thumbnail
+        self.use_thumbnail_override_var = ctk.BooleanVar(value=False)
+        self.thumbnail_override_cb = ctk.CTkCheckBox(
+            self.resize_scale_frame,
+            text="Use 200px thumbnail",
+            variable=self.use_thumbnail_override_var,
+            command=self._on_thumbnail_override_toggle,
+        )
+        self.thumbnail_override_cb.pack(side="left", padx=(0, 20))
+
         self.resize_scale_var = ctk.StringVar(value="100")
         scales = [
             ("100% (Original)", "100"),
@@ -685,6 +695,7 @@ class Step1Datasource(ctk.CTkFrame):
             ("50%", "50"),
             ("25%", "25"),
         ]
+        self.resize_radio_buttons = []
         for label_text, value in scales:
             rb = ctk.CTkRadioButton(
                 self.resize_scale_frame,
@@ -694,8 +705,12 @@ class Step1Datasource(ctk.CTkFrame):
                 command=self._on_resize_scale_change,
             )
             rb.pack(side="left", padx=(0, 15))
+            self.resize_radio_buttons.append(rb)
 
-        # Load saved resize scale
+        # Load saved settings
+        use_thumb = getattr(ds, "use_thumbnail_override", False)
+        self.use_thumbnail_override_var.set(use_thumb)
+        self._set_radio_buttons_enabled(not use_thumb)
         self.resize_scale_var.set(str(getattr(ds, "resize_scale", 100)))
 
         limit_container = ctk.CTkFrame(self.limit_toggle_frame, fg_color="transparent")
@@ -993,6 +1008,15 @@ class Step1Datasource(ctk.CTkFrame):
     def _on_resize_scale_change(self):
         pass  # Future: could trigger a preview or re-count
 
+    def _on_thumbnail_override_toggle(self):
+        enabled = not self.use_thumbnail_override_var.get()
+        self._set_radio_buttons_enabled(enabled)
+
+    def _set_radio_buttons_enabled(self, enabled: bool):
+        state = "normal" if enabled else "disabled"
+        for rb in getattr(self, "resize_radio_buttons", []):
+            rb.configure(state=state)
+
     def next_step(self):
         # Save state
         ds = self.controller.session.datasource
@@ -1041,6 +1065,7 @@ class Step1Datasource(ctk.CTkFrame):
 
             # Save resize scale
             ds.resize_scale = int(self.resize_scale_var.get())
+            ds.use_thumbnail_override = self.use_thumbnail_override_var.get()
 
             # Apply limit from slider if visible
             slider_visible = bool(self.limit_toggle_frame.winfo_manager())
