@@ -795,8 +795,14 @@ class ProcessingManager:
                 self.logger.debug(f"Processing Daminion item {item_id}: {filename}")
                 self.log(f"Processing Daminion Item: {filename}...")
 
-                # Download thumbnail
-                temp_thumb = daminion_client.download_thumbnail(item_id)
+                # Download thumbnail (server-side resized for faster AI inference)
+                scale = ds.resize_scale if hasattr(ds, "resize_scale") else 100
+                thumb_size = max(
+                    75, int(300 * scale / 100)
+                )  # min 75px, scaled from 300
+                temp_thumb = daminion_client.download_thumbnail(
+                    item_id, width=thumb_size, height=thumb_size
+                )
                 if not temp_thumb or not temp_thumb.exists():
                     raise RuntimeError(
                         f"Could not download thumbnail for item {item_id}"
