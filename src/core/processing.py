@@ -438,6 +438,11 @@ class ProcessingManager:
                     effective_total = self.session.total_items
                 remaining = max(effective_total - processed, 0)
                 etc = (elapsed / processed * remaining) if processed > 0 else 0
+                self.logger.debug(
+                    f"[PAGE BOUNDARY] auto_paginate={self.auto_paginate}, expected_total={expected_total}, "
+                    f"effective_total={effective_total}, processed={processed}, remaining={remaining}, "
+                    f"elapsed={elapsed:.3f}, etc={etc:.1f}"
+                )
                 self.progress(
                     self.session.processed_items / max(effective_total, 1),
                     self.session.processed_items,
@@ -502,6 +507,11 @@ class ProcessingManager:
                         effective_total = self.session.total_items
                     remaining = max(effective_total - processed, 0)
                     etc = (elapsed / processed * remaining) if processed > 0 else 0
+                    self.logger.debug(
+                        f"[PROGRESS] auto_paginate={self.auto_paginate}, expected_total={expected_total}, "
+                        f"effective_total={effective_total}, processed={processed}, remaining={remaining}, "
+                        f"elapsed={elapsed:.3f}, etc={etc:.1f}"
+                    )
                     self.progress(
                         self.session.processed_items / max(effective_total, 1),
                         self.session.processed_items,
