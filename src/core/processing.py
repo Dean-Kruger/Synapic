@@ -439,9 +439,9 @@ class ProcessingManager:
                 remaining = max(effective_total - processed, 0)
                 etc = (elapsed / processed * remaining) if processed > 0 else 0
                 self.progress(
-                    self.session.processed_items / max(self.session.total_items, 1),
+                    self.session.processed_items / max(effective_total, 1),
                     self.session.processed_items,
-                    self.session.total_items,
+                    effective_total,
                     more_pages=True,
                     elapsed_seconds=elapsed,
                     etc_seconds=etc,
@@ -503,9 +503,9 @@ class ProcessingManager:
                     remaining = max(effective_total - processed, 0)
                     etc = (elapsed / processed * remaining) if processed > 0 else 0
                     self.progress(
-                        pct,
+                        self.session.processed_items / max(effective_total, 1),
                         self.session.processed_items,
-                        self.session.total_items,
+                        effective_total,
                         more_pages=not _job_truly_done,
                         elapsed_seconds=elapsed,
                         etc_seconds=etc,
