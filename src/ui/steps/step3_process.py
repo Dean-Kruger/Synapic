@@ -192,10 +192,13 @@ class Step3Process(ctk.CTkFrame):
             self.progress_bar.set(pct)
             self.lbl_counter.configure(text=f"{current} / {total} Images")
             # ETA display
-            if etc_seconds > 0 and etc_seconds < 86400:
-                hours, remainder = divmod(int(etc_seconds), 3600)
+            if etc_seconds > 0:
+                days, remainder = divmod(int(etc_seconds), 86400)
+                hours, remainder = divmod(remainder, 3600)
                 mins, secs = divmod(remainder, 60)
-                if hours > 0:
+                if days > 0:
+                    eta_str = f"ETA: ~{days}d {hours}h remaining"
+                elif hours > 0:
                     eta_str = f"ETA: ~{hours}h {mins}m remaining"
                 else:
                     eta_str = f"ETA: ~{mins}m {secs}s remaining"
