@@ -62,7 +62,12 @@ if (Test-Path '.git') {
 # Step 3: Setup virtual environment
 if (-not (Test-Path '.venv')) {
     Write-Log "Creating Python virtual environment (.venv)"
-    & "$env:PYTHON" -m venv .venv 2>$null
+    $venvPython = "C:\\Python311\\python.exe"
+    if (Test-Path $venvPython) {
+        & $venvPython -m venv .venv
+    } else {
+        & python -m venv .venv
+    }
 }
 
 if (Test-Path '.venv\Scripts\activate.ps1') {
