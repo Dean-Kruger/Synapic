@@ -65,8 +65,11 @@ if (-not (Test-Path '.venv')) {
     $venvPython = "C:\\Python311\\python.exe"
     if (Test-Path $venvPython) {
         & $venvPython -m venv .venv
-    } else {
+    } elseif (Get-Command python -ErrorAction SilentlyContinue) {
         & python -m venv .venv
+    } else {
+        Write-Log "No suitable Python found to create virtual environment."
+        exit 1
     }
 }
 

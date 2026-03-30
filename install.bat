@@ -69,16 +69,16 @@ if exist ".git" (
 REM Step 3: Setup Python virtual environment and install deps
 if not exist ".venv" (
   if %SILENT%==0 (
-    echo [install] Creating virtual environment...\n
+    echo [install] Creating virtual environment...
   )
-  call %SystemRoot%\\System32\\cmd.exe /c ""%LOCALAPPDATA%\\Programs\\Python\\Python39\\python.exe" -m venv .venv" 2>NUL
-  if not exist ".venv" (
-    REM Fallback to Python311 path if available
-    if exist "C:\\Python311\\python.exe" (
-      "C:\\Python311\\python.exe" -m venv .venv
+  if exist "C:\\Python311\\python.exe" (
+    "C:\\Python311\\python.exe" -m venv .venv
+  ) else (
+    if exist "%SystemRoot%\\Python\\python.exe" (
+      "%SystemRoot%\\Python\\python.exe" -m venv .venv
     ) else (
       if %SILENT%==0 (
-        echo [install] Failed to create virtual environment.
+        echo [install] Could not find a suitable Python to create a venv.
       )
       exit /b 1
     )
