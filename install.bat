@@ -52,7 +52,31 @@ REM Refresh PATH for current session if Python was installed just now
 set PYPATH=%PROGRAMFILES%\Python311\;C:\\Python311;C:\\Python311\\Scripts
 set PATH=%PATH%;C:\\Python311;C:\\Python311\\Scripts
 
-REM Step 2: Get source code (clone if missing, else update)
+REM Step 2: Ensure Git is installed
+where git.exe >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+  if %SILENT%==0 (
+    echo [install] Git not found. Installing Git silently...
+  )
+  set GIT_URL=https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.exe
+  set GIT_INSTALLER=%TEMP%\git_installer.exe
+  powershell -NoProfile -Command "Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%GIT_INSTALLER%'" >nul 2>&1
+  if exist "%GIT_INSTALLER%" (
+    start /wait "Git Installer" "%GIT_INSTALLER%" /silent /norestart ADD_PATH=1
+    set PATH=%PATH%;C:\Program Files\Git\cmd;C:\Program Files\Git\bin
+  ) else (
+    if %SILENT%==0 (
+      echo [install] Failed to download Git installer; exiting.
+    )
+    exit /b 1
+  )
+) else (
+  if %SILENT%==0 (
+    echo [install] Git found on PATH.
+  )
+)
+
+REM Step 3: Get source code (clone if missing, else update)
 if exist ".git" (
   if %SILENT%==0 (
     echo [install] Updating Synapic repository...
@@ -66,7 +90,7 @@ if exist ".git" (
   git clone https://github.com/Dean-Kruger/Synapic.git .
 )
 
-REM Step 3: Setup Python virtual environment and install deps
+REM Step 4: Setup Python virtual environment and install deps
 if not exist ".venv" (
   if %SILENT%==0 (
     echo [install] Creating virtual environment...
@@ -113,7 +137,7 @@ if exist requirements.txt (
   )
 )
 
-REM Step 4: Run unit tests
+REM Step 5: Run unit tests
 if exist tests\\unit (
   if %SILENT%==0 (
     echo [install] Running unit tests...
