@@ -139,6 +139,8 @@ class Step1Datasource(ctk.CTkFrame):
         # Debounce timer for search
         self._debounce_timer = None
         self._current_total_count = 0
+        self._current_count_suffix = ""
+        self._current_count_api_limited = False
 
     def _on_canvas_resize(self, event):
         """Keep the scroll content sized to the visible canvas width."""
@@ -707,6 +709,13 @@ class Step1Datasource(ctk.CTkFrame):
             rb.pack(side="left", padx=(0, 15))
             self.resize_radio_buttons.append(rb)
 
+        ctk.CTkLabel(
+            self.filters_container,
+            text="Larger images are more accurately tagged, but take longer to process",
+            font=("Roboto", 12, "italic"),
+            text_color="gray70",
+        ).pack(fill="x", padx=24, pady=(0, 6))
+
         # Load saved settings
         use_thumb = getattr(ds, "use_thumbnail_override", False)
         self.use_thumbnail_override_var.set(use_thumb)
@@ -840,14 +849,51 @@ class Step1Datasource(ctk.CTkFrame):
             self._debounce_timer = self.after(delay, self._update_count_actual)
 
     def on_slider_change(self, value):
+        total = getattr(self, "_current_total_count", 0)
+        count = self._get_selected_process_count(value)
+
         if value >= 1.0:
-            self.lbl_limit_value.configure(text="All")
+            self.lbl_limit_value.configure(text="All matching records")
         else:
             pct = int(value * 100)
-            count = int(self._current_total_count * value)
-            if count == 0 and self._current_total_count > 0:
-                count = 1
             self.lbl_limit_value.configure(text=f"{pct}% ({count:,} records)")
+
+        self._update_count_label(total, count)
+
+    def _get_selected_process_count(self, slider_value):
+        """Return how many records will actually be processed for the slider value."""
+        total = getattr(self, "_current_total_count", 0)
+        if total <= 0:
+            return 0
+        if slider_value >= 1.0:
+            return total
+
+        count = int(total * slider_value)
+        return 1 if count == 0 else count
+
+    def _update_count_label(self, total_count, selected_count=None):
+        """Keep the datasource count label aligned with the active process limit."""
+        suffix = getattr(self, "_current_count_suffix", "")
+        api_limited = getattr(self, "_current_count_api_limited", False)
+
+        base_text = f"Records found: {total_count}{suffix}"
+        if api_limited:
+            base_text += " (API limit)"
+
+        if (
+            hasattr(self, "limit_toggle_frame")
+            and self.limit_toggle_frame.winfo_manager()
+            and total_count > 0
+        ):
+            if selected_count is None:
+                selected_count = self._get_selected_process_count(self.limit_slider.get())
+
+            if selected_count < total_count:
+                base_text += f" | Will process: {selected_count:,}"
+            else:
+                base_text += " | Will process: all"
+
+        self.lbl_total_count.configure(text=base_text)
 
     def _update_count_actual(self):
         self.lbl_total_count.configure(text="Counting...")
@@ -968,20 +1014,9 @@ class Step1Datasource(ctk.CTkFrame):
                     if not self.winfo_exists():
                         return
 
-                    if api_limited:
-                        # Show limited count with asterisk and note
-                        self.lbl_total_count.configure(
-                            text=f"Records: {final_count}{suffix} (API limit)"
-                        )
-                    else:
-                        self.lbl_total_count.configure(
-                            text=f"Records: {final_count}{suffix}"
-                        )
-
                     self._current_total_count = final_count
-
-                    # Update slider display
-                    self.on_slider_change(self.limit_slider.get())
+                    self._current_count_suffix = suffix
+                    self._current_count_api_limited = api_limited
 
                     # Show toggle if records > 500 (or unknown)
                     if final_count > 500 or suffix == "+":
@@ -994,6 +1029,9 @@ class Step1Datasource(ctk.CTkFrame):
                             self.limit_toggle_frame.pack(fill="x", padx=20, pady=10)
                     else:
                         self.limit_toggle_frame.pack_forget()
+
+                    # Update labels after toggle visibility is finalized.
+                    self.on_slider_change(self.limit_slider.get())
 
                 self.after(0, _update_ui)
             except Exception as e:

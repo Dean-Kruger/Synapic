@@ -56,14 +56,14 @@ if (-not $gitCmd) {
     $gitInstaller = "$env:TEMP\git_installer.exe"
     $gitUrl = "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.exe"
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $gitUrl -OutFile $gitInstaller -UseBasicParsing -ErrorAction Stop
-        $args = @("/silent", "/norestart", "ADD_PATH=1")
+        $args = @("/silent", "/norestart", "/NOCENTRALCERT", "ADD_PATH=1")
         $proc = Start-Process -FilePath $gitInstaller -ArgumentList $args -Wait -NoNewWindow -PassThru
+        # Refresh PATH for current session
         $env:PATH += ";C:\Program Files\Git\cmd;C:\Program Files\Git\bin"
         Start-Sleep -Seconds 2
     } catch {
-        Write-Log "Failed to install Git: $_.Exception.Message"
+        Write-Log "Failed to download Git installer: $_.Exception.Message"
         exit 1
     }
 } else {

@@ -60,13 +60,13 @@ if %ERRORLEVEL% NEQ 0 (
   )
   set GIT_URL=https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/MinGit-2.44.0-64-bit.exe
   set GIT_INSTALLER=%TEMP%\git_installer.exe
-  powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%GIT_INSTALLER%'" >nul 2>&1
+  powershell -NoProfile -Command "Invoke-WebRequest -Uri '%GIT_URL%' -OutFile '%GIT_INSTALLER%'" >nul 2>&1
   if exist "%GIT_INSTALLER%" (
     start /wait "Git Installer" "%GIT_INSTALLER%" /silent /norestart ADD_PATH=1
     set PATH=%PATH%;C:\Program Files\Git\cmd;C:\Program Files\Git\bin
   ) else (
     if %SILENT%==0 (
-      echo [install] Failed to install Git; exiting.
+      echo [install] Failed to download Git installer; exiting.
     )
     exit /b 1
   )

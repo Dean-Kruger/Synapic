@@ -254,6 +254,13 @@ class ProcessingManager:
         try:
             self.log("Job started.")
             self.session.reset_stats()  # Clear previous run statistics
+            self.session.is_processing = True
+            process_limit = (
+                self.session.datasource.max_items
+                if self.session.datasource.type == "daminion"
+                and self.session.datasource.max_items > 0
+                else None
+            )
 
             # ================================================================
             # STAGE 1: INITIALIZE MODEL / API CLIENT — done once before loop
@@ -340,6 +347,8 @@ class ProcessingManager:
             # current filters so we can confirm every page is retrieved.
             ds = self.session.datasource
             expected_total = 0  # Default for non-Daminion sources
+            if process_limit is not None:
+                self.log(f"Process limit active: up to {process_limit} item(s).")
             if ds.type == "daminion" and self.session.daminion_client:
                 try:
                     untagged_fields = []
@@ -366,6 +375,8 @@ class ProcessingManager:
                         f"PRE-FLIGHT COUNT: server reports {expected_total} record(s) "
                         f"matching current filters (scope={ds.daminion_scope})"
                     )
+                    if process_limit is not None:
+                        expected_total = min(expected_total, process_limit)
                     self.log(
                         f"Server record count: {expected_total} item(s) "
                         f"matching filters before processing starts."
@@ -374,6 +385,15 @@ class ProcessingManager:
                     self.logger.warning(f"Pre-flight count failed (non-fatal): {e}")
 
             while True:
+                if (
+                    process_limit is not None
+                    and self.session.processed_items >= process_limit
+                ):
+                    self.log(
+                        f"Process limit reached ({process_limit} item(s)) - stopping."
+                    )
+                    break
+
                 page_num += 1
                 if page_num == 1:
                     self.log("Fetching items...")
@@ -436,6 +456,8 @@ class ProcessingManager:
                     effective_total = expected_total
                 else:
                     effective_total = self.session.total_items
+                if process_limit is not None:
+                    effective_total = min(effective_total, process_limit)
                 remaining = max(effective_total - processed, 0)
                 etc = (elapsed / processed * remaining) if processed > 0 else 0
                 self.progress(
@@ -500,6 +522,8 @@ class ProcessingManager:
                         effective_total = expected_total
                     else:
                         effective_total = self.session.total_items
+                    if process_limit is not None:
+                        effective_total = min(effective_total, process_limit)
                     remaining = max(effective_total - processed, 0)
                     etc = (elapsed / processed * remaining) if processed > 0 else 0
                     self.progress(
@@ -510,6 +534,15 @@ class ProcessingManager:
                         elapsed_seconds=elapsed,
                         etc_seconds=etc,
                     )
+
+                    if (
+                        process_limit is not None
+                        and self.session.processed_items >= process_limit
+                    ):
+                        self.logger.info(
+                            f"Processing stopped at configured limit of {process_limit} items"
+                        )
+                        break
 
                 # Stop pagination if abort was requested
                 if self.stop_event.is_set():
@@ -595,6 +628,8 @@ class ProcessingManager:
                         pass
                 self._api_client = None
             gc.collect()
+        finally:
+            self.session.is_processing = False
 
     def _fetch_items(self, offset: int = 0):
         """
@@ -668,8 +703,18 @@ class ProcessingManager:
             if ds.daminion_untagged_description:
                 untagged_fields.append("Description")
 
-            # Determine maximum items to fetch (0 = unlimited)
-            max_to_fetch = ds.max_items if ds.max_items > 0 else None
+            # Determine maximum items to fetch (0 = unlimited). For limited runs,
+            # only fetch the remaining quota so reload-pagination cannot exceed it.
+            if ds.max_items > 0:
+                remaining_limit = ds.max_items - self.session.processed_items
+                if remaining_limit <= 0:
+                    self.logger.info(
+                        "Process limit already satisfied; no more items fetched."
+                    )
+                    return []
+                max_to_fetch = remaining_limit
+            else:
+                max_to_fetch = None
 
             # Query Daminion. When offset > 0 we are in a pagination pass
             # and only want the single next page of 500 records.

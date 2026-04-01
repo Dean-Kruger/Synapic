@@ -125,13 +125,14 @@ class Step3Process(ctk.CTkFrame):
         nav_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         nav_frame.grid(row=5, column=0, pady=20, sticky="ew")
 
-        ctk.CTkButton(
+        self.btn_back = ctk.CTkButton(
             nav_frame,
             text="Previous",
-            command=lambda: self.controller.show_step("Step2Tagging"),
+            command=self.go_back,
             width=150,
             fg_color="gray",
-        ).pack(side="left", padx=20)
+        )
+        self.btn_back.pack(side="left", padx=20)
         ctk.CTkButton(
             nav_frame,
             text="View Results",
@@ -150,7 +151,9 @@ class Step3Process(ctk.CTkFrame):
         """
         self.btn_start.configure(state="disabled")
         self.btn_stop.configure(state="normal")
+        self.btn_back.configure(state="disabled")
         self.lbl_status.configure(text="Initializing...")
+        self.controller.session.is_processing = True
 
         # Start Worker
         from src.core.processing import ProcessingManager
@@ -175,7 +178,9 @@ class Step3Process(ctk.CTkFrame):
 
         self.btn_start.configure(state="normal")
         self.btn_stop.configure(state="disabled")
+        self.btn_back.configure(state="normal")
         self.lbl_status.configure(text="Stopping...")
+        self.controller.session.is_processing = False
 
     def shutdown(self):
         """Clean up resources on application exit."""
@@ -193,15 +198,10 @@ class Step3Process(ctk.CTkFrame):
             self.lbl_counter.configure(text=f"{current} / {total} Images")
             # ETA display
             if etc_seconds > 0:
-                days, remainder = divmod(int(etc_seconds), 86400)
-                hours, remainder = divmod(remainder, 3600)
-                mins, secs = divmod(remainder, 60)
-                if days > 0:
-                    eta_str = f"ETA: ~{days}d {hours}h remaining"
-                elif hours > 0:
-                    eta_str = f"ETA: ~{hours}h {mins}m remaining"
-                else:
-                    eta_str = f"ETA: ~{mins}m {secs}s remaining"
+                eta_str = (
+                    f"ETA: {self._format_duration(etc_seconds)} remaining - "
+                    f"{self._format_duration(elapsed_seconds / current)} per image"
+                )
                 self.lbl_eta.configure(text=eta_str, text_color="#E8A838")
             elif pct >= 1.0 and not more_pages:
                 self.lbl_eta.configure(text="")
@@ -213,8 +213,27 @@ class Step3Process(ctk.CTkFrame):
                 self.lbl_status.configure(text="Completed.")
                 self.btn_start.configure(state="normal")
                 self.btn_stop.configure(state="disabled")
+                self.btn_back.configure(state="normal")
+                self.controller.session.is_processing = False
 
         self.after(0, _update)
+
+    def _format_duration(self, seconds):
+        seconds = max(int(seconds), 0)
+        days, remainder = divmod(seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        mins, secs = divmod(remainder, 60)
+
+        if days > 0:
+            return f"~{days}d {hours}h"
+        if hours > 0:
+            return f"~{hours}h {mins}m"
+        return f"~{mins}m {secs}s"
+
+    def go_back(self):
+        if self.controller.session.is_processing:
+            return
+        self.controller.show_step("Step2Tagging")
 
     def log(self, message):
         self.console.configure(state="normal")
