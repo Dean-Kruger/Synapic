@@ -25,7 +25,7 @@ Author: Synapic Project
 
 import logging
 import tempfile
-from typing import Dict, List, Optional, Tuple, Any, Callable
+from typing import Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
 # Import the new API implementation
@@ -35,9 +35,7 @@ from .daminion_api import (
     DaminionAuthenticationError,
     DaminionNetworkError,
     DaminionRateLimitError,
-    DaminionNotFoundError,
     TagInfo,
-    TagValue,
 )
 
 
@@ -584,7 +582,7 @@ class DaminionClient:
                     )
                     if not batch:
                         logger.debug(
-                            f"[FETCH DEBUG] Keyword Search: breaking - empty batch"
+                            "[FETCH DEBUG] Keyword Search: breaking - empty batch"
                         )
                         break
                     items.extend(batch)
@@ -621,7 +619,7 @@ class DaminionClient:
                     )
                     if not batch:
                         logger.debug(
-                            f"[FETCH DEBUG] Global Scan: breaking - empty batch"
+                            "[FETCH DEBUG] Global Scan: breaking - empty batch"
                         )
                         break
                     items.extend(batch)
@@ -686,7 +684,7 @@ class DaminionClient:
                     )
                     if not batch:
                         logger.debug(
-                            f"[FETCH DEBUG] Saved Search: breaking - empty batch"
+                            "[FETCH DEBUG] Saved Search: breaking - empty batch"
                         )
                         break
                     items.extend(batch)
@@ -844,6 +842,29 @@ class DaminionClient:
             return True
         except Exception as e:
             logger.error(f"Failed to update tags for item {item_id}: {e}")
+            return False
+
+    def checkout_item(self, item_id: int) -> bool:
+        """
+        Check out an item for editing (version control).
+        """
+        try:
+            with self._get_api() as api:
+                return api.version_control.checkout([item_id])
+        except Exception as e:
+            logger.error(f"Failed to check out item {item_id}: {e}")
+            return False
+
+    def checkin_item(self, item_id: int, file_path: str) -> bool:
+        """
+        Check in an item as a new version.
+        """
+        try:
+            with self._get_api() as api:
+                api.version_control.checkin(item_id, file_path)
+                return True
+        except Exception as e:
+            logger.error(f"Failed to check in item {item_id}: {e}")
             return False
 
     def update_item_metadata(

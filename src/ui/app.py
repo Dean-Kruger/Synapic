@@ -141,7 +141,7 @@ class App(ctk.CTk):
 
         # Initialize Session
         from src.core.session import Session
-        from src.utils.config_manager import load_config, save_config
+        from src.utils.config_manager import load_config
         
         self.logger.info("Creating new session")
         self.session = Session()
@@ -159,10 +159,10 @@ class App(ctk.CTk):
 
         self.steps = {}
         
-        from src.ui.steps import Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepDedup
+        from src.ui.steps import Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepDedup, StepUpscale
 
         self.logger.info("Creating UI steps")
-        for F in (Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepDedup):
+        for F in (Step1Datasource, Step2Tagging, Step3Process, Step4Results, StepDedup, StepUpscale):
             page_name = F.__name__
             self.logger.debug(f"Creating step: {page_name}")
             frame = F(parent=self.container, controller=self)

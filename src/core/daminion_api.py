@@ -307,7 +307,7 @@ class DaminionAPI:
                 params["catalogId"] = self.catalog_id
             
             # Make POST request with params in URL
-            response = self._make_request(
+            _ = self._make_request(
                 "/api/UserManager/Login",
                 method="POST",
                 params=params,
@@ -509,10 +509,6 @@ class DaminionAPI:
             return json.dumps(self.get_metrics())
         except Exception:
             return "{}"
-
-    def export_metrics_json(self) -> str:
-        """Backward-compatible wrapper to export metrics as JSON."""
-        return self.get_metrics_json()
 
     def export_metrics_json(self) -> str:
         """Backward-compatible wrapper to export metrics as JSON."""
@@ -731,7 +727,7 @@ class MediaItemsAPI(BaseAPI):
     
     def clear_favorites(self):
         """Clear all favorite items."""
-        self._request(f"/api/MediaItems/ClearTray/0", method="POST")
+        self._request("/api/MediaItems/ClearTray/0", method="POST")
     
     def approve_items(self, item_ids: List[int]):
         """
@@ -1480,3 +1476,80 @@ class UserManagerAPI(BaseAPI):
         )
         
         return result.get('id', 0) if isinstance(result, dict) else result
+
+class VersionControlAPI(BaseAPI):
+    """
+    Version Control operations (Checkout, CheckIn, Rollback, etc.).
+    """
+
+    def checkout(self, item_ids: List[int]) -> bool:
+        """
+        Check out one or more media items.
+
+        Args:
+            item_ids: List of media item IDs to checkout.
+
+        Returns:
+            True if successful.
+        """
+        data = {"Ids": item_ids}
+        self._request(
+            "/api/VersionControl/CheckOut",
+            method="POST",
+            data=data
+        )
+        return True
+
+    def checkin(self, item_id: int, file_path: str) -> Dict[str, Any]:
+        """
+        Check in a new file version for a checked-out media item.
+
+        Args:
+            item_id: The ID of the checked-out media item.
+            file_path: The local path to the new file version (e.g., upscaled image).
+
+        Returns:
+            Dictionary containing the response (e.g., new Version hash).
+        """
+        import os
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # TODO: The exact multipart/form-data schema for CheckIn is not fully
+        # detailed in the Web API docs. We assume 'file' as the field name and
+        # item_id as part of the multipart form or endpoint query. We use the
+        # standard client._make_request with multipart structure.
+
+        with open(file_path, "rb") as f:
+            files = {
+                "file": (os.path.basename(file_path), f, "application/octet-stream")
+            }
+            # Many DAMs take the ID in the body or query for checkin.
+            data = {"id": str(item_id)}
+
+            result = self.client._make_request(
+                "/api/VersionControl/CheckIn",
+                method="POST",
+                data=data,
+                files=files
+            )
+            return result
+
+    def undo_checkout(self, item_ids: List[int]) -> bool:
+        """
+        Undo a checkout operation, discarding any un-checked-in changes.
+
+        Args:
+            item_ids: List of media item IDs to undo checkout for.
+
+        Returns:
+            True if successful.
+        """
+        data = {"Ids": item_ids}
+        self._request(
+            "/api/VersionControl/UndoCheckOut",
+            method="POST",
+            data=data
+        )
+        return True

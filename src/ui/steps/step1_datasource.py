@@ -405,6 +405,16 @@ class Step1Datasource(ctk.CTkFrame):
             command=self._open_dedup_step,
         ).pack(side="left", padx=5)
 
+        # Upscale button
+        ctk.CTkButton(
+            btn_container,
+            text="✨ Upscale",
+            fg_color=("#0ea5e9", "#0284c7"),
+            hover_color=("#0284c7", "#0369a1"),
+            width=120,
+            command=self._open_upscale_step,
+        ).pack(side="left", padx=5)
+
         # Disconnect button
         ctk.CTkButton(
             btn_container,
@@ -416,6 +426,34 @@ class Step1Datasource(ctk.CTkFrame):
         ).pack(side="left", padx=5)
 
         self.show_daminion_scope_selector()
+
+    def _open_upscale_step(self):
+        """Navigate to the upscaling step."""
+        self.logger.info("Upscale button clicked.")
+        if not self.controller.session.daminion_client:
+            messagebox.showerror("Error", "Not connected to Daminion.")
+            return
+
+        self._worker.submit(self._fetch_items_and_navigate_to_upscale)
+
+    def _fetch_items_and_navigate_to_upscale(self):
+        try:
+            items = self.controller.session.daminion_client.get_items_filtered(
+                scope=self.scope_var.get(),
+                limit=10,
+                offset=0
+            )
+
+            if not items:
+                self.after(0, lambda: messagebox.showinfo("Info", "No items found in current scope."))
+                return
+
+            self.controller.session.current_items = items
+            self.after(0, lambda: self.controller.show_step("StepUpscale"))
+        except Exception as e:
+            self.logger.error(f"Error fetching items for upscale: {e}")
+            err_msg = str(e)
+            self.after(0, lambda: messagebox.showerror("Error", f"Failed to fetch items: {err_msg}"))
 
     def _open_dedup_step(self):
         """
@@ -519,8 +557,8 @@ class Step1Datasource(ctk.CTkFrame):
                 )
                 self.after(
                     0,
-                    lambda: messagebox.showerror(
-                        "Error", f"Failed to load items:\n{e}"
+                    lambda err=str(e): messagebox.showerror(
+                        "Error", f"Failed to load items:\n{err}"
                     ),
                 )
                 self.after(
@@ -1006,7 +1044,7 @@ class Step1Datasource(ctk.CTkFrame):
                     api_limited = True
                     suffix = "*"
                     logging.info(
-                        f"[COUNT DEBUG] Detected API limitation (count=200 for text filter). Showing 500* as max fetchable."
+                        "[COUNT DEBUG] Detected API limitation (count=200 for text filter). Showing 500* as max fetchable."
                     )
 
                 # Update UI and Toggle Visibility
@@ -1119,7 +1157,7 @@ class Step1Datasource(ctk.CTkFrame):
                 if slider_value >= 1.0:
                     ds.max_items = 0  # 0 means unlimited
                     self.logger.info(
-                        f"[LIMIT DEBUG] Slider at 100% -> max_items=0 (unlimited)"
+                        "[LIMIT DEBUG] Slider at 100% -> max_items=0 (unlimited)"
                     )
                 else:
                     ds.max_items = int(total_count * slider_value)
@@ -1131,7 +1169,7 @@ class Step1Datasource(ctk.CTkFrame):
             else:
                 ds.max_items = 0
                 self.logger.info(
-                    f"[LIMIT DEBUG] Slider hidden -> max_items=0 (unlimited)"
+                    "[LIMIT DEBUG] Slider hidden -> max_items=0 (unlimited)"
                 )
 
             self.logger.info(f"[LIMIT DEBUG] Final ds.max_items = {ds.max_items}")

@@ -20,4 +20,5 @@ from .step3_process import Step3Process
 from .step4_results import Step4Results
 
 from .step_dedup import StepDedup
+from .step_upscale import StepUpscale
 
