@@ -17,7 +17,10 @@ This script is intentionally simple and is meant for local developer use.
 
 import os
 
-log_file = r"c:\Users\Dean\source\repos\Synapic\logs\synapic.log"
+# Resolve the log path relative to the repository root so this works on any
+# checkout (script lives in scripts/, logs/ sits at the repo root).
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log_file = os.path.join(_repo_root, "logs", "synapic.log")
 bytes_to_read = 5000
 
 try:
