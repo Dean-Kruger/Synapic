@@ -116,7 +116,7 @@ class App(ctk.CTk):
 
         super().__init__()
 
-        self.title("Hugging Juice Face v2")
+        self.title("Synapic")
         self.geometry("1280x840")
         self.minsize(1100, 760)
         
