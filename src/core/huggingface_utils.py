@@ -1349,7 +1349,7 @@ def rate_limit_handler(max_retries=3, initial_delay=1.0):
                                     wait_time = (
                                         float(e.response.headers["retry-after"]) + 1.0
                                     )  # Add buffer
-                                except:
+                                except (ValueError, TypeError):
                                     pass
 
                         logging.warning(

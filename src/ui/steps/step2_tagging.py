@@ -30,9 +30,13 @@ try:
 except Exception:
     GroqSettingsDialog = None
 import customtkinter as ctk
+import logging
 from src.utils.background_worker import BackgroundWorker
 from src.utils.concurrency import DaemonThreadPoolExecutor
 from src.utils.registry_config import load_ui_preferences, save_ui_preferences
+
+logger = logging.getLogger(__name__)
+
 
 class Step2Tagging(ctk.CTkFrame):
     """
@@ -264,7 +268,7 @@ class Step2Tagging(ctk.CTkFrame):
     def on_device_change(self, value):
         """Update session device setting when toggle changes."""
         self.controller.session.engine.device = value
-        print(f"Device changed to: {value}")
+        logger.debug(f"Device changed to: {value}")
 
     def _on_engine_change(self):
         engine = self.engine_var.get()
@@ -331,7 +335,7 @@ class Step2Tagging(ctk.CTkFrame):
         # For now, let's assume the user configured it via the dialog which we will update to write to session.
         pass
         
-        print(f"Selected Engine: {self.controller.session.engine.provider}")
+        logger.debug(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
 
     def refresh_stats(self):
@@ -1664,7 +1668,7 @@ class Step2Tagging(ctk.CTkFrame):
                 path = huggingface_utils.get_model_cache_dir(model_id)
                 if os.path.exists(path):
                     shutil.rmtree(path)
-                    print(f"Deleted model directory: {path}")
+                    logger.info(f"Deleted model directory: {path}")
                 
                 self.refresh_local_cache()
             except Exception as e:
@@ -1681,9 +1685,9 @@ class Step2Tagging(ctk.CTkFrame):
             if model_info:
                 # Use the newly added suggested_task from hf_utils
                 self.session.engine.task = model_info.get('suggested_task', "image-classification")
-                print(f"Setting task for {self.session.engine.model_id} to {self.session.engine.task}")
-        except:
-            pass
+                logger.debug(f"Setting task for {self.session.engine.model_id} to {self.session.engine.task}")
+        except Exception as e:
+            logger.debug(f"Could not determine task for local model: {e}")
         self._apply_config()
 
     def validate_model_id(self, model_id, provider):
@@ -2247,7 +2251,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
                 if huggingface_utils.is_model_suitable_for_local_inference(r['id'], task=r['task']):
                     compatible_results.append(r)
                 else:
-                    print(f"Filtered out incompatible model: {r['id']}")
+                    logger.debug(f"Filtered out incompatible model: {r['id']}")
             unique_results = compatible_results
             
             # Fetch sizes concurrently to avoid UI lag
@@ -2465,9 +2469,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             model_info = local_models.get(model_id)
             if model_info:
                 self.session.engine.task = model_info.get('suggested_task', "image-to-text")
-                print(f"Auto-selected model {model_id} with task {self.session.engine.task}")
+                logger.debug(f"Auto-selected model {model_id} with task {self.session.engine.task}")
         except Exception as e:
-            print(f"Could not determine task for {model_id}: {e}")
+            logger.warning(f"Could not determine task for {model_id}: {e}")
             self.session.engine.task = "image-to-text"  # Default fallback
         
         # Refresh parent cache and update selection
