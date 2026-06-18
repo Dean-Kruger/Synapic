@@ -84,6 +84,15 @@ def _resolve_icon_path():
     return None
 
 
+def _resolve_png_icon_path():
+    """Locate the PNG icon used to drive the Windows taskbar icon (iconphoto)."""
+    for ico_path in _candidate_icon_paths():
+        png_path = os.path.splitext(ico_path)[0] + ".png"
+        if os.path.exists(png_path):
+            return png_path
+    return None
+
+
 def _set_windows_app_id(logger: logging.Logger):
     if sys.platform != "win32":
         return
@@ -125,16 +134,14 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
         self.logger.debug("UI theme configured: Dark mode with blue color theme")
 
-        icon_path = _resolve_icon_path()
-        if icon_path:
-            try:
-                self.iconbitmap(default=icon_path)
-                self.logger.info(f"Loaded application icon from {icon_path}")
-            except Exception as e:
-                self.logger.warning(f"Failed to set application icon: {e}")
-        else:
-            self.logger.warning("Application icon was not found in any expected location")
-
+        self._icon_path = _resolve_icon_path()
+        self._png_icon_path = _resolve_png_icon_path()
+        self._taskbar_icon_image = None
+        self._apply_window_icon()
+        # CustomTkinter re-applies its own default titlebar icon via a delayed
+        # self.after(200, ...) callback in CTk.__init__. Re-assert our icon
+        # after that fires so the titlebar AND taskbar icons stick.
+        self.after(250, self._apply_window_icon)
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -171,6 +178,45 @@ class App(ctk.CTk):
 
         self.logger.info("Showing initial step: Step1Datasource")
         self.show_step("Step1Datasource")
+
+    def _apply_window_icon(self):
+        """
+        Apply the application icon to both the titlebar and the taskbar.
+
+        ``iconbitmap`` drives the titlebar/alt-tab icon (Windows wants a real
+        .ico), while ``iconphoto`` drives the larger Windows taskbar icon and is
+        what was previously missing. Both are set so the icon is consistent
+        everywhere. The PhotoImage is kept on ``self`` because Tk discards
+        images that are not referenced elsewhere.
+        """
+        if self._icon_path:
+            try:
+                self.iconbitmap(default=self._icon_path)
+            except Exception as e:
+                self.logger.warning(f"Failed to set titlebar icon: {e}")
+
+        if self._png_icon_path:
+            try:
+                import tkinter as tk
+
+                if self._taskbar_icon_image is None:
+                    img = tk.PhotoImage(file=self._png_icon_path)
+                    # The source PNG is large (2048px); downscale to a sane
+                    # icon size so Tk isn't handing the WM a giant bitmap.
+                    factor = max(1, min(img.width(), img.height()) // 256)
+                    if factor > 1:
+                        img = img.subsample(factor, factor)
+                    self._taskbar_icon_image = img
+                self.iconphoto(True, self._taskbar_icon_image)
+            except Exception as e:
+                self.logger.warning(f"Failed to set taskbar icon: {e}")
+
+        if not self._icon_path and not self._png_icon_path:
+            self.logger.warning("Application icon was not found in any expected location")
+        else:
+            self.logger.debug(
+                f"Applied window icon (ico={self._icon_path}, png={self._png_icon_path})"
+            )
 
     def show_step(self, page_name: str):
         """
