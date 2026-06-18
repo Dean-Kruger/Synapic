@@ -534,10 +534,10 @@ class DaminionClient:
             # Always stop after one batch; the caller advances start_index.
             single_page = True
 
-            logger.info(
+            logger.debug(
                 f"[FETCH DEBUG] get_items_filtered called: scope={scope}, max_items={max_items}, limit={limit}, batch_size={batch_size}"
             )
-            logger.info(
+            logger.debug(
                 f"[FETCH DEBUG] saved_search_id={saved_search_id}, collection_id={collection_id}, search_term={search_term}"
             )
 
@@ -710,7 +710,7 @@ class DaminionClient:
                         progress_callback(len(items))
 
             result_count = len(items[: int(limit)] if limit != float("inf") else items)
-            logger.info(
+            logger.debug(
                 f"[FETCH DEBUG] Returning {result_count} items (collected {len(items)}, limit={limit})"
             )
             return items[: int(limit)] if limit != float("inf") else items

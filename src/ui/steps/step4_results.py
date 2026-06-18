@@ -22,6 +22,10 @@ import customtkinter as ctk
 import os
 import subprocess
 import platform
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class Step4Results(ctk.CTkFrame):
     """
@@ -143,17 +147,17 @@ class Step4Results(ctk.CTkFrame):
         
         try:
             if not log_file.exists():
-                print(f"Log file does not exist: {log_file}")
+                logger.warning(f"Log file does not exist: {log_file}")
                 # Fallback to directory
                 if LOG_DIR.exists():
                      self._open_path(LOG_DIR)
                 return
-            
+
             self._open_path(log_file)
-            print(f"Opened log file: {log_file}")
-            
+            logger.info(f"Opened log file: {log_file}")
+
         except Exception as e:
-            print(f"Failed to open log file: {e}")
+            logger.error(f"Failed to open log file: {e}")
 
     def _open_path(self, path):
         """Helper to open file or folder."""
@@ -166,7 +170,7 @@ class Step4Results(ctk.CTkFrame):
             subprocess.run(['xdg-open', str(path)])
 
     def export_report(self):
-        print("Exporting report...")
+        logger.info("Exporting report...")
 
     def new_session(self):
         self.controller.show_step("Step1Datasource")

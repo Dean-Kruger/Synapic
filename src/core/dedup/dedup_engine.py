@@ -9,6 +9,7 @@ grouping of transitively similar images.
 Adapted from: https://github.com/deanable/python-dedupe
 """
 
+import logging
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from collections import defaultdict
@@ -19,6 +20,8 @@ from src.core.dedup.hash_comparison import (
     calculate_similarity_percentage,
     calculate_hamming_distance
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -94,7 +97,7 @@ class ImageDeduplicator:
 
             except Exception as e:
                 # Skip images that fail to load or hash
-                print(f"Error processing {image_path}: {e}")
+                logger.warning(f"Error processing {image_path}: {e}")
                 continue
 
         return hash_map
@@ -131,7 +134,7 @@ class ImageDeduplicator:
                 hash_map[item_id] = hash_result
                 
             except Exception as e:
-                print(f"Error processing item {item_id}: {e}")
+                logger.warning(f"Error processing item {item_id}: {e}")
                 continue
         
         return hash_map
