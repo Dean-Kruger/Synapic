@@ -438,7 +438,7 @@ class StepDedup(ctk.CTkFrame):
         self.select_btns_frame = ctk.CTkFrame(footer_frame, fg_color="transparent")
         self.select_btns_frame.grid(row=0, column=1, padx=20)
         
-        select_label = ctk.CTkLabel(self.select_btns_frame, text="Select all:", font=ctk.CTkFont(size=11))
+        select_label = ctk.CTkLabel(self.select_btns_frame, text="Select to keep:", font=ctk.CTkFont(size=11))
         select_label.pack(side="left", padx=(0, 5))
         
         for strategy, label in [("oldest", "Oldest"), ("newest", "Newest"), ("largest", "Largest"), ("smallest", "Smallest")]:
@@ -861,7 +861,7 @@ class StepDedup(ctk.CTkFrame):
             self.after(0, lambda: self.apply_btn.configure(state="normal", text="Apply Deduplication"))
 
     def _reload_base_query_items(self) -> List[Dict]:
-        """Reload current Step 1 base query into session.dedup_items."""
+        """Reload current Step 1 base query into session.dedup_items (paginated)."""
         ds = self.session.datasource
         client = self.session.daminion_client
 
@@ -890,28 +890,69 @@ class StepDedup(ctk.CTkFrame):
             untagged.append("Description")
 
         process_limit = getattr(ds, "max_items", 0) or 0
-        fetch_limit = 500
-        if process_limit > 0:
-            fetch_limit = min(process_limit, 500)
+        target_limit = process_limit if process_limit > 0 else None
+        page_size = 500
+        start_index = 0
+        page_num = 0
+        fresh_items: List[Dict] = []
 
         logger.info(
             f"[DEDUP REFRESH] Reloading base query: scope={scope}, ss_id={ss_id}, "
-            f"col_id={col_id}, status={status}, limit={fetch_limit}"
+            f"col_id={col_id}, status={status}, limit={target_limit or 'all'}"
         )
-        fresh_items = client.get_items_filtered(
-            scope=scope,
-            saved_search_id=ss_id,
-            collection_id=col_id,
-            search_term=search_term,
-            untagged_fields=untagged,
-            status_filter=status,
-            max_items=fetch_limit,
-        )
+
+        while True:
+            if target_limit is not None and len(fresh_items) >= target_limit:
+                break
+
+            fetch_max = page_size
+            if target_limit is not None:
+                fetch_max = min(fetch_max, target_limit - len(fresh_items))
+                if fetch_max <= 0:
+                    break
+
+            page_num += 1
+            self.after(
+                0,
+                lambda p=page_num, c=len(fresh_items): self.progress_label.configure(
+                    text=f"Re-fetching items from Daminion... page {p} ({c:,} loaded)"
+                ),
+            )
+            batch = client.get_items_filtered(
+                scope=scope,
+                saved_search_id=ss_id,
+                collection_id=col_id,
+                search_term=search_term,
+                untagged_fields=untagged,
+                status_filter=status,
+                max_items=fetch_max,
+                start_index=start_index,
+            )
+
+            if not batch:
+                logger.info(
+                    f"[DEDUP REFRESH] Pagination stopped at page {page_num}: empty batch."
+                )
+                break
+
+            fresh_items.extend(batch)
+            logger.info(
+                f"[DEDUP REFRESH] Loaded page {page_num}: +{len(batch)} items (total {len(fresh_items)})"
+            )
+
+            # End if server indicates last page.
+            if len(batch) < page_size:
+                break
+
+            # Advance by actual received count to avoid skipping/overlap.
+            start_index += len(batch)
 
         if fresh_items:
             old_count = len(self.session.dedup_items) if getattr(self.session, "dedup_items", None) else 0
             self.session.dedup_items = fresh_items
-            logger.info(f"[DEDUP REFRESH] Refreshed base query: {old_count} -> {len(fresh_items)} items")
+            logger.info(
+                f"[DEDUP REFRESH] Refreshed base query: {old_count} -> {len(fresh_items)} items"
+            )
             return fresh_items
 
         logger.warning("[DEDUP REFRESH] Reload returned no items, keeping existing set")
