@@ -70,7 +70,6 @@ Notes
 ### ✨ **Intelligent Tagging**
 - **Auto-Keywords**: Extract relevant tags from image content
 - **Categorization**: Assign broad categories automatically or via zero-shot classification
-- **Categorization**: Assign broad categories automatically or via zero-shot classification
 - **Descriptions**: Generate detailed captions for image context
 
 ### 🔍 **Duplicate Elimination**
@@ -159,10 +158,11 @@ For the best results, we recommend downloading the following models for local us
 
 ## Technology Stack
 
-- **UI Framework**: CustomTkinter (modern dark mode UI)
-- **AI Integration**: Hugging Face Transformers, OpenRouter API
-- **Metadata**: piexif (EXIF), iptcinfo3 (IPTC)
-- **DAM Integration**: Daminion REST API
+- **UI Framework**: CustomTkinter (modern, responsive, dark-mode-first UI)
+- **Concurrency**: Multi-threaded backend with `ProcessingManager` loop orchestration
+- **AI Integration**: Hugging Face Transformers & OpenRouter REST gateway
+- **Metadata**: piexif (EXIF), iptcinfo3 (IPTC keywords/caption)
+- **DAM Integration**: Official Daminion REST API with retry/masking logic
 - **Build**: PyInstaller for Windows executable generation
 
 ## Development
@@ -199,19 +199,10 @@ Synapic iterates on traditional tagging workflows by providing a linear, 4-step 
 1.  **🚀 Step 1: Datasource**: Connect to your Daminion server or a local image folder. Supports advanced filtering by status (flags), untagged fields, and specific catalog scopes.
 2.  **🤖 Step 2: Tagging Engine**: Choose your intelligence. Run local models via Hugging Face for privacy, or use cloud-based VLMs via OpenRouter for state-of-the-art accuracy.
 3.  **⚙️ Step 3: Process**: Execute the batch job with real-time feedback, multithreaded logging, and granular progress monitoring.
-3.  **⚙️ Step 3: Process**: Execute the batch job with real-time feedback, multithreaded logging, and granular progress monitoring.
 4.  **📊 Step 4: Results**: Review your new metadata, verify successful writes to the DAM, and export session reports.
 
 **Bonus: Deduplication Wizard**
-- A dedicated workflow step to scanning collections for visual duplicates, reviewing matches side-by-side, and applying bulk actions (Tag or Delete).
-
-## Technology Stack
-
-- **UI Framework**: `CustomTkinter` (Modern, responsive, dark-mode first aesthetic)
-- **Concurrency**: Multi-threaded backend with `ProcessingManager` loop orchestration
-- **API Interaction**: Official Daminion REST implementation with robust retry/masking logic
-- **AI Integration**: `Hugging Face Transformers` & `OpenRouter` REST Gateway
-- **Metadata Standard**: IPTC (Keywords/Caption) & EXIF (XPSubject/XPKeywords)
+- A dedicated workflow step to scan collections for visual duplicates, review matches side-by-side, and apply bulk actions (Tag or Delete).
 
 ## Documentation
 
