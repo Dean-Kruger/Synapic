@@ -6,6 +6,8 @@ These tests make sure the application starts with sensible defaults for engine
 selection, thresholds, and related baseline settings.
 """
 
+from collections import deque
+
 import pytest
 
 from src.core.session import DatasourceConfig, EngineConfig, Session
@@ -31,4 +33,6 @@ def test_session_initializes_defaults():
     assert s.total_items == 0
     assert s.processed_items == 0
     assert s.failed_items == 0
-    assert isinstance(s.results, list)
+    # results is a bounded deque (keeps the last 500 entries for export)
+    assert isinstance(s.results, deque)
+    assert len(s.results) == 0

@@ -23,7 +23,7 @@ class TestDaminionClientVersionControl(unittest.TestCase):
 
         self.assertTrue(result)
         client._api.version_control.checkin.assert_called_once_with(
-            42, "C:\\temp\\upscaled.jpg"
+            42, "C:\\temp\\upscaled.jpg", message=None
         )
 
     def test_checkout_item_handles_errors(self):

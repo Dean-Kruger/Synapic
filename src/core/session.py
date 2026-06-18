@@ -309,22 +309,83 @@ class Session:
         """
         Validate the engine configuration.
 
-        This method checks that the selected engine and model are properly configured
-        and available. Currently a placeholder for future validation logic.
+        Checks that the selected engine and model are properly configured before
+        a processing job starts, so misconfiguration is surfaced early rather
+        than failing mid-run. The specific reason for any failure is logged.
+
+        Validation rules:
+            - All providers: a non-empty model_id is required.
+            - local: the model must be downloaded to the local cache.
+            - Cloud providers: the relevant API key/credential must be present
+              (Ollama is exempt — it talks to a local/remote server, not a key).
 
         Returns:
-            bool: True if engine configuration is valid
-
-        TODO: Implement actual validation:
-            - For local: Check if model is downloaded
-            - For HuggingFace/OpenRouter: Validate API key format
-            - Check model compatibility with selected task
+            bool: True if the engine configuration is valid, False otherwise.
         """
+        engine = self.engine
+        provider = (engine.provider or "").lower()
         self.logger.info(
-            f"Validating engine configuration - Provider: {self.engine.provider}, Model: {self.engine.model_id}"
+            f"Validating engine configuration - Provider: {provider}, Model: {engine.model_id}"
         )
-        # TODO: Implement verification logic using utils
-        self.logger.debug("Engine validation not yet implemented, returning True")
+
+        # A model identifier is required for every provider.
+        if not engine.model_id or not engine.model_id.strip():
+            self.logger.error(
+                f"Engine validation failed: no model selected for provider '{provider}'"
+            )
+            return False
+
+        # Local inference: the model must actually be present in the cache.
+        if provider == "local":
+            try:
+                from src.core.huggingface_utils import is_model_downloaded
+
+                if not is_model_downloaded(engine.model_id):
+                    self.logger.error(
+                        f"Engine validation failed: local model '{engine.model_id}' "
+                        "is not downloaded"
+                    )
+                    return False
+            except Exception as e:
+                self.logger.error(
+                    f"Engine validation failed: could not verify local model "
+                    f"'{engine.model_id}': {e}"
+                )
+                return False
+            self.logger.debug("Engine configuration is valid")
+            return True
+
+        # Cloud providers each require their own credential. Ollama is exempt:
+        # it connects to a server (ollama_host) rather than using an API key.
+        required_credentials = {
+            "huggingface": engine.api_key,
+            "openrouter": engine.api_key,
+            "groq_package": engine.groq_api_key,
+            "nvidia": engine.nvidia_api_key,
+            "google_ai": engine.google_ai_api_key,
+            "cerebras": engine.cerebras_api_key,
+        }
+
+        if provider in required_credentials:
+            credential = required_credentials[provider]
+            if not credential or not str(credential).strip():
+                self.logger.error(
+                    f"Engine validation failed: missing API key for provider '{provider}'"
+                )
+                return False
+        elif provider == "ollama":
+            if not engine.ollama_host or not engine.ollama_host.strip():
+                self.logger.error(
+                    "Engine validation failed: missing Ollama host URL"
+                )
+                return False
+        else:
+            self.logger.error(
+                f"Engine validation failed: unknown provider '{provider}'"
+            )
+            return False
+
+        self.logger.debug("Engine configuration is valid")
         return True
 
     def reset_stats(self):
