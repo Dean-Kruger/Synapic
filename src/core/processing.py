@@ -170,6 +170,8 @@ class ProcessingManager:
         self.auto_paginate = (
             auto_paginate  # Whether to page through all 500-record batches
         )
+        # Model cache to avoid reloading the same model multiple times
+        self._model_cache = {}  # (model_id, task, device) -> model
 
     def start(self):
         """
@@ -789,7 +791,7 @@ class ProcessingManager:
         The method:
         1. Checks model compatibility (rejects GPTQ, AWQ, etc.)
         2. Converts device string ('cpu'/'cuda') to integer format for pipeline
-        3. Loads the model using huggingface_utils
+        3. Loads the model using huggingface_utils (with caching)
         4. Auto-detects and corrects the task if needed
         5. Stores the model in self.model for reuse across all items
 
@@ -819,6 +821,16 @@ class ProcessingManager:
             )
             self.logger.error(error_msg)
             raise RuntimeError(error_msg)
+
+        # Create cache key for model lookup
+        cache_key = (engine.model_id, engine.task, engine.device)
+
+        # Check if model is already cached
+        if cache_key in self._model_cache:
+            self.logger.info(f"Using cached model: {engine.model_id}")
+            self.model = self._model_cache[cache_key]
+            self.log(f"Using cached model: {engine.model_id}...")
+            return
 
         self.logger.info(f"Initializing local model: {engine.model_id}")
         self.log(f"Loading local model: {engine.model_id}...")
@@ -854,6 +866,9 @@ class ProcessingManager:
             self.log(
                 f"Model loaded successfully (Task: {engine.task}, Device: {engine.device})."
             )
+
+            # Cache the model for future use
+            self._model_cache[cache_key] = self.model
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
 
@@ -1400,6 +1415,16 @@ class ProcessingManager:
 
             # Periodic garbage collection to free any residual base64 strings,
             # API response objects, and other short-lived allocations.
-            # Every 3 items balances GC overhead with memory pressure.
-            if hasattr(self, "session") and self.session.processed_items % 3 == 0:
+            # Every 10 items balances GC overhead with memory pressure.
+            if hasattr(self, "session") and self.session.processed_items % 10 == 0:
                 gc.collect()
+
+                # Clear CUDA cache if GPU was used and we've processed a significant number of items
+                if self.session.engine.device == "cuda" and self.session.processed_items % 50 == 0:
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            self.logger.debug("CUDA cache cleared")
+                    except ImportError:
+                        pass

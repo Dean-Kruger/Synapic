@@ -31,9 +31,21 @@ except Exception:
     GroqSettingsDialog = None
 import customtkinter as ctk
 import logging
+import tkinter.messagebox as messagebox
 from src.utils.background_worker import BackgroundWorker
 from src.utils.concurrency import DaemonThreadPoolExecutor
 from src.utils.registry_config import load_ui_preferences, save_ui_preferences
+
+# Import provider tab classes
+from .provider_tab_base import ProviderTabBase
+from .provider_tab_local import create_local_tab
+from .provider_tab_hf import create_huggingface_tab
+from .provider_tab_or import create_openrouter_tab
+from .provider_tab_groq import create_groq_tab
+from .provider_tab_ollama import create_ollama_tab
+from .provider_tab_nvidia import create_nvidia_tab
+from .provider_tab_google_ai import create_google_ai_tab
+from .provider_tab_cerebras import create_cerebras_tab
 
 logger = logging.getLogger(__name__)
 
@@ -87,35 +99,45 @@ class Step2Tagging(ctk.CTkFrame):
         # Inline Config Container
         self.session = self.controller.session
         self._worker = BackgroundWorker(name="Step2Worker")
-        self._groq_models_cache = []
-        self._ollama_models_cache = []
-        self._nvidia_models_cache = []
-        self._google_ai_models_cache = []
-        self._cerebras_models_cache = []
-        self._hf_results_cache = []
-        self._or_models_cache = []
         self._load_registry_ui_preferences()
         self.config_container = ctk.CTkFrame(self.container, fg_color="transparent")
         self.config_container.grid(row=2, column=0, pady=5, sticky="ew")
         self.config_container.grid_columnconfigure(0, weight=1)
 
-        self.tab_local = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_hf = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_or = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_groq = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_ollama = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_nvidia = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_google_ai = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_cerebras = ctk.CTkFrame(self.config_container, fg_color="transparent")
-
-        self.init_local_tab()
-        self.init_hf_tab()
-        self.init_or_tab()
-        self.init_groq_tab()
-        self.init_ollama_tab()
-        self.init_nvidia_tab()
-        self.init_google_ai_tab()
-        self.init_cerebras_tab()
+        # Create provider tabs using factory functions
+        self.provider_tabs = {}
+        self.provider_tabs["local"] = create_local_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["huggingface"] = create_huggingface_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["openrouter"] = create_openrouter_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["groq_package"] = create_groq_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["ollama"] = create_ollama_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["nvidia"] = create_nvidia_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["google_ai"] = create_google_ai_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["cerebras"] = create_cerebras_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
         
         # === Model Info Section ===
         model_info_frame = ctk.CTkFrame(self.container, fg_color="#2B2B2B", corner_radius=10)
@@ -272,42 +294,15 @@ class Step2Tagging(ctk.CTkFrame):
 
     def _on_engine_change(self):
         engine = self.engine_var.get()
-        # Hide all frames
-        for frame in [self.tab_local, self.tab_hf, self.tab_or, self.tab_groq, self.tab_ollama, self.tab_nvidia, self.tab_google_ai, self.tab_cerebras]:
-            frame.grid_forget()
-            
-        # Show the correct frame
-        if engine == "local":
-            self.tab_local.grid(row=0, column=0, sticky="nsew")
-        elif engine == "huggingface":
-            self.tab_hf.grid(row=0, column=0, sticky="nsew")
-        elif engine == "openrouter":
-            self.tab_or.grid(row=0, column=0, sticky="nsew")
-        elif engine == "groq_package":
-            self.tab_groq.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_groq_models_loaded', False):
-                self._load_and_display_groq_models()
-                self._groq_models_loaded = True
-        elif engine == "ollama":
-            self.tab_ollama.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_ollama_models_loaded', False):
-                self._load_and_display_ollama_models()
-                self._ollama_models_loaded = True
-        elif engine == "nvidia":
-            self.tab_nvidia.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_nvidia_models_loaded', False):
-                self._load_and_display_nvidia_models()
-                self._nvidia_models_loaded = True
-        elif engine == "google_ai":
-            self.tab_google_ai.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_google_ai_models_loaded', False):
-                self._load_and_display_google_ai_models()
-                self._google_ai_models_loaded = True
-        elif engine == "cerebras":
-            self.tab_cerebras.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_cerebras_models_loaded', False):
-                self._load_and_display_cerebras_models()
-                self._cerebras_models_loaded = True
+        # Hide all provider tabs
+        for tab in self.provider_tabs.values():
+            tab.grid_forget()
+
+        # Show the correct tab
+        if engine in self.provider_tabs:
+            self.provider_tabs[engine].grid(row=0, column=0, sticky="nsew")
+            # Refresh the tab when it becomes visible
+            self.provider_tabs[engine].refresh()
 
     def _apply_config(self):
         self.update_model_info()
@@ -324,17 +319,23 @@ class Step2Tagging(ctk.CTkFrame):
         self.model_info_label.configure(text=self._get_model_display_text())
         
     def next_step(self):
+        # Validate before proceeding
+        is_valid, error_msg = self.controller.session.validate_workflow_state("Step3Process")
+        if not is_valid:
+            messagebox.showwarning("Validation Error", error_msg)
+            return
+
         # Update session
         self.controller.session.engine.provider = self.engine_var.get()
-        
+
         # We need to retrieve values from the dialog if it was opened, or use defaults/session
         # This UI flow is a bit tricky because the dialog is modal.
         # Ideally, the dialog should update the session directly when "Save" is clicked (if we had a Save button)
         # Or we should have the inputs on the main card.
-        
+
         # For now, let's assume the user configured it via the dialog which we will update to write to session.
         pass
-        
+
         logger.debug(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
 
@@ -411,211 +412,8 @@ class Step2Tagging(ctk.CTkFrame):
             return model_list
         return [model for model in model_list if self._model_supports_image(model)]
 
-    # Groq auto-load methods moved to ConfigDialog
 
-    def _load_and_display_groq_models(self):
-        from src.integrations.groq_package_client import GroqPackageClient
-        api_key = self.session.engine.groq_api_key or self._get_groq_api_key_for_refresh()
-        client = GroqPackageClient(api_key=api_key)
 
-        def worker():
-            try:
-                models = client.list_models(limit=40)
-            except Exception:
-                models = []
-            # UI updates must run on the Tk main thread.
-            if self.winfo_exists():
-                self.after(0, lambda m=models: self._display_groq_models(m))
-
-        self._worker.submit_replacing("groq_models", worker)
-
-    def _display_groq_models(self, models, update_cache=True):
-        # Lazy create a Groq models panel on the Groq tab if not exists (though init_groq_tab creates it now)
-        if not self.winfo_exists() or not hasattr(self, "_groq_models_list"):
-             return 
-
-        if update_cache:
-            self._groq_models_cache = list(models or [])
-        raw_models = list(self._groq_models_cache)
-        models = self._filter_image_models(raw_models, self.groq_image_only_var.get())
-
-        for w in self._groq_models_list.winfo_children():
-            w.destroy()
-            
-        # Header
-        header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
-        ctk.CTkLabel(
-            self._groq_models_list, 
-            text=header_text, 
-            font=("Courier New", 12, "bold"),
-            text_color="gray",
-            anchor="w"
-        ).pack(fill="x", pady=(5, 10), padx=5)
-
-        if not raw_models:
-            ctk.CTkLabel(self._groq_models_list, text="No Groq models found (check API key?).", text_color="gray").pack()
-            return
-        if not models:
-            ctk.CTkLabel(
-                self._groq_models_list,
-                text="No image-capable Groq models matched the current filter.",
-                text_color="gray"
-            ).pack()
-            return
-
-        for m in models:
-            mid = m.get('id') or m.get('model_id') or ''
-            cap = m.get('capability') or m.get('task') or 'Groq'
-            cost = m.get('token_cost') or m.get('token_cost_per_inference') or m.get('cost')
-            cost_text = f"{cost} tokens" if cost is not None else "Unknown"
-            
-            display_text = f"{mid:<40} | {cap:^15} | {cost_text:>15}"
-            
-            btn = ctk.CTkButton(
-                self._groq_models_list, 
-                text=display_text, 
-                font=("Courier New", 12),
-                fg_color="transparent",
-                border_width=1,
-                anchor="w", 
-                width=0,
-                command=lambda m_id=mid: self._select_groq_model(m_id)
-            )
-            btn.pack(fill="x", pady=2)
-
-    def _select_groq_model(self, model_id):
-        self.groq_model.delete(0, "end")
-        self.groq_model.insert(0, model_id)
-
-    def init_groq_tab(self):
-        # Refined Groq tab with multi-key API Key support and Model Selection
-        self.tab_groq.grid_columnconfigure(0, weight=1)
-        self.tab_groq.grid_rowconfigure(2, weight=1) # List area grows
-
-        # API Keys section
-        key_frame = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
-        key_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
-        key_frame.grid_columnconfigure(0, weight=1)
-
-        # Header row with label, count badge, and refresh button
-        header_row = ctk.CTkFrame(key_frame, fg_color="transparent")
-        header_row.pack(fill="x")
-
-        ctk.CTkLabel(header_row, text="API Keys (one per line):").pack(side="left")
-
-        self.groq_key_count_label = ctk.CTkLabel(
-            header_row, text="0 keys", font=("Roboto", 10),
-            text_color="gray"
-        )
-        self.groq_key_count_label.pack(side="left", padx=10)
-
-        ctk.CTkButton(
-            header_row, text="Refresh Models",
-            command=self._load_and_display_groq_models, width=120
-        ).pack(side="right")
-
-        # Multi-line textbox for API keys
-        existing_keys = self.session.engine.groq_api_keys or ""
-        self.groq_api_keys_textbox = ctk.CTkTextbox(
-            key_frame, height=70, font=("Courier New", 11),
-            wrap="none", fg_color="#1E1E1E", border_width=1,
-            border_color="#444"
-        )
-        self.groq_api_keys_textbox.pack(fill="x", pady=(5, 2))
-        if existing_keys:
-            self.groq_api_keys_textbox.insert("1.0", existing_keys)
-
-        # Helper hint
-        ctk.CTkLabel(
-            key_frame,
-            text="💡 Enter multiple Groq API keys (one per line) for automatic rotation when quota is exceeded.",
-            font=("Roboto", 9), text_color="#888", anchor="w", wraplength=600
-        ).pack(fill="x")
-
-        # Update key count on any change
-        self.groq_api_keys_textbox.bind("<KeyRelease>", lambda e: self._update_groq_key_count())
-        self._update_groq_key_count()
-
-        # Status / actions
-        row_status = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
-        row_status.grid(row=1, column=0, sticky="ew", padx=10, pady=0)
-        self.groq_status = ctk.CTkLabel(row_status, text="", text_color="gray")
-        self.groq_status.pack(side="left")
-        self.groq_image_only_var = ctk.BooleanVar(value=self.session.engine.groq_image_models_only)
-        ctk.CTkCheckBox(
-            row_status,
-            text="List image models only",
-            variable=self.groq_image_only_var,
-            command=lambda: (
-                self._persist_image_filter_preference("groq_image_models_only", self.groq_image_only_var.get()),
-                self._display_groq_models(self._groq_models_cache, update_cache=False)
-            ),
-        ).pack(side="right")
-
-        # List
-        self._groq_models_list = ctk.CTkScrollableFrame(self.tab_groq, label_text="Available Groq Models")
-        self._groq_models_list.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
-
-        # Selection
-        row_sel = ctk.CTkFrame(self.tab_groq, fg_color="transparent")
-        row_sel.grid(row=3, column=0, sticky="ew", padx=10, pady=(5,20))
-        
-        ctk.CTkLabel(row_sel, text="Selected:").pack(side="left")
-        self.groq_model = ctk.CTkEntry(row_sel, width=300)
-        # Default if not set
-        self.groq_model.insert(0, self.session.engine.model_id if self.session.engine.provider == "groq_package" else "llama2-70b-4096") 
-        self.groq_model.pack(side="left", padx=10, fill="x", expand=True)
-        
-        ctk.CTkButton(row_sel, text="Save Config", command=self.save_groq_config).pack(side="right")
-
-    def _update_groq_key_count(self):
-        """Update the key count label based on current textbox content."""
-        text = self.groq_api_keys_textbox.get("1.0", "end-1c")
-        keys = [k.strip() for k in text.splitlines() if k.strip()]
-        count = len(keys)
-        if count == 0:
-            self.groq_key_count_label.configure(text="0 keys", text_color="gray")
-        elif count == 1:
-            self.groq_key_count_label.configure(text="1 key", text_color="#2FA572")
-        else:
-            self.groq_key_count_label.configure(text=f"{count} keys (rotation enabled)", text_color="#2FA572")
-
-    def _get_groq_api_key_for_refresh(self):
-        """Get the first API key from the textbox for model listing."""
-        text = self.groq_api_keys_textbox.get("1.0", "end-1c")
-        keys = [k.strip() for k in text.splitlines() if k.strip()]
-        return keys[0] if keys else ""
-
-    def test_groq_connection(self):
-        # Simplified test calling load_models essentially
-        self._load_and_display_groq_models()
-
-    def save_groq_config(self):
-        model_id = self.groq_model.get().strip()
-        api_keys_text = self.groq_api_keys_textbox.get("1.0", "end-1c").strip()
-        
-        # Validate: at least one key
-        keys = [k.strip() for k in api_keys_text.splitlines() if k.strip()]
-        if not keys:
-             self.groq_status.configure(text="At least one API Key required", text_color="red")
-             return
-
-        self.session.engine.provider = "groq_package"
-        self.session.engine.groq_api_keys = api_keys_text
-        self.session.engine.groq_current_key_index = 0  # Reset rotation on save
-        self.session.engine.model_id = model_id
-        # Groq vision models are multi-modal usually or LLMs.
-        self.session.engine.task = "image-to-text"
-        
-        from src.utils.config_manager import save_config
-        try:
-            save_config(self.session)
-        except Exception:
-            pass
-
-        key_info = f"{len(keys)} key{'s' if len(keys) > 1 else ''}"
-        self.groq_status.configure(text=f"Groq config saved ({key_info})", text_color="green")
-        self._apply_config()
     
     # ================================================================
     # OLLAMA API TAB METHODS

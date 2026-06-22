@@ -411,3 +411,71 @@ class Session:
         self.engine.groq_exhausted_keys.clear()
 
         self.logger.info("Session statistics reset complete")
+
+    def validate_workflow_state(self, target_step):
+        """
+        Validate that the session has sufficient state to proceed to the target step.
+
+        Args:
+            target_step: The step identifier to validate for (e.g., "Step2Tagging", "Step3Process")
+
+        Returns:
+            tuple: (is_valid, error_message) where is_valid is boolean and error_message is string
+
+        Raises:
+            ValueError: If target_step is not recognized
+        """
+        if target_step == "Step2Tagging":
+            # Validate that datasource type is selected
+            if not self.datasource.type:
+                return False, "Please select a datasource (Local Folder or Daminion Server) in Step 1"
+
+            # If Daminion, validate connection
+            if self.datasource.type == "daminion":
+                if not self.datasource.daminion_url:
+                    return False, "Please enter Daminion server URL"
+                if not self.datasource.daminion_user:
+                    return False, "Please enter Daminion username"
+                if not self.datasource.daminion_pass:
+                    return False, "Please enter Daminion password"
+
+        elif target_step == "Step3Process":
+            # Validate that engine is configured
+            if not self.engine.provider:
+                return False, "Please select an AI engine in Step 2"
+            if not self.engine.model_id:
+                return False, "Please select a model in Step 2"
+
+            # Validate engine configuration
+            if not self.validate_engine():
+                return False, "Engine configuration is invalid. Please check your settings in Step 2"
+
+            # If using local engine, validate model is downloaded
+            if self.engine.provider == "local":
+                try:
+                    from src.core.huggingface_utils import is_model_downloaded
+                    if not is_model_downloaded(self.engine.model_id):
+                        return False, f"Model '{self.engine.model_id}' is not downloaded. Please download it first in Step 2"
+                except Exception as e:
+                    self.logger.error(f"Error checking model download status: {e}")
+                    return False, f"Could not verify model download status: {str(e)}"
+
+            # Validate datasource based on type
+            if self.datasource.type == "local":
+                if not self.datasource.local_path:
+                    return False, "Please select a local folder in Step 1"
+                import os
+                if not os.path.exists(self.datasource.local_path):
+                    return False, f"Selected folder does not exist: {self.datasource.local_path}"
+            elif self.datasource.type == "daminion":
+                if not self.daminion_client or not self.daminion_client.authenticated:
+                    return False, "Please connect to Daminion server in Step 1"
+
+        elif target_step == "Step4Results":
+            # Validate that processing has completed or been aborted
+            # This is more of a checkpoint - we allow viewing results even if processing failed
+            pass
+        else:
+            raise ValueError(f"Unknown target step: {target_step}")
+
+        return True, ""

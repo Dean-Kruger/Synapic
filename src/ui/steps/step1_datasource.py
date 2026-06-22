@@ -1209,6 +1209,12 @@ class Step1Datasource(ctk.CTkFrame):
             rb.configure(state=state)
 
     def next_step(self):
+        # Validate before proceeding
+        is_valid, error_msg = self.controller.session.validate_workflow_state("Step2Tagging")
+        if not is_valid:
+            messagebox.showwarning("Validation Error", error_msg)
+            return
+
         # Save state
         ds = self.controller.session.datasource
         mode = self.source_var.get()
