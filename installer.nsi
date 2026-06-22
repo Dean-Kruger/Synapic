@@ -9,7 +9,7 @@
 !define PRODUCT_EXE "Synapic.exe"
 
 ; Modern UI
-!include "C:/Program Files (x86)/NSIS/Include/MUI2.nsi"
+!include "C:\PROGRA~2\NSIS\Include\MUI2.nsi"
 
 ; General
 Name "${PRODUCT_NAME}"
