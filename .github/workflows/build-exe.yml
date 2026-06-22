@@ -73,6 +73,14 @@ jobs:
     - name: Install NSIS
       run: choco install nsis -y
 
+    - name: Check NSIS Installation
+      run: |
+        echo "Checking NSIS installation..."
+        ls -la "C:\Program Files (x86)\NSIS"
+        ls -la "C:\Program Files (x86)\NSIS\Include"
+        echo "Looking for MUI2.nsi:"
+        ls -la "C:\Program Files (x86)\NSIS\Include\MUI2.nsi"
+
     - name: Build Installer
       run: |
         & "C:\Program Files (x86)\NSIS\makensis.exe" /DVERSION=1.0.0 installer.nsi
