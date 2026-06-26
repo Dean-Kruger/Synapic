@@ -1286,13 +1286,21 @@ class ProcessingManager:
             threshold = engine.confidence_threshold / 100.0
 
             # Extract category, keywords, and description from model result
-            # The extract_tags_from_result function handles:
+            # The extract_tags_with_semantics function handles:
             # - Parsing JSON from VLM responses
             # - Filtering classification results by threshold
             # - Extracting top predictions as keywords
-            cat, kws, desc = image_processing.extract_tags_from_result(
-                result, engine.task, threshold=threshold
-            )
+            # - Adding semantic enhancement (if taxonomy available)
+            try:
+                cat, kws, desc, semantic_data = image_processing.extract_tags_with_semantics(
+                    result, engine.task, threshold=threshold, taxonomy=None
+                )
+                self.logger.debug(f"Semantic data: {semantic_data}")
+            except (AttributeError, ImportError):
+                # Fallback to original function if new one not available
+                cat, kws, desc = image_processing.extract_tags_from_result(
+                    result, engine.task, threshold=threshold
+                )
             self.logger.debug(
                 f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}"
             )
