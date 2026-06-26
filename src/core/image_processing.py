@@ -40,7 +40,7 @@ Author: Dean
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Tuple, Any, Dict
 from queue import Queue
 from PIL import Image, UnidentifiedImageError
 import piexif
@@ -701,3 +701,47 @@ def extract_tags_from_result(
     )
 
     return category, keywords, description
+
+
+def extract_tags_with_semantics(
+    result: Any,
+    model_task: str,
+    threshold: float = 0.0,
+    stop_words: Optional[List[str]] = None,
+    taxonomy: Optional[Any] = None
+) -> Tuple[str, List[str], str, Dict[str, Any]]:
+    """
+    Extract tags from AI result and enhance with semantic information.
+    
+    This is a wrapper around extract_tags_from_result that adds semantic
+    embedding and similarity analysis.
+    
+    Args:
+        result: Raw AI model output
+        model_task: AI task type
+        threshold: Confidence threshold
+        stop_words: Words to exclude
+        taxonomy: SemanticTaxonomy instance (optional)
+        
+    Returns:
+        Tuple of (category, keywords, description, semantic_data)
+    """
+    category, keywords, description = extract_tags_from_result(
+        result, model_task, threshold, stop_words
+    )
+    
+    # Add semantic enhancement if taxonomy is provided
+    semantic_data = {}
+    if taxonomy is not None:
+        try:
+            from src.core.vector_embedder import enhance_metadata_with_semantics
+            semantic_data = enhance_metadata_with_semantics(
+                category, keywords, description, taxonomy
+            )
+        except ImportError:
+            logger.debug("Vector embedder not available for semantic enhancement")
+            semantic_data = {'semantic_enabled': False, 'message': 'Vector module not available'}
+    else:
+        semantic_data = {'semantic_enabled': False, 'message': 'No taxonomy provided'}
+        
+    return category, keywords, description, semantic_data
