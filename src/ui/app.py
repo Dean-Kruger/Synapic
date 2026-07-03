@@ -179,6 +179,11 @@ class App(ctk.CTk):
         self.logger.info("Showing initial step: Step1Datasource")
         self.show_step("Step1Datasource")
 
+        # ── Deferred version check ────────────────────────────────────────
+        # Wait for the UI to fully render before checking, so the dialog
+        # doesn't compete with window initialisation.
+        self.after(2000, self._check_version)
+
     def _apply_window_icon(self):
         """
         Apply the application icon to both the titlebar and the taskbar.
@@ -236,6 +241,62 @@ class App(ctk.CTk):
              frame.refresh_stats()
         elif hasattr(frame, 'refresh'):
              frame.refresh()
+
+    def _check_version(self):
+        """
+        Run a deferred version check and show an update notification if
+        the local repository is behind ``origin/main``.
+        """
+        try:
+            from src.utils.version_check import check_for_update
+
+            self.logger.info("Checking for updates...")
+            result = check_for_update()
+
+            if result.error:
+                self.logger.debug(f"Version check skipped: {result.details}")
+                return
+
+            if result.update_available:
+                self.logger.info(
+                    f"Update available: {result.behind_count} commit(s) behind"
+                )
+
+                from tkinter import messagebox
+
+                msg = (
+                    f"A newer version of Synapic is available!\n\n"
+                    f"You are {result.behind_count} commit(s) behind the latest version.\n"
+                    f"Your version: {result.current_sha[:8]}\n"
+                    f"Latest:       {result.latest_sha[:8]}\n\n"
+                    "Would you like to pull the latest changes now?"
+                )
+                response = messagebox.askyesno(
+                    title="Update Available",
+                    message=msg,
+                )
+
+                if response:
+                    self.logger.info("User accepted update — pulling latest changes...")
+                    from src.utils.version_check import pull_latest
+
+                    pull_result = pull_latest()
+                    if pull_result.error:
+                        messagebox.showerror(
+                            "Update Failed",
+                            f"Failed to pull latest changes:\n{pull_result.error}",
+                        )
+                    else:
+                        messagebox.showinfo(
+                            "Update Complete",
+                            f"Synapic has been updated to the latest version.\n\n"
+                            f"Please restart the application for changes to take effect.",
+                        )
+            else:
+                self.logger.debug(f"Version check: {result.details}")
+
+        except Exception as e:
+            self.logger.debug(f"Version check failed (non-fatal): {e}")
 
     def on_close(self):
         """

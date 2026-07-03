@@ -1199,7 +1199,7 @@ class ItemDataAPI(BaseAPI):
         item_ids: List[int],
         operations: List[Dict[str, Any]],
         exclude_ids: Optional[List[int]] = None
-    ):
+    ) -> Any:
         """
         Batch update tags on multiple items.
         
@@ -1211,6 +1211,9 @@ class ItemDataAPI(BaseAPI):
                 - id: Tag value ID (for indexed tags)
                 - remove: True to remove tag value
             exclude_ids: Optional list of IDs to exclude from update
+            
+        Returns:
+            The API response data (for diagnostics)
             
         Example:
             # Add keyword "city" (value ID 4949) to items
@@ -1228,11 +1231,17 @@ class ItemDataAPI(BaseAPI):
         if exclude_ids:
             data["excludeIds"] = exclude_ids
         
-        self._request(
+        response = self._request(
             "/api/ItemData/BatchChange",
             method="POST",
             data=data
         )
+        
+        logging.debug(
+            f"BatchChange response for {len(item_ids)} item(s) with "
+            f"{len(operations)} operation(s): {str(response)[:200]}"
+        )
+        return response
     
     def get_default_layout(self) -> List[Dict[str, Any]]:
         """
