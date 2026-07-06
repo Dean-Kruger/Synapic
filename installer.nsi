@@ -2,7 +2,7 @@
 ; NSIS Script to create installer for Synapic
 
 !define PRODUCT_NAME "Synapic"
-!define PRODUCT_VERSION "1.0.0"
+!define PRODUCT_VERSION "${VERSION}"
 !define PRODUCT_PUBLISHER "Synapic Project"
 !define PRODUCT_WEB_SITE "https://github.com/deanable/Synapic"
 !define PRODUCT_DIR "Synapic"
@@ -55,9 +55,7 @@ Section "MainSection" SEC01
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "NoModify" 1
   WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "NoRepair" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "Version" ${PRODUCT_VERSION}
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "MajorVersion" ${PRODUCT_VERSION}
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "MinorVersion" ${PRODUCT_VERSION}
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" "DisplayVersion" "${PRODUCT_VERSION}"
 SectionEnd
 
 Section "Uninstall"
