@@ -8,28 +8,21 @@
 !define PRODUCT_DIR "Synapic"
 !define PRODUCT_EXE "Synapic.exe"
 
-; Modern UI
-!include "C:/Program Files (x86)/NSIS/Include/MUI2.nsi"
-
 ; General
-Name "${PRODUCT_NAME}"
+Name "${PRODUCT_NAME} ${PRODUCT_VERSION}"
 OutFile "Synapic-Setup.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_DIR}"
 RequestExecutionLevel admin
+Icon "release\Icon.ico"
+ShowInstDetails show
+ShowUnInstDetails show
+BrandingText "Synapic Installer"
 
-; Interface Settings
-!define MUI_ABORTWARNING
-!define MUI_ICON "release\Icon.ico"
-!define MUI_UNICON "release\Icon.ico"
-
-; Pages
-!insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_DIRECTORY
-!insertmacro MUI_PAGE_INSTFILES
-!insertmacro MUI_PAGE_FINISH
-
-; Languages
-!insertmacro MUI_LANGUAGE "English"
+; Pages — classic NSIS UI (no MUI2 dependency)
+Page directory
+Page instfiles
+UninstPage uninstConfirm
+UninstPage instfiles
 
 ; Sections
 Section "MainSection" SEC01
@@ -38,7 +31,6 @@ Section "MainSection" SEC01
 
   ; Create shortcuts
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
-  ; Use the EXE itself as the icon source (icon is embedded via PyInstaller)
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\${PRODUCT_EXE}" "" "$INSTDIR\${PRODUCT_EXE}" 0
   CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\${PRODUCT_EXE}" "" "$INSTDIR\${PRODUCT_EXE}" 0
 
@@ -61,10 +53,10 @@ SectionEnd
 Section "Uninstall"
   ; Remove shortcuts
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk"
-  RemoveDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
+  RMDir "$SMPROGRAMS\${PRODUCT_NAME}"
   Delete "$DESKTOP\${PRODUCT_NAME}.lnk"
 
-  ; Remove files
+  ; Remove files and directory
   RMDir /r "$INSTDIR"
 
   ; Remove registry keys

@@ -72,35 +72,8 @@ jobs:
     - name: Install NSIS
       run: choco install nsis -y
 
-    - name: Diagnostic — check NSIS and dist
-      run: |
-        Write-Host "=== Checking makensis ==="
-        $paths = @(
-          "C:\Program Files (x86)\NSIS\makensis.exe",
-          "C:\Program Files\NSIS\makensis.exe",
-          "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
-          "${env:ProgramFiles}\NSIS\makensis.exe"
-        )
-        foreach ($p in $paths) {
-          if (Test-Path $p) {
-            Write-Host "  FOUND: $p"
-            & $p /VERSION
-          }
-        }
-        $which = Get-Command makensis -ErrorAction SilentlyContinue
-        if ($which) { Write-Host "  On PATH: $($which.Source)" }
-        else { Write-Host "  makensis NOT on PATH" }
-
-        Write-Host "=== Contents of dist/ ==="
-        if (Test-Path dist) { Get-ChildItem dist\ -Recurse | Select-Object Mode, Length, Name }
-        else { Write-Host "  dist/ does not exist!" }
-
-        Write-Host "=== Checking installer.nsi ==="
-        if (Test-Path installer.nsi) { Write-Host "  installer.nsi exists" }
-        else { Write-Host "  installer.nsi NOT FOUND" }
-
-        if (Test-Path "release\Icon.ico") { Write-Host "  release\Icon.ico exists" }
-        else { Write-Host "  release\Icon.ico NOT FOUND" }
+    - name: Add NSIS to PATH
+      run: echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
     - name: Build Installer
       env:
@@ -108,22 +81,8 @@ jobs:
       run: |
         # Strip 'v' prefix from version tag (v1.2.3 -> 1.2.3)
         $ver = "$env:VERSION" -replace '^v', ''
-
-        # Find makensis.exe
-        $makensis = Get-Command makensis -ErrorAction SilentlyContinue
-        if (-not $makensis) {
-          foreach ($p in @("C:\Program Files (x86)\NSIS\makensis.exe", "C:\Program Files\NSIS\makensis.exe")) {
-            if (Test-Path $p) { $makensis = $p; break }
-          }
-        }
-
-        if (-not $makensis) { Write-Error "makensis.exe not found!"; exit 1 }
-
-        Write-Host "Using makensis: $makensis"
-        & $makensis "/DVERSION=$ver" installer.nsi
-        if ($LASTEXITCODE -ne 0) { Write-Error "makensis failed with exit code $LASTEXITCODE"; exit $LASTEXITCODE }
-
-        # Move installer to dist for uploading
+        makensis "/DVERSION=$ver" installer.nsi
+        if ($LASTEXITCODE -ne 0) { Write-Error "makensis failed"; exit $LASTEXITCODE }
         Move-Item -Force Synapic-Setup.exe dist\
 
     - name: Upload Installer Artifact
