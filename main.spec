@@ -19,10 +19,9 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    name='main',
+    exclude_binaries=True,
+    name='Synapic',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -36,4 +35,10 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['release\\Icon.ico'],
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    name='Synapic',
 )
