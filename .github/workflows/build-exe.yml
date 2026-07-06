@@ -6,6 +6,9 @@ on:
       - 'v*.*.*'  # Trigger on version tags like v1.0.0
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -91,15 +94,28 @@ jobs:
         name: Synapic-Installer
         path: dist/Synapic-Setup.exe
 
-    - name: Create Release (for version tags)
+    - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          dist/Synapic-Windows.zip
-          dist/Synapic-Setup.exe
-        generate_release_notes: true
-        draft: false
-        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        $tag = "$env:GITHUB_REF_NAME"
+        $ver = $tag -replace '^v', ''
+
+        # Delete existing release for this tag if any (handles re-pushed tags)
+        gh release delete "$tag" --yes --discard-tag 2>$null
+
+        # Generate release notes from commits since last tag
+        $prevTag = git describe --tags --abbrev=0 "$tag^" 2>$null
+        if ($prevTag) {
+          $notes = git log "$prevTag..$tag" --oneline --no-merges
+        } else {
+          $notes = "See the commit history for details."
+        }
+
+        gh release create "$tag" `
+          "dist/Synapic-Windows.zip" `
+          "dist/Synapic-Setup.exe" `
+          --title "Synapic $ver" `
+          --notes $notes `
+          --target "$env:GITHUB_SHA"
