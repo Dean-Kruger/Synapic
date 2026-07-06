@@ -61,10 +61,21 @@ jobs:
     - name: Rename output to Synapic
       run: |
         # PyInstaller spec names the exe 'main', but everything downstream expects 'Synapic'
-        if (Test-Path "dist/main") {
-          Rename-Item "dist/main" "Synapic"
-          Rename-Item "dist/Synapic/main.exe" "Synapic.exe"
-        } elseif (Test-Path "dist/Synapic") {
+        Write-Host "Contents of dist/:"
+        Get-ChildItem dist\
+
+        if (Test-Path "dist\main") {
+          Write-Host "Renaming dist\main -> dist\Synapic..."
+          Rename-Item "dist\main" "Synapic"
+
+          Write-Host "Contents of dist\Synapic:"
+          Get-ChildItem "dist\Synapic"
+
+          if (Test-Path "dist\Synapic\main.exe") {
+            Write-Host "Renaming main.exe -> Synapic.exe..."
+            Rename-Item "dist\Synapic\main.exe" "Synapic.exe"
+          }
+        } elseif (Test-Path "dist\Synapic") {
           Write-Host "Already named Synapic — skipping rename"
         } else {
           Write-Error "Neither dist/main nor dist/Synapic found!"
