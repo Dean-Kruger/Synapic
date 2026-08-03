@@ -47,3 +47,9 @@ minversion = "6.0"
 addopts = "-ra -q --import-mode=importlib --ignore=tests/manual"
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = false
+files = "src"
