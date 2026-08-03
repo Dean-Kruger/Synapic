@@ -47,7 +47,6 @@ import shutil
 import base64
 from contextlib import nullcontext
 from pathlib import Path
-from functools import partial
 from tqdm import tqdm
 from huggingface_hub import (
     list_models,
@@ -630,7 +629,7 @@ def get_downloaded_models(task, token=None):
                 downloaded_models.append(model.id)
         logging.info(f"Found {len(downloaded_models)} downloaded models.")
         return downloaded_models
-    except Exception as e:
+    except Exception:
         logging.exception("Failed to find downloaded models.")
         return []
 
@@ -1095,7 +1094,7 @@ def find_models_by_task(task: str) -> Tuple[List[str], List[str]]:
             f"Found {len(model_ids)} models (sync). {len(downloaded_models)} cached locally."
         )
         return model_ids, downloaded_models
-    except Exception as e:
+    except Exception:
         logging.exception("Failed to find models (sync).")
         return [], []
 
@@ -1311,7 +1310,7 @@ class RateLimitError(Exception):
 
     def __init__(self, retry_after=None):
         self.retry_after = retry_after
-        msg = f"Hugging Face API rate limit exceeded."
+        msg = "Hugging Face API rate limit exceeded."
         if retry_after:
             msg += f" Retry after {retry_after} seconds."
         msg += " Consider downloading the model for unlimited local inference."

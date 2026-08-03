@@ -9,7 +9,6 @@ and cloud providers must supply their credential.
 
 from unittest.mock import patch
 
-import pytest
 
 from src.core.session import Session
 

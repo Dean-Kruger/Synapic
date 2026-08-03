@@ -221,7 +221,8 @@ class OllamaClient:
 
     def _format_size(self, size_bytes: int) -> str:
         """Format raw model size bytes into a short user-facing label."""
-        if not size_bytes: return ""
+        if not size_bytes:
+            return ""
         try:
             size_bytes = int(size_bytes)
             if size_bytes >= 1e9:

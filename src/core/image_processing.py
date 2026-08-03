@@ -49,6 +49,8 @@ from iptcinfo3 import IPTCInfo
 from src.core import config
 from src.utils.json_utils import extract_dict_from_text
 
+logger = logging.getLogger(__name__)
+
 # ============================================================================
 # CUSTOM EXCEPTIONS
 # ============================================================================
@@ -236,7 +238,7 @@ def write_metadata(
             except Exception as tmp_err:
                 logging.warning(f"Failed to delete temp file {temp_file}: {tmp_err}")
 
-    except Exception as e:
+    except Exception:
         logging.exception(f"Failed to write IPTC metadata for {image_path.name}")
 
     try:
@@ -293,7 +295,7 @@ def write_metadata(
         exif_success = True
         logging.debug(f"EXIF metadata written successfully for {image_path.name}")
 
-    except Exception as e:
+    except Exception:
         logging.exception(f"Failed to write EXIF metadata for {image_path.name}")
 
     return iptc_success or exif_success
@@ -619,7 +621,7 @@ def extract_tags_from_result(
                     # Method 3: Fallback - treat entire text as plain description (only if JSON extraction failed)
                     if not json_extracted:
                         logging.warning(
-                            f"Could not extract JSON from model response, using text as plain description"
+                            "Could not extract JSON from model response, using text as plain description"
                         )
                         description = text.strip()
 

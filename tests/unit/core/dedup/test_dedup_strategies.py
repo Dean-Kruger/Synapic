@@ -6,10 +6,7 @@ These tests verify that the dedup strategy helpers choose the expected "keep"
 item when duplicate groups are evaluated under different selection rules.
 """
 
-import pytest
 from unittest.mock import patch
-import os
-import time
 
 from src.core.dedup.dedup_strategies import get_file_metadata
 

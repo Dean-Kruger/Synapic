@@ -199,8 +199,8 @@ class ProviderTabBase(ctk.CTkFrame, ABC):
             except Exception as e:
                 logger.error(f"Error loading models for {self.provider_name}: {e}")
                 if self.winfo_exists() and self.status_label:
-                    self.after(0, lambda: self.status_label.configure(
-                        text=f"Error: {str(e)}", text_color="red"
+                    self.after(0, lambda err=e: self.status_label.configure(
+                        text=f"Error: {str(err)}", text_color="red"
                     ))
 
         self._worker.submit_replacing(f"{self.provider_name}_models", worker)

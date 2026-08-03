@@ -284,8 +284,8 @@ class GroqProviderTab(ProviderTabBase):
             except Exception as e:
                 logger.error(f"Error loading Groq models: {e}")
                 if self.winfo_exists() and hasattr(self, 'groq_status'):
-                    self.after(0, lambda: self.groq_status.configure(
-                        text=f"Error: {str(e)}", text_color="red"
+                    self.after(0, lambda err=e: self.groq_status.configure(
+                        text=f"Error: {str(err)}", text_color="red"
                     ))
 
         self._worker.submit_replacing("groq_models", worker)

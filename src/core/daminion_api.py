@@ -21,7 +21,6 @@ Author: Synapic Project
 """
 
 import logging
-import json
 import threading
 import time
 import requests

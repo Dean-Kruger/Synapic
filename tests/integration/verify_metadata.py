@@ -49,7 +49,8 @@ def get_record_metadata(client, item_id: int) -> Dict[str, Any]:
         # Helper to extract values from a property
         def parse_prop_values(prop):
             """Normalise Daminion property payloads into plain text lists."""
-            if not prop: return []
+            if not prop:
+                return []
             # 'values' list in property object contains tag value objects with 'text' field
             values = prop.get('values')
             if values and isinstance(values, list):
@@ -143,7 +144,6 @@ if __name__ == "__main__":
     import sys
     # Add src to path if running directly
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-    from core.daminion_client import DaminionClient
     
     # This part would require real credentials to run
     print("This script is intended to be used as a module for verification.")

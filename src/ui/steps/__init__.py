@@ -2,7 +2,7 @@
 Synapic Wizard Steps
 ====================
 
-This package contains the individual frames representing the steps of 
+This package contains the individual frames representing the steps of
 the tagging wizard.
 
 Classes:
@@ -14,11 +14,10 @@ Classes:
 - StepDedup: Deduplication detection and management.
 """
 
-from .step1_datasource import Step1Datasource
-from .step2_tagging import Step2Tagging
-from .step3_process import Step3Process
-from .step4_results import Step4Results
+from .step1_datasource import Step1Datasource  # noqa: F401
+from .step2_tagging import Step2Tagging  # noqa: F401
+from .step3_process import Step3Process  # noqa: F401
+from .step4_results import Step4Results  # noqa: F401
 
-from .step_dedup import StepDedup
-from .step_upscale import StepUpscale
-
+from .step_dedup import StepDedup  # noqa: F401
+from .step_upscale import StepUpscale  # noqa: F401

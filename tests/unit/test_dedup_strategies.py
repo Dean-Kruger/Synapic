@@ -8,7 +8,7 @@ It complements the narrower tests under `tests/unit/core/dedup`.
 
 import unittest
 
-from src.core.dedup.dedup_strategies import apply_keep_first, DedupDecision
+from src.core.dedup.dedup_strategies import apply_keep_first
 from src.core.dedup.dedup_engine import DuplicateGroup
 
 class TestDedupStrategies(unittest.TestCase):

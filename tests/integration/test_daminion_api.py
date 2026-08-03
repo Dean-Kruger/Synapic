@@ -581,7 +581,7 @@ def run_tests():
     print("\n" + "="*70)
     print("DAMINION API TEST SUITE")
     print("="*70)
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  URL: {TEST_DAMINION_URL}")
     print(f"  Username: {TEST_DAMINION_USERNAME}")
     print(f"  Password: {'*' * len(TEST_DAMINION_PASSWORD)}")

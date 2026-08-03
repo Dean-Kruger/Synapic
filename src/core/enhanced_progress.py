@@ -22,10 +22,9 @@ Author: Synapic Project
 
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Optional
 from dataclasses import dataclass
 from enum import Enum
-import threading
 
 
 class ProgressStage(Enum):
@@ -327,8 +326,6 @@ class EnhancedProgressTracker:
     
     def _build_progress_message(self) -> str:
         """Build a descriptive progress message."""
-        elapsed = time.time() - self.start_time if self.start_time else 0
-        
         if self.current_stage == ProgressStage.DOWNLOADING_MODEL:
             if self.total_bytes > 0:
                 percentage = (self.bytes_downloaded / self.total_bytes) * 100

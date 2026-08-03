@@ -56,7 +56,7 @@ class GroqPackageClient:
             self._groq_class = Groq
             self._client = None  # will instantiate per-call using environment key
             self.available = True
-            logger.debug(f"GroqPackageClient initialized: available=True, Groq class loaded")
+            logger.debug("GroqPackageClient initialized: available=True, Groq class loaded")
         except ImportError as e:
             logger.warning(f"GroqPackageClient: groq package not installed: {e}")
             self._groq_class = None

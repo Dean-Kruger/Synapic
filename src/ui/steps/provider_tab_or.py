@@ -3,7 +3,6 @@ OpenRouter provider configuration tab for Step 2.
 """
 
 import customtkinter as ctk
-import tkinter.messagebox as mb
 from .provider_tab_base import ProviderTabBase
 import logging
 

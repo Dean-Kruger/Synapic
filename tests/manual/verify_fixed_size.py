@@ -7,15 +7,14 @@ debugging image processing edge cases.
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add project root to sys.path
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
 
-from src.core.huggingface_utils import get_remote_model_size, format_size
-import logging
+from src.core.huggingface_utils import get_remote_model_size, format_size  # noqa: E402
+import logging  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 

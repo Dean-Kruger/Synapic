@@ -555,7 +555,7 @@ def run_inference_api(
                 if parameters:
                     data["parameters"] = parameters
                 
-                logger.info(f"[OpenRouter API] Sending multipart request to fallback endpoint")
+                logger.info("[OpenRouter API] Sending multipart request to fallback endpoint")
                 resp = _HTTP_SESSION.post(fallback_url, headers=headers, files=files, data=data, timeout=60)
                 fallback_elapsed = time.time() - start_time
                 

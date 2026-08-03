@@ -46,7 +46,7 @@ except ImportError:
     psutil = None
     _PSUTIL_AVAILABLE = False
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 from PIL import Image
 
 # Internal modules
@@ -604,9 +604,6 @@ class ProcessingManager:
                                 f"{self.session.total_items}: {mem_mb:.2f} MB"
                             )
 
-                        pct = self.session.processed_items / max(
-                            self.session.total_items, 1
-                        )
                         # Determine whether more pages will follow this one.
                         # A page is "definitely the last" if:
                         #   - auto_paginate is off (never fetches more), OR
@@ -1465,7 +1462,7 @@ class ProcessingManager:
                 self.logger.info(
                     f"No tags extracted for item, using placeholder: {desc}"
                 )
-                self.log(f"No results - marking with placeholder")
+                self.log("No results - marking with placeholder")
 
             # ===============================================================
             # STAGE 4: METADATA WRITING
@@ -1498,12 +1495,12 @@ class ProcessingManager:
                         self.logger.info(
                             f"Metadata verification successful for item {item_id}"
                         )
-                        self.log(f"Verification: Passed")
+                        self.log("Verification: Passed")
                     else:
                         self.logger.warning(
                             f"Metadata verification failed for item {item_id}"
                         )
-                        self.log(f"Verification: FAILED (Check details in log file)")
+                        self.log("Verification: FAILED (Check details in log file)")
                         # We don't fail the whole item if verification fails,
                         # just log it as a warning for manual review
 

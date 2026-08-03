@@ -5,8 +5,6 @@ Unit Tests — CerebrasClient
 Tests for src/integrations/cerebras_client.py
 """
 
-import base64
-import os
 import unittest
 from unittest.mock import MagicMock, patch, mock_open
 

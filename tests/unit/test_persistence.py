@@ -14,7 +14,6 @@ import os
 import sys
 import logging
 import uuid
-from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

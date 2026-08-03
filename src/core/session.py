@@ -14,7 +14,7 @@ The configuration is persisted between sessions using the config_manager utility
 
 from dataclasses import dataclass, field
 from collections import deque
-from typing import Optional, List
+from typing import Optional
 import logging
 from .daminion_client import DaminionClient
 

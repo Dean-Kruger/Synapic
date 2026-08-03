@@ -8,7 +8,6 @@ selection, thresholds, and related baseline settings.
 
 from collections import deque
 
-import pytest
 
 from src.core.session import DatasourceConfig, EngineConfig, Session
 

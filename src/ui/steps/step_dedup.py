@@ -15,13 +15,13 @@ Author: Synapic Project
 import customtkinter as ctk
 import logging
 import io
-from PIL import Image, ImageTk
-from typing import Optional, List, Dict, Any, Callable
+from PIL import Image
+from typing import Optional, List, Dict, Callable
 import threading
 from tkinter import messagebox
 
 from src.core.dedup_processor import DaminionDedupProcessor, DedupAction, DedupScanResult
-from src.core.dedup import DuplicateGroup, KeepStrategy, DedupDecision
+from src.core.dedup import DuplicateGroup, DedupDecision
 
 logger = logging.getLogger(__name__)
 
@@ -521,7 +521,7 @@ class StepDedup(ctk.CTkFrame):
             
         except Exception as e:
             self.logger.error(f"Refresh and scan failed: {e}", exc_info=True)
-            self.after(0, lambda: self._on_scan_error(str(e)))
+            self.after(0, lambda err=e: self._on_scan_error(str(err)))
     
     def _run_scan(self):
         """Run the scan in background thread."""
@@ -542,7 +542,7 @@ class StepDedup(ctk.CTkFrame):
             
         except Exception as e:
             self.logger.error(f"Scan failed: {e}", exc_info=True)
-            self.after(0, lambda: self._on_scan_error(str(e)))
+            self.after(0, lambda err=e: self._on_scan_error(str(err)))
     
     def _update_progress(self, message: str, current: int, total: int):
         """Update progress bar and label."""
@@ -763,7 +763,7 @@ class StepDedup(ctk.CTkFrame):
         self.abort_btn.configure(state="normal")
         self.apply_btn.configure(state="normal", text="Apply Deduplication")
         
-        msg = f"Deduplication complete!\n\n"
+        msg = "Deduplication complete!\n\n"
         if results.get('tagged', 0) > 0:
             msg += f"• Tagged: {results['tagged']} items\n"
         if results.get('deleted', 0) > 0:

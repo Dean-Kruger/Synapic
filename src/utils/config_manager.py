@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 from dataclasses import asdict
 
-from src.core.session import Session, DatasourceConfig, EngineConfig
+from src.core.session import Session
 from src.utils.logger import log_config
 
 CONFIG_PATH = Path.home() / ".synapic_v2_config.json"

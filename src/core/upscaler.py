@@ -7,13 +7,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from PIL import Image, ImageFilter
-
-if TYPE_CHECKING:
-    import torch
-    from transformers import AutoImageProcessor, Swin2SRForImageSuperResolution
 
 StatusCallback = Optional[Callable[[str], None]]
 

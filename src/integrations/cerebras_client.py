@@ -267,9 +267,7 @@ class CerebrasClient:
                     "CerebrasClient: model %s rejected image content, falling back to text-only: %s",
                     model_name, exc,
                 )
-                del messages
                 return self._chat_text_only(client, model_name, prompt, image_path)
-            del messages
             logger.error("CerebrasClient: chat completion failed: %s", exc)
             return f"Error calling Cerebras API: {exc}"
 
@@ -304,7 +302,7 @@ class CerebrasClient:
     def test_connection(self) -> bool:
         """Quick connectivity check — tries to list one model."""
         try:
-            models = self.list_models(limit=1)
+            self.list_models(limit=1)
             # list_models returns static fallback on error, so we probe differently
             if not self.is_available():
                 return False

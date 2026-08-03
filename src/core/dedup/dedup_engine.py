@@ -11,14 +11,12 @@ Adapted from: https://github.com/deanable/python-dedupe
 
 import logging
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from collections import defaultdict
 
 from src.core.dedup.hash_calculator import ImageHashCalculator, HashResult
 from src.core.dedup.hash_comparison import (
-    are_hashes_similar,
     calculate_similarity_percentage,
-    calculate_hamming_distance,
     hamming_distance_between_ints,
 )
 
@@ -321,7 +319,6 @@ class ImageDeduplicator:
                     if item == pivot:
                         scores[item] = 100.0
                     else:
-                        item_res = hash_map[item]
                         # Recalculate similarity to pivot
                         dist = hamming_distance_between_ints(
                             int_by_item[item], int_by_item[pivot]

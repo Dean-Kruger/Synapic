@@ -32,7 +32,7 @@ Author: Synapic Project
 import threading
 import queue
 import logging
-from typing import Callable, Any, Optional, Dict
+from typing import Callable, Dict
 
 
 class BackgroundWorker:

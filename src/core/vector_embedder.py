@@ -36,13 +36,12 @@ import time
 try:
     from sentence_transformers import SentenceTransformer
     import faiss
-    import torch
+    import torch  # noqa: F401
     HAS_VECTOR_DEPS = True
 except ImportError:
     HAS_VECTOR_DEPS = False
     logging.warning("Vector embedding dependencies not available. Install with: pip install sentence-transformers faiss-cpu")
 
-from src.core import config
 
 logger = logging.getLogger(__name__)
 

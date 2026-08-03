@@ -15,7 +15,7 @@ Verifies that:
 import sys
 import os
 import unittest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
@@ -242,8 +242,7 @@ class TestProgressCompletionSignal(unittest.TestCase):
         """
         manager, session = _make_manager(auto_paginate)
 
-        call_log = []  # page-fetch index tracker for fake_get_items_filtered
-        call_counter = [0]
+        call_counter = [0]  # page-fetch index tracker for fake_get_items_filtered
 
         def fake_get_items_filtered(**kwargs):
             idx = call_counter[0]

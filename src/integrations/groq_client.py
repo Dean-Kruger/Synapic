@@ -17,7 +17,6 @@ future deployments where the endpoint shape is Groq-like but not identical to
 the official cloud service.
 """
 
-import json
 import os
 import logging
 import requests

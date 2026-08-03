@@ -17,7 +17,7 @@ Author: Synapic Project
 import base64
 import logging
 import mimetypes
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 import requests
 

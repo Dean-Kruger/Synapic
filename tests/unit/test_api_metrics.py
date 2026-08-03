@@ -37,7 +37,6 @@ class TestApiMetrics(unittest.TestCase):
         api._latency_by_endpoint = {'/a': [1.0]}
         api._error_counts = {}
 
-        json_str = api.get_metrics().__class__
         # Simple sanity: ensure dumping to JSON works
         s = json.dumps(api.get_metrics())
         self.assertIsInstance(s, str)

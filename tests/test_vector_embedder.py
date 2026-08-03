@@ -5,9 +5,7 @@ Test Vector Embedder Functionality
 Tests for the semantic taxonomy vectorization system.
 """
 
-import pytest
 import tempfile
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,7 +13,7 @@ from unittest.mock import MagicMock, patch
 def test_vector_embedder_import():
     """Test that vector embedder can be imported."""
     try:
-        from src.core.vector_embedder import (
+        from src.core.vector_embedder import (  # noqa: F401
             VectorDatabase, TextEmbedder, SemanticTaxonomy,
             enhance_metadata_with_semantics, setup_vector_system
         )
@@ -39,7 +37,7 @@ def test_dummy_taxonomy():
         
         stats = dummy.get_taxonomy_stats()
         assert stats['tag_count'] == 0
-        assert stats['has_vector_deps'] == False
+        assert stats['has_vector_deps'] is False
         
         # Test get_semantic_taxonomy returns dummy when deps missing
         taxonomy = get_semantic_taxonomy()
@@ -60,7 +58,7 @@ def test_semantic_enhancement_without_deps():
             taxonomy=dummy_taxonomy
         )
         
-        assert result['semantic_enabled'] == False
+        assert result['semantic_enabled'] is False
         assert 'message' in result
 
 
@@ -127,7 +125,7 @@ def test_integration_with_image_processing():
     
     assert category == ""  # No category in this result format
     assert "Nature" in keywords or "Landscape" in keywords  # Title-cased versions
-    assert semantic_data['semantic_enabled'] == False
+    assert semantic_data['semantic_enabled'] is False
 
 
 if __name__ == "__main__":

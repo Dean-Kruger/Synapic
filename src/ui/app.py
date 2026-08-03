@@ -289,8 +289,8 @@ class App(ctk.CTk):
                     else:
                         messagebox.showinfo(
                             "Update Complete",
-                            f"Synapic has been updated to the latest version.\n\n"
-                            f"Please restart the application for changes to take effect.",
+                            "Synapic has been updated to the latest version.\n\n"
+                            "Please restart the application for changes to take effect.",
                         )
             else:
                 self.logger.debug(f"Version check: {result.details}")

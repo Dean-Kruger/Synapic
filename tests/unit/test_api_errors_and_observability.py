@@ -12,7 +12,8 @@ from unittest.mock import patch, MagicMock
 
 import requests
 
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from src.core.daminion_api import DaminionAPI, DaminionAuthenticationError, DaminionNotFoundError, DaminionRateLimitError, DaminionNetworkError

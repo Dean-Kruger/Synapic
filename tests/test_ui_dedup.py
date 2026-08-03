@@ -14,7 +14,7 @@ run in headless CI environments.
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import MagicMock, patch
 import sys
 import importlib.util
 
@@ -31,8 +31,9 @@ class MockCTkFrame:
     def pack(self, *args, **kwargs): pass
     def tkraise(self, *args, **kwargs): pass
     def winfo_exists(self): return True
-    def after(self, ms, func=None): 
-        if func: func()
+    def after(self, ms, func=None):
+        if func:
+            func()
         return "timer_id"
 
 module_mock.CTkFrame = MockCTkFrame
@@ -43,9 +44,9 @@ if importlib.util.find_spec("PIL.ImageTk") is None:
     sys.modules["PIL.ImageTk"] = MagicMock()
 
 # Import original classes
-from src.ui.steps.step1_datasource import Step1Datasource
-from src.ui.steps.step_dedup import StepDedup
-import src.ui.steps.step1_datasource as step1_module
+from src.ui.steps.step1_datasource import Step1Datasource  # noqa: E402
+from src.ui.steps.step_dedup import StepDedup  # noqa: E402
+import src.ui.steps.step1_datasource as step1_module  # noqa: E402
 
 # -------------------------------------------------------------------------
 # TESTABLE SUBCLASSES (Avoids UI Init)
@@ -167,7 +168,7 @@ class TestStepDedupScan:
         mock_controller.session.dedup_items = [{"id": 1}]
         step_dedup = TestableStepDedup(mock_controller)
         
-        with patch("threading.Thread") as MockThread, \
+        with patch("threading.Thread"), \
              patch("src.ui.steps.step_dedup.DaminionDedupProcessor") as MockProcessor:
             
             step_dedup._start_scan()

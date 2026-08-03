@@ -3,7 +3,6 @@ Hugging Face provider configuration tab for Step 2.
 """
 
 import customtkinter as ctk
-import tkinter.messagebox as mb
 from .provider_tab_base import ProviderTabBase
 import logging
 
@@ -70,7 +69,6 @@ class HuggingFaceProviderTab(ProviderTabBase):
         super()._setup_tools_section()
 
         # Add Hugging Face specific search tools
-        tools_frame = self.refresh_button.master  # Get the tools frame we created in parent
         search_frame = ctk.CTkFrame(self, fg_color="transparent")
         search_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)  # Override position
         search_frame.grid_columnconfigure(0, weight=1)

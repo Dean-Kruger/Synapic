@@ -29,11 +29,9 @@ import customtkinter as ctk
 import logging
 import tkinter.messagebox as messagebox
 from src.utils.background_worker import BackgroundWorker
-from src.utils.concurrency import DaemonThreadPoolExecutor
 from src.utils.registry_config import load_ui_preferences, save_ui_preferences
 
 # Import provider tab classes
-from .provider_tab_base import ProviderTabBase
 from .provider_tab_local import create_local_tab
 from .provider_tab_hf import create_huggingface_tab
 from .provider_tab_or import create_openrouter_tab
@@ -413,19 +411,6 @@ class Step2Tagging(ctk.CTkFrame):
         if not enabled:
             return model_list
         return [model for model in model_list if self._model_supports_image(model)]
-
-
-
-        def worker():
-            try:
-                models = client.list_models(limit=40)
-            except Exception:
-                models = []
-            # UI updates must run on the Tk main thread (after() is the only
-            # thread-safe Tkinter call; the existence check runs on main).
-            self._schedule_ui_update(lambda: self._display_groq_models(models))
-
-        self._worker.submit_replacing("groq_models", worker)
 
     def _display_groq_models(self, models, update_cache=True):
         # Lazy create a Groq models panel on the Groq tab if not exists (though init_groq_tab creates it now)
@@ -1692,7 +1677,7 @@ class Step2Tagging(ctk.CTkFrame):
     def validate_model_id(self, model_id, provider):
         """Basic validation to prevent using OR models with HF engine and vice versa."""
         if provider == "huggingface":
-            if ":" in model_id and not "/" in model_id.split(":")[0]:
+            if ":" in model_id and "/" not in model_id.split(":")[0]:
                 # Looks like 'google/gemini...:free' or similar
                 import tkinter.messagebox as mb
                 return mb.askyesno("Potential Error", 
@@ -1782,7 +1767,8 @@ class Step2Tagging(ctk.CTkFrame):
 
     def download_selected_hf_for_local(self):
         model_id = self.hf_model.get()
-        if not model_id: return
+        if not model_id:
+            return
         
         # Open download manager directly for this model
         dm = DownloadManagerDialog(self, self.session)
@@ -1793,7 +1779,8 @@ class Step2Tagging(ctk.CTkFrame):
     def search_hf_online(self):
         query = self.hf_search.get()
         # Clear list
-        for w in self.hf_list.winfo_children(): w.destroy()
+        for w in self.hf_list.winfo_children():
+            w.destroy()
         ctk.CTkLabel(self.hf_list, text="Searching Hub...", text_color="gray").pack(pady=10)
         
         def worker():
@@ -1862,7 +1849,8 @@ class Step2Tagging(ctk.CTkFrame):
         raw_results = list(self._hf_results_cache)
         results = self._filter_image_models(raw_results, self.hf_image_only_var.get())
 
-        for w in self.hf_list.winfo_children(): w.destroy()
+        for w in self.hf_list.winfo_children():
+            w.destroy()
         
         # Re-add header
         header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Size':>10}"
@@ -1957,7 +1945,8 @@ class Step2Tagging(ctk.CTkFrame):
 
     def fetch_or_models(self):
         # Clear including header
-        for w in self.or_list.winfo_children(): w.destroy()
+        for w in self.or_list.winfo_children():
+            w.destroy()
         
         # Restore header
         header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
@@ -1998,7 +1987,8 @@ class Step2Tagging(ctk.CTkFrame):
         # Clear list but keep header? Actually cleaner to clear and redraw header in one go if I had separate method, 
         # but here I cleared children in fetch.
         # Let's just clear and redraw header to be safe
-        for w in self.or_list.winfo_children(): w.destroy()
+        for w in self.or_list.winfo_children():
+            w.destroy()
         
         header_text = f"{'Model ID':<40} | {'Capability':^15} | {'Cost':>15}"
         ctk.CTkLabel(
