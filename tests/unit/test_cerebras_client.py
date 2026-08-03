@@ -25,7 +25,8 @@ class TestCerebrasClientAvailability(unittest.TestCase):
     def test_is_not_available_without_key(self):
         """Client is NOT available when no API key provided."""
         mock_cerebras_cls = MagicMock()
-        with patch.dict("sys.modules", {"cerebras": MagicMock(), "cerebras.cloud": MagicMock(), "cerebras.cloud.sdk": MagicMock(Cerebras=mock_cerebras_cls)}):
+        with patch.dict("sys.modules", {"cerebras": MagicMock(), "cerebras.cloud": MagicMock(), "cerebras.cloud.sdk": MagicMock(Cerebras=mock_cerebras_cls)}), \
+             patch.dict("os.environ", {"CEREBRAS_API_KEY": ""}, clear=False):
             from src.integrations.cerebras_client import CerebrasClient
             client = CerebrasClient(api_key="")
             self.assertFalse(client.is_available())

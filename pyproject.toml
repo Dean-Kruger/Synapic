@@ -46,3 +46,4 @@ minversion = "6.0"
 # pytest) — ignore them so their helper functions aren't collected as tests.
 addopts = "-ra -q --import-mode=importlib --ignore=tests/manual"
 testpaths = ["tests"]
+pythonpath = ["src"]

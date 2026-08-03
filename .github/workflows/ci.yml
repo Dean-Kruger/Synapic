@@ -30,4 +30,4 @@ jobs:
           mypy src
       - name: Run tests
         run: |
-          PYTHONPATH=$PYTHONPATH:src pytest -q --verbose
+          PYTHONPATH=$PWD/src:$PYTHONPATH pytest -q --verbose
