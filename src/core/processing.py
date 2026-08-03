@@ -174,6 +174,9 @@ class ProcessingManager:
         )
         # Guards session counters mutated from parallel worker threads.
         self._stats_lock = threading.Lock()
+        # Model cache to avoid reloading the same model multiple times
+        self._model_cache = {}  # (model_id, task, device) -> model
+
 
     def start(self):
         """
@@ -363,12 +366,21 @@ class ProcessingManager:
             # STAGE 2: PAGINATED FETCH + PROCESS LOOP
             # ================================================================
             # For Daminion sources the API caps every response at 500 records.
-            # When auto_paginate=True we use a "reload-search" strategy:
-            # after each batch is processed we re-fetch from offset 0 instead
-            # of advancing the offset.  Items that were just tagged are
-            # excluded by the server's own untagged filter, so each fresh
-            # fetch naturally returns the next set of untagged items without
-            # any risk of re-processing already-tagged records.
+            # Two pagination strategies are available:
+            #
+            # 1. RELOAD-SEARCH (offset always 0):
+            #    Used when untagged filters are active. After each batch is
+            #    processed, items are excluded by the server-side untagged
+            #    filter, so re-fetching from offset 0 naturally returns the
+            #    next set of untagged records without re-processing.
+            #
+            # 2. OFFSET-BASED (advancing offset):
+            #    Used when no untagged filters are active (keyword search,
+            #    saved search, collection, or global scan without untagged).
+            #    The result set is stable (items don't disappear when tagged),
+            #    so we advance the start_index by the number of items received
+            #    to walk through the full set.
+            #
             # For local sources offset is ignored and only one pass is made.
             page_num = 0
             grand_total_processed = 0
@@ -384,15 +396,27 @@ class ProcessingManager:
             expected_total = 0  # Default for non-Daminion sources
             if process_limit is not None:
                 self.log(f"Process limit active: up to {process_limit} item(s).")
+
+            # Build untagged_fields list early — needed both for pre-flight
+            # count AND for determining the pagination strategy below.
+            untagged_fields = []
+            if ds.daminion_untagged_keywords:
+                untagged_fields.append("Keywords")
+            if ds.daminion_untagged_categories:
+                untagged_fields.append("Category")
+            if ds.daminion_untagged_description:
+                untagged_fields.append("Description")
+
+            # Determine which pagination strategy to use.
+            # Reload-search relies on the server-side untagged filter to
+            # exclude processed items from subsequent fetches. Without it,
+            # the same items are returned every time and the infinite-loop
+            # guard would stop after ~500 items.
+            use_reload_search = bool(untagged_fields)
+            current_offset = 0
+
             if ds.type == "daminion" and self.session.daminion_client:
                 try:
-                    untagged_fields = []
-                    if ds.daminion_untagged_keywords:
-                        untagged_fields.append("Keywords")
-                    if ds.daminion_untagged_categories:
-                        untagged_fields.append("Category")
-                    if ds.daminion_untagged_description:
-                        untagged_fields.append("Description")
                     raw_expected_total = (
                         self.session.daminion_client.get_filtered_item_count(
                             scope=ds.daminion_scope,
@@ -445,9 +469,11 @@ class ProcessingManager:
                     self.log("Reloading search for next batch...")
 
                 # ============================================================
-                # FETCH ONE PAGE (always from offset 0 – reload-search strategy)
+                # FETCH ONE PAGE
+                #   reload-search (offset=0)  – when untagged filter is active
+                #   offset-based               – when dataset is stable
                 # ============================================================
-                items = self._fetch_items(offset=0)
+                items = self._fetch_items(offset=current_offset)
 
                 if not items:
                     if page_num == 1:
@@ -482,9 +508,10 @@ class ProcessingManager:
                 # ─────────────────────────────────────────────────────────────
 
                 self.session.total_items += page_count
+                strat = "reload-search" if use_reload_search else "offset-based"
                 self.logger.info(
                     f"Page {page_num}: {page_count} items fetched "
-                    f"(reload-search, auto_paginate={self.auto_paginate})"
+                    f"({strat}, offset={current_offset}, auto_paginate={self.auto_paginate})"
                 )
                 self.log(f"Page {page_num}: {page_count} item(s) to process.")
 
@@ -651,10 +678,65 @@ class ProcessingManager:
                     del items
                     break
 
+                # Advance the pagination offset for the next fetch.
+                # - reload-search: reset to 0 (untagged filter excludes
+                #   already-tagged items server-side)
+                # - offset-based: advance by received count to walk through
+                #   the stable result set
+                if use_reload_search:
+                    current_offset = 0
+                else:
+                    current_offset += page_count
+
                 del items  # Free before fetching next batch
 
             # ================================================================
-            # STAGE 3: COMPLETION & CLEANUP
+            # STAGE 3: FORCE-REFRESH DAMINION SEARCH CACHE
+            # ================================================================
+            # After tagging completes, Daminion's search index may not immediately
+            # reflect the changes. A force-refreshed GetCount call tells the server
+            # to re-evaluate the search results, making newly-tagged items properly
+            # excluded from untagged filters.
+            if ds.type == "daminion" and self.session.daminion_client:
+                try:
+                    self.log("Refreshing server search cache...")
+                    remaining_count = (
+                        self.session.daminion_client.get_filtered_item_count(
+                            scope=ds.daminion_scope,
+                            saved_search_id=ds.daminion_saved_search_id
+                            or ds.daminion_saved_search,
+                            collection_id=ds.daminion_collection_id
+                            or ds.daminion_catalog_id,
+                            search_term=ds.daminion_search_term,
+                            untagged_fields=untagged_fields,
+                            status_filter=ds.status_filter,
+                            force_refresh=True,
+                        )
+                    )
+                    completed = self.session.processed_items
+                    self.logger.info(
+                        f"Post-job cache refresh: server now reports "
+                        f"{remaining_count} item(s) remaining (was ~{expected_total}). "
+                        f"{completed} item(s) tagged in this session."
+                    )
+                    if isinstance(remaining_count, (int, float)):
+                        if remaining_count >= 0:
+                            self.log(
+                                f"Server search cache refreshed: "
+                                f"{int(remaining_count)} untagged item(s) remaining."
+                            )
+                        else:
+                            self.log(
+                                "Server search cache refreshed, but count is "
+                                "unavailable. Tags were applied successfully."
+                            )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Post-job cache refresh failed (non-fatal): {e}"
+                    )
+
+            # ================================================================
+            # STAGE 4: COMPLETION & CLEANUP
             # ================================================================
             self.logger.debug("Hit end of processing loop")
             self.logger.info(
@@ -839,7 +921,7 @@ class ProcessingManager:
         The method:
         1. Checks model compatibility (rejects GPTQ, AWQ, etc.)
         2. Converts device string ('cpu'/'cuda') to integer format for pipeline
-        3. Loads the model using huggingface_utils
+        3. Loads the model using huggingface_utils (with caching)
         4. Auto-detects and corrects the task if needed
         5. Stores the model in self.model for reuse across all items
 
@@ -869,6 +951,16 @@ class ProcessingManager:
             )
             self.logger.error(error_msg)
             raise RuntimeError(error_msg)
+
+        # Create cache key for model lookup
+        cache_key = (engine.model_id, engine.task, engine.device)
+
+        # Check if model is already cached
+        if cache_key in self._model_cache:
+            self.logger.info(f"Using cached model: {engine.model_id}")
+            self.model = self._model_cache[cache_key]
+            self.log(f"Using cached model: {engine.model_id}...")
+            return
 
         self.logger.info(f"Initializing local model: {engine.model_id}")
         self.log(f"Loading local model: {engine.model_id}...")
@@ -904,6 +996,9 @@ class ProcessingManager:
             self.log(
                 f"Model loaded successfully (Task: {engine.task}, Device: {engine.device})."
             )
+
+            # Cache the model for future use
+            self._model_cache[cache_key] = self.model
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
 
@@ -1341,13 +1436,21 @@ class ProcessingManager:
             threshold = engine.confidence_threshold / 100.0
 
             # Extract category, keywords, and description from model result
-            # The extract_tags_from_result function handles:
+            # The extract_tags_with_semantics function handles:
             # - Parsing JSON from VLM responses
             # - Filtering classification results by threshold
             # - Extracting top predictions as keywords
-            cat, kws, desc = image_processing.extract_tags_from_result(
-                result, engine.task, threshold=threshold
-            )
+            # - Adding semantic enhancement (if taxonomy available)
+            try:
+                cat, kws, desc, semantic_data = image_processing.extract_tags_with_semantics(
+                    result, engine.task, threshold=threshold, taxonomy=None
+                )
+                self.logger.debug(f"Semantic data: {semantic_data}")
+            except (AttributeError, ImportError):
+                # Fallback to original function if new one not available
+                cat, kws, desc = image_processing.extract_tags_from_result(
+                    result, engine.task, threshold=threshold
+                )
             self.logger.debug(
                 f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}"
             )
@@ -1468,3 +1571,19 @@ class ProcessingManager:
                 except Exception:
                     # Ignore cleanup errors - not critical
                     pass
+            # Periodic garbage collection to free any residual base64 strings,
+            # API response objects, and other short-lived allocations.
+            # Every 10 items balances GC overhead with memory pressure.
+            if hasattr(self, "session") and self.session.processed_items % 10 == 0:
+                gc.collect()
+
+                # Clear CUDA cache if GPU was used and we've processed a significant number of items
+                if self.session.engine.device == "cuda" and self.session.processed_items % 50 == 0:
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            self.logger.debug("CUDA cache cleared")
+                    except ImportError:
+                        pass
+

@@ -27,9 +27,21 @@ Author: Synapic Project
 import queue
 import customtkinter as ctk
 import logging
+import tkinter.messagebox as messagebox
 from src.utils.background_worker import BackgroundWorker
 from src.utils.concurrency import DaemonThreadPoolExecutor
 from src.utils.registry_config import load_ui_preferences, save_ui_preferences
+
+# Import provider tab classes
+from .provider_tab_base import ProviderTabBase
+from .provider_tab_local import create_local_tab
+from .provider_tab_hf import create_huggingface_tab
+from .provider_tab_or import create_openrouter_tab
+from .provider_tab_groq import create_groq_tab
+from .provider_tab_ollama import create_ollama_tab
+from .provider_tab_nvidia import create_nvidia_tab
+from .provider_tab_google_ai import create_google_ai_tab
+from .provider_tab_cerebras import create_cerebras_tab
 
 logger = logging.getLogger(__name__)
 
@@ -83,35 +95,45 @@ class Step2Tagging(ctk.CTkFrame):
         # Inline Config Container
         self.session = self.controller.session
         self._worker = BackgroundWorker(name="Step2Worker")
-        self._groq_models_cache = []
-        self._ollama_models_cache = []
-        self._nvidia_models_cache = []
-        self._google_ai_models_cache = []
-        self._cerebras_models_cache = []
-        self._hf_results_cache = []
-        self._or_models_cache = []
         self._load_registry_ui_preferences()
         self.config_container = ctk.CTkFrame(self.container, fg_color="transparent")
         self.config_container.grid(row=2, column=0, pady=5, sticky="ew")
         self.config_container.grid_columnconfigure(0, weight=1)
 
-        self.tab_local = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_hf = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_or = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_groq = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_ollama = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_nvidia = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_google_ai = ctk.CTkFrame(self.config_container, fg_color="transparent")
-        self.tab_cerebras = ctk.CTkFrame(self.config_container, fg_color="transparent")
-
-        self.init_local_tab()
-        self.init_hf_tab()
-        self.init_or_tab()
-        self.init_groq_tab()
-        self.init_ollama_tab()
-        self.init_nvidia_tab()
-        self.init_google_ai_tab()
-        self.init_cerebras_tab()
+        # Create provider tabs using factory functions
+        self.provider_tabs = {}
+        self.provider_tabs["local"] = create_local_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["huggingface"] = create_huggingface_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["openrouter"] = create_openrouter_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["groq_package"] = create_groq_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["ollama"] = create_ollama_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["nvidia"] = create_nvidia_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["google_ai"] = create_google_ai_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
+        self.provider_tabs["cerebras"] = create_cerebras_tab(
+            self.config_container, self.session, self._worker,
+            self._persist_image_filter_preference, self._filter_image_models
+        )
         
         # === Model Info Section ===
         model_info_frame = ctk.CTkFrame(self.container, fg_color="#2B2B2B", corner_radius=10)
@@ -268,42 +290,15 @@ class Step2Tagging(ctk.CTkFrame):
 
     def _on_engine_change(self):
         engine = self.engine_var.get()
-        # Hide all frames
-        for frame in [self.tab_local, self.tab_hf, self.tab_or, self.tab_groq, self.tab_ollama, self.tab_nvidia, self.tab_google_ai, self.tab_cerebras]:
-            frame.grid_forget()
-            
-        # Show the correct frame
-        if engine == "local":
-            self.tab_local.grid(row=0, column=0, sticky="nsew")
-        elif engine == "huggingface":
-            self.tab_hf.grid(row=0, column=0, sticky="nsew")
-        elif engine == "openrouter":
-            self.tab_or.grid(row=0, column=0, sticky="nsew")
-        elif engine == "groq_package":
-            self.tab_groq.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_groq_models_loaded', False):
-                self._load_and_display_groq_models()
-                self._groq_models_loaded = True
-        elif engine == "ollama":
-            self.tab_ollama.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_ollama_models_loaded', False):
-                self._load_and_display_ollama_models()
-                self._ollama_models_loaded = True
-        elif engine == "nvidia":
-            self.tab_nvidia.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_nvidia_models_loaded', False):
-                self._load_and_display_nvidia_models()
-                self._nvidia_models_loaded = True
-        elif engine == "google_ai":
-            self.tab_google_ai.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_google_ai_models_loaded', False):
-                self._load_and_display_google_ai_models()
-                self._google_ai_models_loaded = True
-        elif engine == "cerebras":
-            self.tab_cerebras.grid(row=0, column=0, sticky="nsew")
-            if not getattr(self, '_cerebras_models_loaded', False):
-                self._load_and_display_cerebras_models()
-                self._cerebras_models_loaded = True
+        # Hide all provider tabs
+        for tab in self.provider_tabs.values():
+            tab.grid_forget()
+
+        # Show the correct tab
+        if engine in self.provider_tabs:
+            self.provider_tabs[engine].grid(row=0, column=0, sticky="nsew")
+            # Refresh the tab when it becomes visible
+            self.provider_tabs[engine].refresh()
 
     def _apply_config(self):
         self.update_model_info()
@@ -320,17 +315,23 @@ class Step2Tagging(ctk.CTkFrame):
         self.model_info_label.configure(text=self._get_model_display_text())
         
     def next_step(self):
+        # Validate before proceeding
+        is_valid, error_msg = self.controller.session.validate_workflow_state("Step3Process")
+        if not is_valid:
+            messagebox.showwarning("Validation Error", error_msg)
+            return
+
         # Update session
         self.controller.session.engine.provider = self.engine_var.get()
-        
+
         # We need to retrieve values from the dialog if it was opened, or use defaults/session
         # This UI flow is a bit tricky because the dialog is modal.
         # Ideally, the dialog should update the session directly when "Save" is clicked (if we had a Save button)
         # Or we should have the inputs on the main card.
-        
+
         # For now, let's assume the user configured it via the dialog which we will update to write to session.
         pass
-        
+
         logger.debug(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
 
@@ -413,12 +414,7 @@ class Step2Tagging(ctk.CTkFrame):
             return model_list
         return [model for model in model_list if self._model_supports_image(model)]
 
-    # Groq auto-load methods moved to ConfigDialog
 
-    def _load_and_display_groq_models(self):
-        from src.integrations.groq_package_client import GroqPackageClient
-        api_key = self.session.engine.groq_api_key or self._get_groq_api_key_for_refresh()
-        client = GroqPackageClient(api_key=api_key)
 
         def worker():
             try:
@@ -618,6 +614,7 @@ class Step2Tagging(ctk.CTkFrame):
         key_info = f"{len(keys)} key{'s' if len(keys) > 1 else ''}"
         self.groq_status.configure(text=f"Groq config saved ({key_info})", text_color="green")
         self._apply_config()
+
     
     # ================================================================
     # OLLAMA API TAB METHODS
