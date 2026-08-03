@@ -23,7 +23,8 @@ from src.core.dedup.hash_comparison import (
     calculate_hamming_distance,
     calculate_similarity_percentage,
     are_hashes_similar,
-    are_hashes_exact_match
+    are_hashes_exact_match,
+    hamming_distance_between_ints,
 )
 from src.core.dedup.dedup_engine import ImageDeduplicator, DuplicateGroup
 from src.core.dedup.dedup_strategies import (
@@ -55,6 +56,7 @@ __all__ = [
     'calculate_similarity_percentage',
     'are_hashes_similar',
     'are_hashes_exact_match',
+    'hamming_distance_between_ints',
     
     # Deduplication engine
     'ImageDeduplicator',

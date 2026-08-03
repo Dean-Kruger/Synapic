@@ -93,11 +93,11 @@ def validate_image(image_path: Path) -> Tuple[bool, Optional[str]]:
         if image_path.stat().st_size > config.MAX_IMAGE_SIZE_MB * 1024 * 1024:
             return False, f"File exceeds {config.MAX_IMAGE_SIZE_MB}MB limit"
 
+        # A single pass: verify() reads through the file to confirm it is a
+        # valid image without decoding the full pixel data into memory.
+        # (Previously the file was opened twice — verify + load.)
         with Image.open(image_path) as img:
             img.verify()
-
-        with Image.open(image_path) as img:
-            img.load()
 
         return True, None
 
@@ -192,11 +192,16 @@ def write_metadata(
         - Temporary files created by iptcinfo3 are cleaned up automatically
         - Failures in one format don't prevent writing to the other
     """
+    # Nothing to write — skip both rewrite passes (each rewrites the whole file).
+    if not category and not keywords and not description:
+        logging.debug(f"No metadata to write for {image_path.name}, skipping")
+        return True
+
     iptc_success = False
     exif_success = False
 
     try:
-        logging.info(f"Writing IPTC metadata to {image_path.name}")
+        logging.debug(f"Writing IPTC metadata to {image_path.name}")
         info = IPTCInfo(image_path, force=True)
 
         if category:
@@ -235,7 +240,7 @@ def write_metadata(
         logging.exception(f"Failed to write IPTC metadata for {image_path.name}")
 
     try:
-        logging.info(f"Writing EXIF metadata to {image_path.name}")
+        logging.debug(f"Writing EXIF metadata to {image_path.name}")
         exif_dict = piexif.load(str(image_path))
 
         if category:
@@ -507,9 +512,9 @@ def extract_tags_from_result(
         config.MODEL_TASK_IMAGE_TO_TEXT,
         "image-text-to-text",
     ]:
-        logging.info(f"Extracting tags - Task: {model_task}, Threshold: {threshold}")
+        logging.debug(f"Extracting tags - Task: {model_task}, Threshold: {threshold}")
         # Log a bit more of the result for debugging (e.g. the "S" issue)
-        logging.info(f"Raw Result: {str(result)[:500]}")
+        logging.debug(f"Raw Result: {str(result)[:500]}")
 
     try:
         if model_task == config.MODEL_TASK_IMAGE_CLASSIFICATION:
@@ -558,7 +563,7 @@ def extract_tags_from_result(
                 # User preference: Single best category instead of list
                 category = matched_categories[0]
                 # Log usage
-                logging.info(f"Zero-Shot Category: '{category}' (Score: >={threshold})")
+                logging.debug(f"Zero-Shot Category: '{category}' (Score: >={threshold})")
 
         elif model_task in [config.MODEL_TASK_IMAGE_TO_TEXT, "image-text-to-text"]:
             # Result: [{'generated_text': '...'}] or [{'generated_text': {'description': '...', ...}}]

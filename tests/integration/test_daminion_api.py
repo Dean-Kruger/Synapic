@@ -9,15 +9,15 @@ Or: python tests/test_daminion_api.py
 import sys
 import os
 import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 import json
+import requests
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.core.daminion_api import (
     DaminionAPI,
-    DaminionAPIError,
     DaminionAuthenticationError,
     DaminionNotFoundError,
     DaminionRateLimitError,
@@ -41,6 +41,19 @@ TEST_DAMINION_PASSWORD = os.environ.get('DAMINION_PASSWORD', 'admin')
 # Note: Unit tests use mocks and don't connect to real server.
 # For integration tests, set environment variables or edit defaults above.
 # ============================================================================
+
+
+class _FakeResponse:
+    """Minimal stand-in for a requests.Response used by mocked sessions."""
+
+    def __init__(self, status_code=200, content=b'{}', headers=None, cookies=None):
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {"Content-Type": "application/json"}
+        self.cookies = cookies or {}
+
+    def json(self):
+        return json.loads(self.content.decode("utf-8"))
 
 
 class TestDaminionAPIInitialization(unittest.TestCase):
@@ -107,50 +120,39 @@ class TestDaminionAPIInitialization(unittest.TestCase):
 class TestDaminionAPIAuthentication(unittest.TestCase):
     """Test authentication functionality"""
     
-    @patch('src.core.daminion_api.urllib.request.urlopen')
-    def test_authenticate_success(self, mock_urlopen):
+    def test_authenticate_success(self):
         """Test successful authentication"""
-        # Mock successful response
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "success": True,
-            "data": {"sessionId": "test123"}
-        }).encode('utf-8')
-        mock_response.getheader.return_value = "sessionId=test123; path=/"
-        mock_urlopen.return_value.__enter__.return_value = mock_response
-        
         api = DaminionAPI(
             base_url="https://test.daminion.net",
             username="test_user",
             password="test_pass"
         )
-        
-        result = api.authenticate()
-        
+        mock_response = _FakeResponse(
+            status_code=200,
+            content=json.dumps({
+                "success": True,
+                "data": {"sessionId": "test123"}
+            }).encode('utf-8'),
+            cookies={"sessionId": "test123"},
+        )
+        with patch.object(api._session, "request", return_value=mock_response) as mock_request:
+            result = api.authenticate()
+
         self.assertTrue(result)
         self.assertTrue(api.is_authenticated())
-    
-    @patch('src.core.daminion_api.urllib.request.urlopen')
-    def test_authenticate_failure(self, mock_urlopen):
+        mock_request.assert_called_once()
+
+    def test_authenticate_failure(self):
         """Test authentication failure"""
-        # Mock 401 error
-        from urllib.error import HTTPError
-        mock_urlopen.side_effect = HTTPError(
-            url="https://test.daminion.net/api/UserManager/Login",
-            code=401,
-            msg="Unauthorized",
-            hdrs={},
-            fp=None
-        )
-        
         api = DaminionAPI(
             base_url="https://test.daminion.net",
             username="wrong_user",
             password="wrong_pass"
         )
-        
-        with self.assertRaises(DaminionAuthenticationError):
-            api.authenticate()
+        mock_response = _FakeResponse(status_code=401, content=b'')
+        with patch.object(api._session, "request", return_value=mock_response):
+            with self.assertRaises(DaminionAuthenticationError):
+                api.authenticate()
     
     def test_context_manager(self):
         """Test context manager auto-authentication"""
@@ -401,59 +403,36 @@ class TestErrorHandling(unittest.TestCase):
         )
         self.api._authenticated = True
     
-    @patch('src.core.daminion_api.urllib.request.urlopen')
-    def test_404_error(self, mock_urlopen):
+    def test_404_error(self):
         """Test 404 Not Found error"""
-        from urllib.error import HTTPError
-        mock_urlopen.side_effect = HTTPError(
-            url="https://test.daminion.net/api/test",
-            code=404,
-            msg="Not Found",
-            hdrs={},
-            fp=None
-        )
-        
-        with self.assertRaises(DaminionNotFoundError):
-            self.api._make_request("/api/test")
-    
-    @patch('src.core.daminion_api.urllib.request.urlopen')
-    def test_403_error(self, mock_urlopen):
+        mock_response = _FakeResponse(status_code=404, content=b'')
+        with patch.object(self.api._session, "request", return_value=mock_response):
+            with self.assertRaises(DaminionNotFoundError):
+                self.api._make_request("/api/test")
+
+    def test_403_error(self):
         """Test 403 Forbidden error"""
-        from urllib.error import HTTPError
-        mock_urlopen.side_effect = HTTPError(
-            url="https://test.daminion.net/api/test",
-            code=403,
-            msg="Forbidden",
-            hdrs={},
-            fp=None
-        )
-        
-        with self.assertRaises(DaminionPermissionError):
-            self.api._make_request("/api/test")
-    
-    @patch('src.core.daminion_api.urllib.request.urlopen')
-    def test_429_error(self, mock_urlopen):
+        mock_response = _FakeResponse(status_code=403, content=b'')
+        with patch.object(self.api._session, "request", return_value=mock_response):
+            with self.assertRaises(DaminionPermissionError):
+                self.api._make_request("/api/test")
+
+    def test_429_error(self):
         """Test 429 Rate Limit error"""
-        from urllib.error import HTTPError
-        mock_urlopen.side_effect = HTTPError(
-            url="https://test.daminion.net/api/test",
-            code=429,
-            msg="Too Many Requests",
-            hdrs={},
-            fp=None
-        )
-        
-        with self.assertRaises(DaminionRateLimitError):
-            self.api._make_request("/api/test")
-    
-    @patch('src.core.daminion_api.urllib.request.urlopen')
-    def test_network_error(self, mock_urlopen):
+        mock_response = _FakeResponse(status_code=429, content=b'')
+        with patch.object(self.api._session, "request", return_value=mock_response):
+            with self.assertRaises(DaminionRateLimitError):
+                self.api._make_request("/api/test")
+
+    def test_network_error(self):
         """Test network error"""
-        from urllib.error import URLError
-        mock_urlopen.side_effect = URLError("Connection refused")
-        
-        with self.assertRaises(DaminionNetworkError):
-            self.api._make_request("/api/test")
+        with patch.object(
+            self.api._session,
+            "request",
+            side_effect=requests.exceptions.ConnectionError("Connection refused"),
+        ):
+            with self.assertRaises(DaminionNetworkError):
+                self.api._make_request("/api/test")
     
     def test_not_authenticated_error(self):
         """Test error when not authenticated"""

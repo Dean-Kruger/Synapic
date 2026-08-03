@@ -153,24 +153,34 @@ class EngineConfig:
     # Set of exhausted Groq API keys for the current run cycle (not persisted)
     groq_exhausted_keys: set = field(default_factory=set)
 
+    def _next_available_key_index(self, start_idx: int) -> Optional[int]:
+        """
+        Return the index of the next non-exhausted Groq key scanning forward
+        from ``start_idx`` (wrapping around). Returns None when every key is
+        exhausted or no keys are configured.
+        """
+        keys = self.get_groq_key_list()
+        if not keys:
+            return None
+        count = len(keys)
+        for offset in range(count):
+            idx = (start_idx + offset) % count
+            if keys[idx] not in self.groq_exhausted_keys:
+                return idx
+        return None
+
     @property
     def groq_api_key(self) -> str:
         """Backward-compatible property returning the currently active Groq API key."""
         keys = self.get_groq_key_list()
         if not keys:
             return ""
-
-        available_keys = [k for k in keys if k not in self.groq_exhausted_keys]
-        if not available_keys:
+        idx = self._next_available_key_index(self.groq_current_key_index)
+        if idx is None:
+            # All keys exhausted this cycle: fall back to the current rotation
+            # index so callers can surface the exhaustion message.
             return keys[self.groq_current_key_index % len(keys)]
-
-        idx = self.groq_current_key_index % len(keys)
-        candidate = keys[idx]
-        while candidate in self.groq_exhausted_keys:
-            idx = (idx + 1) % len(keys)
-            candidate = keys[idx]
-
-        return candidate
+        return keys[idx]
 
     @groq_api_key.setter
     def groq_api_key(self, value: str):
@@ -188,15 +198,9 @@ class EngineConfig:
         keys = self.get_groq_key_list()
         if not keys:
             return ""
-
-        start_idx = self.groq_current_key_index
-        self.groq_current_key_index = (self.groq_current_key_index + 1) % len(keys)
-
-        while keys[self.groq_current_key_index] in self.groq_exhausted_keys:
-            self.groq_current_key_index = (self.groq_current_key_index + 1) % len(keys)
-            if self.groq_current_key_index == start_idx:
-                break
-
+        next_idx = self._next_available_key_index(self.groq_current_key_index + 1)
+        if next_idx is not None:
+            self.groq_current_key_index = next_idx
         return keys[self.groq_current_key_index]
 
     def mark_groq_key_exhausted(self, key: str):

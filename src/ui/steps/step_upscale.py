@@ -492,21 +492,30 @@ class StepUpscale(ctk.CTkFrame):
             return False
 
     def _update_status(self, text: str):
-        # Update status label from background thread safely
-        if self.winfo_exists():
-            self.after(0, lambda: self.lbl_status.configure(text=text))
+        # Update status label from background thread safely. after() is the
+        # only Tkinter call safe from other threads; the existence check runs
+        # on the main thread inside the callback.
+        try:
+            self.after(0, lambda: self.lbl_status.configure(text=text) if self.winfo_exists() else None)
+        except Exception:
+            pass
 
     def _update_task(self, text: str):
-        if self.winfo_exists():
-            self.after(0, lambda: self.lbl_task.configure(text=f"Current task: {text}"))
+        try:
+            self.after(
+                0,
+                lambda: self.lbl_task.configure(text=f"Current task: {text}")
+                if self.winfo_exists()
+                else None,
+            )
+        except Exception:
+            pass
 
     def _on_upscaler_status(self, text: str):
         self._update_status(text)
         self._log_event(text)
 
     def _update_progress(self, processed_count: int, total_count: int, started_at: float):
-        if not self.winfo_exists():
-            return
         total = max(total_count, 1)
         pct = min(processed_count / total, 1.0)
         elapsed = max(time.monotonic() - started_at, 0.0)
@@ -520,12 +529,17 @@ class StepUpscale(ctk.CTkFrame):
         else:
             eta_txt = "ETA: --"
 
-        self.after(0, lambda: self.progress_bar.set(pct))
-        if total_count > 0:
-            self.after(0, lambda: self.lbl_counter.configure(text=f"{processed_count} / {total_count} images"))
-        else:
-            self.after(0, lambda: self.lbl_counter.configure(text=f"{processed_count} images processed"))
-        self.after(0, lambda: self.lbl_eta.configure(text=eta_txt))
+        # after() is the only Tkinter call safe from worker threads; the
+        # existence check runs on the main thread inside each callback.
+        try:
+            self.after(0, lambda: self.progress_bar.set(pct))
+            if total_count > 0:
+                self.after(0, lambda: self.lbl_counter.configure(text=f"{processed_count} / {total_count} images"))
+            else:
+                self.after(0, lambda: self.lbl_counter.configure(text=f"{processed_count} images processed"))
+            self.after(0, lambda: self.lbl_eta.configure(text=eta_txt))
+        except Exception:
+            pass
 
     def _format_duration(self, seconds: float) -> str:
         seconds = max(int(seconds), 0)
@@ -709,8 +723,10 @@ class StepUpscale(ctk.CTkFrame):
         timestamp = time.strftime("%H:%M:%S")
         line = f"[{timestamp}] {message}"
         logger.info(line)
-        if self.winfo_exists():
+        try:
             self.after(0, lambda: self._append_log_line(line))
+        except Exception:
+            pass
 
     def _append_log_line(self, line: str):
         if not self.winfo_exists():

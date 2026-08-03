@@ -18,7 +18,8 @@ from src.core.dedup.hash_calculator import ImageHashCalculator, HashResult
 from src.core.dedup.hash_comparison import (
     are_hashes_similar,
     calculate_similarity_percentage,
-    calculate_hamming_distance
+    calculate_hamming_distance,
+    hamming_distance_between_ints,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,25 @@ class UnionFind:
             root = self.find(item)
             components[root].append(item)
         return components
+
+
+def _hash_bins(hash_value: str, bin_count: int) -> List[str]:
+    """
+    Split a hex hash string into at least ``bin_count`` contiguous chunks.
+
+    Two hashes differing in at most ``bin_count - 1`` bits are guaranteed to
+    share at least one identical chunk (pigeonhole principle), so comparing
+    only within bins preserves full recall for that Hamming-distance bound.
+    Floor-dividing the chunk size guarantees the number of produced bins is
+    never smaller than ``bin_count``.
+    """
+    hex_len = len(hash_value)
+    if hex_len <= 1 or bin_count <= 1:
+        # Single shared bucket — every item lands in the same bin, so all
+        # pairs get compared (the brute-force fallback).
+        return [""]
+    chunk = max(1, hex_len // bin_count)
+    return [hash_value[i:i + chunk] for i in range(0, hex_len, chunk)]
 
 
 class ImageDeduplicator:
@@ -169,14 +189,23 @@ class ImageDeduplicator:
         """
         Finds groups of similar images using the configured threshold (or override).
         Uses Union-Find to group transitively similar items.
+
+        Instead of an O(N^2) all-pairs scan, hashes are bucketed by contiguous
+        sub-chunks (see ``_hash_bins``). For a 64-bit pHash at a 95% threshold
+        (<= 3 differing bits) four bins are enough to guarantee similar images
+        share at least one bin, cutting comparisons by ~4x with identical
+        results. Identical hashes are also collapsed to one representative
+        before comparing, so duplicate-heavy collections don't re-compare
+        exact matches.
         """
         import logging
         _logger = logging.getLogger(__name__)
-        
+
         eff_threshold = threshold if threshold is not None else self.similarity_threshold
 
         items = list(hash_map.keys())
-        uf = UnionFind(items)
+        if not items:
+            return []
 
         # Log sample hash values for diagnostics
         sample_size = min(5, len(items))
@@ -185,47 +214,101 @@ class ImageDeduplicator:
             hr = hash_map[item_id]
             _logger.debug(f"[DEDUP HASH SAMPLE] item={item_id}, hash={hr.hash_value}, algo={hr.algorithm}, bits={hr.bit_length}")
 
-        # Compare all pairs O(N^2)
+        # Precompute integer hashes so the hot loop is int-XOR + popcount only.
+        int_by_item: Dict[str, int] = {}
+        for item_id in items:
+            try:
+                int_by_item[item_id] = int(hash_map[item_id].hash_value, 16)
+            except (ValueError, TypeError):
+                # Invalid hashes can't be compared (matches old ValueError-skip behavior).
+                continue
+
+        comparable = [i for i in items if i in int_by_item]
+        if len(comparable) < 2:
+            return []
+
+        # Collapse identical (algorithm, hash) pairs to a single representative
+        # before comparing, so duplicate-heavy collections don't re-compare
+        # exact matches. Keying by algorithm too preserves the old behavior of
+        # never grouping cross-algorithm hashes.
+        groups_by_hash: Dict[tuple, List[str]] = defaultdict(list)
+        for item_id in comparable:
+            hr = hash_map[item_id]
+            groups_by_hash[(hr.algorithm, hr.hash_value)].append(item_id)
+        rep_by_hash: Dict[tuple, str] = {
+            key: group[0] for key, group in groups_by_hash.items()
+        }
+        reps = sorted(set(rep_by_hash.values()))
+
+        # Reference bit length to derive the threshold's max Hamming distance.
+        ref = hash_map[reps[0]]
+        bit_length = ref.bit_length
+        max_distance = (
+            max(0, int((1.0 - eff_threshold / 100.0) * bit_length))
+            if bit_length else 0
+        )
+        # The pigeonhole guarantee needs more bins than max_distance. For very
+        # low thresholds that's impossible with the available hex characters
+        # (e.g. 64-bit hashes below ~77%), so fall back to an all-pairs scan.
+        required_bins = max_distance + 1
+        bin_count = required_bins if required_bins <= len(ref.hash_value) else 1
+        if bin_count == 1 and len(reps) > 1:
+            _logger.warning(
+                "Similarity threshold %.1f%% requires more comparison bins "
+                "than the hash width provides; falling back to an all-pairs "
+                "scan (slower on large collections).",
+                eff_threshold,
+            )
+
+        uf = UnionFind(reps)
+
+        # Bucket representatives; compare only within shared bins.
+        bins: Dict[tuple, List[str]] = defaultdict(list)
+        for rep in reps:
+            hr = hash_map[rep]
+            for chunk in _hash_bins(hr.hash_value, bin_count):
+                bins[(hr.algorithm, chunk)].append(rep)
+
         comparisons = 0
         matches = 0
         max_similarity = 0.0
         max_sim_pair = (None, None)
 
-        for i in range(len(items)):
-            for j in range(i + 1, len(items)):
-                id1 = items[i]
-                id2 = items[j]
+        for (_algo, _chunk), group in bins.items():
+            for i in range(len(group)):
+                id1 = group[i]
+                for j in range(i + 1, len(group)):
+                    id2 = group[j]
+                    # Already in the same component — no need to re-evaluate.
+                    if uf.find(id1) == uf.find(id2):
+                        continue
 
-                res1 = hash_map[id1]
-                res2 = hash_map[id2]
-
-                # Check if algorithms match
-                if res1.algorithm != res2.algorithm:
-                    continue
-
-                comparisons += 1
-
-                # Calculate similarity for diagnostics
-                try:
-                    dist = calculate_hamming_distance(res1.hash_value, res2.hash_value)
-                    sim = calculate_similarity_percentage(dist, res1.bit_length)
+                    comparisons += 1
+                    dist = hamming_distance_between_ints(
+                        int_by_item[id1], int_by_item[id2]
+                    )
+                    sim = calculate_similarity_percentage(dist, hash_map[id1].bit_length)
                     if sim > max_similarity:
                         max_similarity = sim
                         max_sim_pair = (id1, id2)
                     if sim >= eff_threshold:
                         matches += 1
                         uf.union(id1, id2)
-                except ValueError:
-                    continue
 
         _logger.info(f"[DEDUP COMPARE] {comparisons} comparisons, {matches} matches at threshold={eff_threshold}%")
         _logger.info(f"[DEDUP COMPARE] Highest similarity: {max_similarity:.1f}% between items {max_sim_pair[0]} and {max_sim_pair[1]}")
 
-        # Build groups
+        # Build groups from the representative union-find, then expand each
+        # component back to all items sharing a hash with its representatives.
         components = uf.get_components()
         duplicate_groups = []
 
-        for root, group_items in components.items():
+        for _root, rep_group in components.items():
+            group_items: List[str] = []
+            for rep in rep_group:
+                hr = hash_map[rep]
+                group_items.extend(groups_by_hash[(hr.algorithm, hr.hash_value)])
+
             if len(group_items) > 1:
                 # Calculate scores relative to the first item (pivot)
                 # Sort group items to ensure deterministic pivot
@@ -240,7 +323,9 @@ class ImageDeduplicator:
                     else:
                         item_res = hash_map[item]
                         # Recalculate similarity to pivot
-                        dist = calculate_hamming_distance(pivot_res.hash_value, item_res.hash_value)
+                        dist = hamming_distance_between_ints(
+                            int_by_item[item], int_by_item[pivot]
+                        )
                         bit_len = pivot_res.bit_length
                         sim = calculate_similarity_percentage(dist, bit_len)
                         scores[item] = sim

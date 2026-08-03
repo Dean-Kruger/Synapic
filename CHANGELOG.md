@@ -4,6 +4,40 @@ All notable changes to the **Synapic** project will be documented in this file.
 
 ---
 
+## [2.4.5] - 2026-08-03
+
+> **Note:** 2.4.5 supersedes the earlier 2.4.0 draft entries for this release. The feature set is unchanged — 2.4.0 was a provisional version number used while the changelog was being assembled and should not be referenced.
+
+### Added
+- **Performance Benchmark Scripts**: Added `scripts/bench_dedup_binning.py` (dedup scan throughput) and `scripts/bench_parallel_tagging.py` (parallel vs sequential tagging with mocked API calls) for reproducible performance measurement.
+- **New Unit Tests**: Added 31 tests covering the hash-binning dedup engine (verified against a brute-force all-pairs oracle at 95/90/75% thresholds) and `DaemonThreadPoolExecutor` `cancel_futures` semantics.
+- **Real Engine Validation**: Implemented `Session.validate_engine` with per-provider checks (model required for all providers, downloaded model for local, API key for each cloud provider, host for Ollama) instead of the always-True stub, plus 7 new unit tests.
+- **Paginated Dedup Reload**: The dedup base-query reload now paginates through Daminion instead of silently capping at 500 items, with live per-page progress updates.
+
+### Changed
+- **Dedup Engine Speedup**: Replaced the O(N²) pairwise hash comparison with hash binning (~4x fewer comparisons worst case, 100-1,000x+ on realistic collections), precomputed integer hashes with a fast `bit_count` popcount (4.6x faster per comparison), identical-hash collapsing, and an all-pairs fallback for very low thresholds.
+- **Parallel Tagging**: Cloud providers (Groq, OpenRouter, Hugging Face, Google AI, NVIDIA, Cerebras, Ollama) now process items concurrently via `DaemonThreadPoolExecutor` (`PROCESSING_MAX_WORKERS`, default 4); local inference stays sequential. Counters and progress reporting are thread-safe and abort behavior is preserved.
+- **Daminion API Efficiency**: Cached tag-value ID resolution (eliminating the per-keyword API-call storm) and switched the HTTP transport from `urllib` to a persistent `requests.Session` with a thread-safe rate limiter.
+- **HTTP Session Reuse**: Hugging Face and OpenRouter providers now reuse a module-level `requests.Session`.
+- **Resource Management**: Fixed a temporary-file disk leak for downloaded originals/previews, bounded per-endpoint latency samples, and moved per-image memory logging to DEBUG level.
+- **Logging Refactors**: Replaced scattered debug `print()` calls with structured logger calls across the Daminion client, dedup engine, and Step 2/4 UIs, and narrowed broad `except` clauses.
+- **Dependency Pinning**: Pinned previously unpinned dependencies and reconciled `requirements.txt` with `pyproject.toml`.
+- **Docs Cleanup**: Removed README duplication and documented cloud API key configuration in `CONFIG.md`.
+- **Developer Scripts**: Relocated dev scripts (`read_log.py`, `rewrite_step2.py`) under `scripts/` and removed an empty scratch file.
+- **Daminion Check-in Comments**: `checkin_item`/`checkin` accept an optional comment, with graceful fallback when the server rejects check-in comments.
+
+### Fixed
+- **Temporary File Cleanup**: Downloaded Daminion originals/previews are now always removed, even when processing fails.
+- **Concurrency Utilities**: `DaemonThreadPoolExecutor.shutdown()` is idempotent and honors `cancel_futures`; the Groq single-key path no longer serializes parallel workers; Cerebras SDK client creation is double-checked-locked.
+- **Windows Icon & Title**: Replaced the fake PNG icon with a real ICO, corrected the window title, and set the Windows taskbar icon via `iconphoto` so it survives CustomTkinter's delayed default-icon override.
+- **Dedup/Upscale Reliability**: Fixed refresh behavior, item limits, and cache cleanup in the dedup and upscale steps, and relabeled the keep-selection controls to "Select to keep".
+
+### Performance
+- **Dedup scans** (64-bit pHash, 95% threshold): 66x at 1,000 items, ~190x at 4,000, and ~0.7s for 64,000 items (vs ~17 minutes for the old all-pairs scan).
+- **Tagging throughput** (32 items, 300ms API latency): 2.1x / 3.9x / 5.0x wall-clock speedup at 2 / 4 / 8 workers.
+
+---
+
 ## [2.3.0] - 2026-03-19
 
 ### Added
@@ -102,5 +136,5 @@ All notable changes to the **Synapic** project will be documented in this file.
 ---
 
 ## Status: Production Ready
-**Current Version**: 2.3.0
-**Last Updated**: 2026-03-19
+**Current Version**: 2.4.5
+**Last Updated**: 2026-08-03

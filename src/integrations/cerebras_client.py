@@ -26,6 +26,7 @@ import base64
 import logging
 import mimetypes
 import os
+import threading
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class CerebrasClient:
         """
         self.api_key = (api_key or os.environ.get("CEREBRAS_API_KEY", "")).strip()
         self._client = None  # Lazy-initialised SDK client
+        self._client_lock = threading.Lock()
         self.available = False
 
         try:
@@ -113,17 +115,19 @@ class CerebrasClient:
     # ------------------------------------------------------------------
 
     def _ensure_client(self):
-        """Create and cache the underlying Cerebras SDK client."""
+        """Create and cache the underlying Cerebras SDK client (thread-safe)."""
         if not self._cerebras_class:
             return None
         if self._client is not None:
             return self._client
-        try:
-            self._client = self._cerebras_class(api_key=self.api_key)
+        with self._client_lock:
+            if self._client is not None:
+                return self._client
+            try:
+                self._client = self._cerebras_class(api_key=self.api_key)
+            except Exception as exc:
+                logger.error("CerebrasClient: failed to create SDK client: %s", exc)
             return self._client
-        except Exception as exc:
-            logger.error("CerebrasClient: failed to create SDK client: %s", exc)
-            return None
 
     # ------------------------------------------------------------------
     # Model listing

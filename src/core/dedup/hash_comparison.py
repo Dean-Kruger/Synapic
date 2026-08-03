@@ -9,6 +9,26 @@ Adapted from: https://github.com/deanable/python-dedupe
 """
 
 
+if hasattr(int, "bit_count"):
+    # Python 3.10+ — C-level popcount, ~10x faster than bin(x).count("1")
+    def _popcount(x: int) -> int:
+        return x.bit_count()
+else:
+    # Python 3.8/3.9 fallback
+    def _popcount(x: int) -> int:
+        return bin(x).count("1")
+
+
+def hamming_distance_between_ints(int1: int, int2: int) -> int:
+    """
+    Hamming distance between two integers (popcount of the XOR).
+
+    Fast path for hot comparison loops that already hold integer hashes,
+    avoiding a hex-string -> int conversion on every call.
+    """
+    return _popcount(int1 ^ int2)
+
+
 def calculate_hamming_distance(hash1: str, hash2: str) -> int:
     """
     Calculates the Hamming distance between two hex strings.
@@ -25,8 +45,7 @@ def calculate_hamming_distance(hash1: str, hash2: str) -> int:
         raise ValueError("Invalid hex string provided.")
 
     # XOR and count set bits
-    xor_result = int1 ^ int2
-    return bin(xor_result).count('1')
+    return _popcount(int1 ^ int2)
 
 
 def calculate_similarity_percentage(hamming_distance: int, hash_bit_length: int) -> float:

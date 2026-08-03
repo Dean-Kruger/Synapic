@@ -28,6 +28,11 @@ OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 SITE_URL = "https://github.com/deanable/Synapic"
 SITE_NAME = "Synapic"
 
+# Persistent session so API calls reuse TCP/TLS connections across the
+# thousands of inference requests a batch run makes. Shared across parallel
+# worker threads (urllib3 connection pools are thread-safe).
+_HTTP_SESSION = requests.Session()
+
 # Whitelist of known free vision models that support system messages
 # These models have been verified to work with developer instructions
 FREE_VISION_MODELS_WITH_SYSTEM_SUPPORT = [
@@ -59,7 +64,7 @@ def fetch_all_models(token: Optional[str] = None, force_refresh: bool = False) -
 
     try:
         logging.info(f"Fetching full model list from {OPENROUTER_MODELS_URL}...")
-        r = requests.get(OPENROUTER_MODELS_URL, headers=headers, timeout=15)
+        r = _HTTP_SESSION.get(OPENROUTER_MODELS_URL, headers=headers, timeout=15)
         r.raise_for_status()
         data = r.json()
         models = _extract_models_from_response(data)
@@ -388,7 +393,7 @@ def run_inference_api(
         else:
             logger.warning("No API key provided!")
 
-        resp = requests.post(chat_url, headers=headers_json, json=body, timeout=60)
+        resp = _HTTP_SESSION.post(chat_url, headers=headers_json, json=body, timeout=60)
         # Free the large body dict immediately after sending
         del body
         elapsed = time.time() - start_time
@@ -551,7 +556,7 @@ def run_inference_api(
                     data["parameters"] = parameters
                 
                 logger.info(f"[OpenRouter API] Sending multipart request to fallback endpoint")
-                resp = requests.post(fallback_url, headers=headers, files=files, data=data, timeout=60)
+                resp = _HTTP_SESSION.post(fallback_url, headers=headers, files=files, data=data, timeout=60)
                 fallback_elapsed = time.time() - start_time
                 
                 log_api_response(logger, resp.status_code, elapsed_time=fallback_elapsed)

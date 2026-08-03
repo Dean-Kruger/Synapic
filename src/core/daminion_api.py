@@ -21,15 +21,18 @@ Author: Synapic Project
 """
 
 import logging
-import urllib.request
-import urllib.parse
-import urllib.error
 import json
+import threading
 import time
 import requests
 from typing import Dict, List, Optional, Any, Union, Tuple
 from dataclasses import dataclass
 from enum import Enum
+
+
+# Maximum latency samples kept per endpoint (rolling window) to bound memory
+# growth during long runs while preserving observability.
+_MAX_LATENCY_SAMPLES = 200
 
 
 # ============================================================================
@@ -246,12 +249,17 @@ class DaminionAPI:
         self._cookies: Dict[str, str] = {}
         self._authenticated = False
         self._last_request_time = 0.0
+        # Persistent HTTP session for connection reuse (keep-alive). Shared
+        # across parallel worker threads: urllib3 connection pools are
+        # thread-safe, and cookie state is mirrored under the GIL, so no
+        # extra locking is required here.
+        self._session = requests.Session()
+        # Guards the rate limiter so parallel workers stay evenly spaced.
+        self._rate_lock = threading.Lock()
         # Observability metrics
         self._request_count: int = 0
         self._latency_by_endpoint: Dict[str, List[float]] = {}
         self._error_counts: Dict[str, int] = {}
-        # Simple observability: track number of requests made
-        self._request_count: int = 0
         
         # Initialize sub-APIs
         self.media_items = MediaItemsAPI(self)
@@ -280,9 +288,16 @@ class DaminionAPI:
         """Exit context manager and cleanup."""
         try:
             self.logout()
-        except Exception as e:
-            logging.warning(f"Error during logout: {e}")
+        finally:
+            self.close()
         return False
+
+    def close(self):
+        """Close the underlying HTTP session, freeing connection pools."""
+        try:
+            self._session.close()
+        except Exception as e:
+            logging.warning(f"Error closing HTTP session: {e}")
     
     # ------------------------------------------------------------------------
     # AUTHENTICATION
@@ -344,19 +359,28 @@ class DaminionAPI:
     # ------------------------------------------------------------------------
     
     def _enforce_rate_limit(self):
-        """Enforce rate limiting between API calls."""
+        """
+        Enforce rate limiting between API calls.
+
+        A lock makes the limiter thread-safe: parallel workers queue on the
+        lock and requests stay at least ``rate_limit`` seconds apart without
+        redundant sleeps.
+        """
         if self.rate_limit > 0:
-            elapsed = time.time() - self._last_request_time
-            if elapsed < self.rate_limit:
-                time.sleep(self.rate_limit - elapsed)
-        self._last_request_time = time.time()
+            with self._rate_lock:
+                elapsed = time.time() - self._last_request_time
+                if elapsed < self.rate_limit:
+                    time.sleep(self.rate_limit - elapsed)
+                self._last_request_time = time.time()
     
-    def _get_cookie_header(self) -> str:
-        """Generate cookie header string from stored cookies."""
-        if not self._cookies:
-            return ""
-        return "; ".join(f"{k}={v}" for k, v in self._cookies.items())
-    
+    def _record_latency(self, endpoint: str, start_time: float) -> None:
+        """Record per-endpoint latency, bounded to a rolling window."""
+        duration = (time.time() - start_time) * 1000
+        values = self._latency_by_endpoint.setdefault(endpoint, [])
+        values.append(duration)
+        if len(values) > _MAX_LATENCY_SAMPLES:
+            del values[: len(values) - _MAX_LATENCY_SAMPLES]
+
     def _make_request(
         self,
         endpoint: str,
@@ -369,7 +393,10 @@ class DaminionAPI:
     ) -> Any:
         """
         Make an authenticated API request.
-        
+
+        Uses a persistent ``requests.Session`` so TCP/TLS connections are
+        reused across the thousands of calls a run makes.
+
         Args:
             endpoint: API endpoint (e.g., "/api/MediaItems/Get")
             method: HTTP method (GET, POST, etc.)
@@ -377,10 +404,10 @@ class DaminionAPI:
             params: Optional URL query parameters
             skip_auth: Skip auth check (for login endpoint)
             skip_rate_limit: Skip rate limiting
-            
+
         Returns:
             Response data (parsed JSON or raw content)
-            
+
         Raises:
             DaminionAPIError: For various API errors
         """
@@ -393,131 +420,97 @@ class DaminionAPI:
 
         if not skip_rate_limit:
             self._enforce_rate_limit()
-        
-        # Build URL
+
         url = f"{self.base_url}{endpoint}"
-        if params:
-            query_string = urllib.parse.urlencode(params)
-            url = f"{url}?{query_string}"
-        
-        # Build request
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
-        if self._cookies:
-            headers["Cookie"] = self._get_cookie_header()
-        
-        request_body = None
-        if data is not None:
-            request_body = json.dumps(data).encode('utf-8')
-        
-        req = urllib.request.Request(
-            url,
-            data=request_body,
-            headers=headers,
-            method=method
-        )
+
+        headers = {"Accept": "application/json"}
+        # The JSON body is only relevant for non-multipart calls.
+        if data is not None and files is None:
+            headers["Content-Type"] = "application/json"
 
         try:
-            # Multipart uploads (e.g. CheckIn) are easier and more robust via requests.
             if files:
-                upload_headers = {"Accept": "application/json"}
-                response = requests.request(
+                # Multipart uploads (e.g. CheckIn)
+                response = self._session.request(
                     method=method,
                     url=url,
+                    params=params,
                     data=data or {},
                     files=files,
-                    headers=upload_headers,
-                    cookies=self._cookies,
+                    headers=headers,
                     timeout=self.timeout,
                 )
-                response.raise_for_status()
-                self._cookies.update(response.cookies.get_dict())
-
-                content_type = response.headers.get("Content-Type", "")
-                if "application/json" in content_type:
-                    result = response.json()
-                    if isinstance(result, dict):
-                        if not result.get('success', True):
-                            error_msg = result.get('error', 'Unknown error')
-                            error_code = result.get('errorCode', 0)
-                            raise DaminionAPIError(f"API Error {error_code}: {error_msg}")
-
-                        if 'data' in result:
-                            return result['data']
-                    return result
-
-                return response.content
-
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
-                # Store cookies from response
-                cookie_header = response.getheader('Set-Cookie')
-                if cookie_header:
-                    for cookie in cookie_header.split(','):
-                        if '=' in cookie:
-                            key, value = cookie.split('=', 1)
-                            value = value.split(';')[0].strip()
-                            self._cookies[key.strip()] = value
-                
-                # Parse response
-                content_type = response.getheader('Content-Type', '')
-                response_data = response.read()
-                
-                if 'application/json' in content_type:
-                    result = json.loads(response_data.decode('utf-8'))
-                    
-                    # Check for API-level errors
-                    if isinstance(result, dict):
-                        if not result.get('success', True):
-                            error_msg = result.get('error', 'Unknown error')
-                            error_code = result.get('errorCode', 0)
-                            raise DaminionAPIError(f"API Error {error_code}: {error_msg}")
-                        
-                        # Return data field if present
-                        if 'data' in result:
-                            return result['data']
-                    
-                    # Observability: latency per endpoint
-                    duration = (time.time() - start_time) * 1000
-                    self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
-                    return result
-                else:
-                    # Return raw binary data (for images, files, etc.)
-                    # Observability: latency for non-json endpoints
-                    duration = (time.time() - start_time) * 1000
-                    self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
-                    return response_data
-                    
-        except urllib.error.HTTPError as e:
-            error_msg = f"HTTP {e.code}: {e.reason}"
-            # Observability: record latency on error path
-            duration = (time.time() - start_time) * 1000
-            self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
-            
-            if e.code == 401:
-                self._authenticated = False
-                raise DaminionAuthenticationError(f"Authentication required: {error_msg}")
-            elif e.code == 403:
-                raise DaminionPermissionError(f"Permission denied: {error_msg}")
-            elif e.code == 404:
-                raise DaminionNotFoundError(f"Resource not found: {error_msg}")
-            elif e.code == 429:
-                raise DaminionRateLimitError(f"Rate limit exceeded: {error_msg}")
             else:
-                raise DaminionAPIError(f"API request failed: {error_msg}")
-                
-        except urllib.error.URLError as e:
-            # Observability: record latency on error path
-            duration = (time.time() - start_time) * 1000
-            self._latency_by_endpoint[endpoint] = self._latency_by_endpoint.get(endpoint, []) + [duration]
-            self._error_counts["URLError"] = self._error_counts.get("URLError", 0) + 1
-            raise DaminionNetworkError(f"Network error: {e.reason}")
-        except json.JSONDecodeError as e:
-            raise DaminionAPIError(f"Invalid JSON response: {e}")
-        except Exception as e:
-            raise DaminionAPIError(f"Request failed: {e}")
+                response = self._session.request(
+                    method=method,
+                    url=url,
+                    params=params,
+                    json=data if data is not None else None,
+                    headers=headers,
+                    timeout=self.timeout,
+                )
+        except requests.exceptions.RequestException as e:
+            # Observability: record latency on the error path
+            self._record_latency(endpoint, start_time)
+            self._error_counts["RequestException"] = (
+                self._error_counts.get("RequestException", 0) + 1
+            )
+            raise DaminionNetworkError(f"Network error: {e}")
+
+        # Mirror session cookies into _cookies for backward compatibility.
+        response_cookies = response.cookies
+        if hasattr(response_cookies, "get_dict"):
+            response_cookies = response_cookies.get_dict()
+        self._cookies.update(response_cookies)
+
+        # Observability: record latency on success and HTTP-error paths
+        self._record_latency(endpoint, start_time)
+
+        # Map HTTP status codes to typed exceptions.
+        if response.status_code >= 400:
+            if response.status_code == 401:
+                self._authenticated = False
+                raise DaminionAuthenticationError(
+                    f"Authentication required: HTTP {response.status_code}"
+                )
+            elif response.status_code == 403:
+                raise DaminionPermissionError(
+                    f"Permission denied: HTTP {response.status_code}"
+                )
+            elif response.status_code == 404:
+                raise DaminionNotFoundError(
+                    f"Resource not found: HTTP {response.status_code}"
+                )
+            elif response.status_code == 429:
+                raise DaminionRateLimitError(
+                    f"Rate limit exceeded: HTTP {response.status_code}"
+                )
+            else:
+                raise DaminionAPIError(
+                    f"API request failed: HTTP {response.status_code}"
+                )
+
+        content_type = response.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            try:
+                result = response.json()
+            except ValueError as e:
+                raise DaminionAPIError(f"Invalid JSON response: {e}")
+
+            # Check for API-level errors
+            if isinstance(result, dict):
+                if not result.get('success', True):
+                    error_msg = result.get('error', 'Unknown error')
+                    error_code = result.get('errorCode', 0)
+                    raise DaminionAPIError(f"API Error {error_code}: {error_msg}")
+
+                # Return data field if present
+                if 'data' in result:
+                    return result['data']
+            return result
+
+        # Return raw binary data (for images, files, etc.)
+        return response.content
 
     def get_request_count(self) -> int:
         """Return the number of API requests performed (observability)."""

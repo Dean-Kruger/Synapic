@@ -337,8 +337,17 @@ class Step1Datasource(ctk.CTkFrame):
 
         def _bg_connect():
             success = self.controller.session.connect_daminion()
-            if self.winfo_exists():
-                self.after(0, lambda: self._on_connected(success))
+            # after() is thread-safe from a background thread; the existence
+            # check runs on the main thread inside the callback.
+            try:
+                self.after(
+                    0,
+                    lambda: self._on_connected(success)
+                    if self.winfo_exists()
+                    else None,
+                )
+            except Exception:
+                pass
 
         self._worker.submit(_bg_connect)
 

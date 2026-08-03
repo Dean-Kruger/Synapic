@@ -115,14 +115,38 @@ class DaemonThreadPoolExecutor(Executor):
                 pass
 
     def shutdown(self, wait=True, cancel_futures=False):
-        """Stop accepting new work and optionally wait for active workers."""
+        """Stop accepting new work and optionally wait for active workers.
+
+        Idempotent: calling shutdown more than once is a no-op (previously
+        each call queued an extra sentinel per worker).
+
+        ``cancel_futures`` matches ``concurrent.futures`` semantics: queued
+        work items that have not started are cancelled (running tasks always
+        complete).
+        """
         with self._lock:
+            if self._shutdown:
+                return
             self._shutdown = True
-            
+
+        if cancel_futures:
+            # Drain and cancel not-yet-started work items. Tasks already
+            # dequeued by a worker cannot be cancelled and finish normally;
+            # submit() raises RuntimeError from here on, so nothing new can
+            # be added while we drain.
+            try:
+                while True:
+                    item = self._work_queue.get_nowait()
+                    if item is not None:
+                        _fn, _args, _kwargs, future = item
+                        future.cancel()
+            except queue.Empty:
+                pass
+
         # Send sentinel to all threads
         for _ in self._threads:
             self._work_queue.put(None)
-            
+
         if wait:
             for t in self._threads:
                 t.join()

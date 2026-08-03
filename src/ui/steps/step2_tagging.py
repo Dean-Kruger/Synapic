@@ -25,10 +25,6 @@ Author: Synapic Project
 """
 
 import queue
-try:
-    from src.ui.steps.step_groq_settings import GroqSettingsDialog  # optional
-except Exception:
-    GroqSettingsDialog = None
 import customtkinter as ctk
 import logging
 from src.utils.background_worker import BackgroundWorker
@@ -357,10 +353,16 @@ class Step2Tagging(ctk.CTkFrame):
 
 
     def _schedule_ui_update(self, callback):
-        """Schedule a callback on the UI thread only while dialog exists."""
-        if not self.winfo_exists():
-            return
-        self.after(0, lambda: callback() if self.winfo_exists() else None)
+        """Schedule a callback on the UI thread only while the dialog exists.
+
+        ``after()`` is the one Tkinter call that is safe to invoke from a
+        background thread, so we always marshal through it and check widget
+        existence inside the callback (which runs on the main thread).
+        """
+        try:
+            self.after(0, lambda: callback() if self.winfo_exists() else None)
+        except Exception:
+            pass  # Widget already destroyed; drop the update.
 
     def _load_registry_ui_preferences(self):
         """Overlay UI preference defaults from the Windows Registry."""
@@ -423,9 +425,9 @@ class Step2Tagging(ctk.CTkFrame):
                 models = client.list_models(limit=40)
             except Exception:
                 models = []
-            # UI updates must run on the Tk main thread.
-            if self.winfo_exists():
-                self.after(0, lambda m=models: self._display_groq_models(m))
+            # UI updates must run on the Tk main thread (after() is the only
+            # thread-safe Tkinter call; the existence check runs on main).
+            self._schedule_ui_update(lambda: self._display_groq_models(models))
 
         self._worker.submit_replacing("groq_models", worker)
 

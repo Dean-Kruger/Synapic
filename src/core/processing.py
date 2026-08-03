@@ -36,6 +36,7 @@ import gc
 import logging
 import threading
 import time
+from concurrent.futures import as_completed
 
 try:
     import psutil
@@ -54,6 +55,7 @@ from . import huggingface_utils
 from . import openrouter_utils
 from . import image_processing
 from . import config
+from src.utils.concurrency import DaemonThreadPoolExecutor
 
 # Optional Groq integration (for Groq SDK-based inference)
 try:
@@ -170,6 +172,8 @@ class ProcessingManager:
         self.auto_paginate = (
             auto_paginate  # Whether to page through all 500-record batches
         )
+        # Guards session counters mutated from parallel worker threads.
+        self._stats_lock = threading.Lock()
 
     def start(self):
         """
@@ -306,11 +310,10 @@ class ProcessingManager:
                     raise RuntimeError(
                         "Groq SDK not available. Please install it with: pip install groq"
                     )
-                import os
-
+                # The key is passed directly to the client constructor below;
+                # never write it to os.environ (it would leak to child
+                # processes and /proc/<pid>/environ).
                 groq_api_key = engine.groq_api_key
-                if groq_api_key:
-                    os.environ["GROQ_API_KEY"] = groq_api_key
                 self._api_client = GroqPackageClient(api_key=groq_api_key)
                 if not self._api_client.is_available():
                     raise RuntimeError(
@@ -370,6 +373,7 @@ class ProcessingManager:
             page_num = 0
             grand_total_processed = 0
             last_page_ids: set = set()  # Guard against infinite loops
+            items = None  # Current page of items (None until the first fetch)
 
             # ================================================================
             # PRE-FLIGHT COUNT — log the server-side total before fetching
@@ -512,81 +516,127 @@ class ProcessingManager:
                 # ============================================================
                 # PROCESS EACH ITEM IN THIS PAGE
                 # ============================================================
-                processed_before_batch = self.session.processed_items
-                # ============================================================
-                for i, item in enumerate(items):
-                    if self.stop_event.is_set():
-                        self.logger.info(
-                            f"Job aborted by user after processing "
-                            f"{grand_total_processed} items total"
-                        )
-                        self.log("Job aborted by user.")
-                        # items will be freed by the outer stop_event guard below;
-                        # do NOT del here to avoid UnboundLocalError.
-                        break
-
-                    self._process_single_item(item)
-
-                    self.session.processed_items += 1
-                    grand_total_processed += 1
-
-                    # Log memory consumption after each image for debugging
-                    if _PSUTIL_AVAILABLE:
-                        mem_mb = psutil.Process().memory_info().rss / (1024 * 1024)
-                        self.logger.info(
-                            f"Memory usage after image "
-                            f"{self.session.processed_items}/{self.session.total_items}: "
-                            f"{mem_mb:.2f} MB"
-                        )
-
-                    pct = self.session.processed_items / max(
-                        self.session.total_items, 1
-                    )
-                    # Determine whether more pages will follow this one.
-                    # A page is "definitely the last" if:
-                    #   - auto_paginate is off (never fetches more), OR
-                    #   - this page is partial (< 500 items, server is exhausted)
-                    # Otherwise we conservatively keep more_pages=True even on the
-                    # last item of a full page — the empty fetch that follows will
-                    # simply exit the loop without emitting a misleading pct=1.0.
-                    _is_last_page = (not self.auto_paginate) or (
-                        page_count < DAMINION_PAGE_SIZE
-                    )
-                    _last_item_on_page = i == page_count - 1
-                    _job_truly_done = _is_last_page and _last_item_on_page
-                    elapsed = (
-                        time.monotonic() - self._start_time if self._start_time else 0
-                    )
-                    processed = self.session.processed_items
-                    if self.auto_paginate and expected_total > 0:
-                        effective_total = expected_total
+                # Cloud API providers are network-bound, so process items in
+                # parallel (config.PROCESSING_MAX_WORKERS). Local GPU/CPU
+                # inference stays sequential (max_workers=1).
+                max_workers = (
+                    1
+                    if self.session.engine.provider == "local"
+                    else getattr(config, "PROCESSING_MAX_WORKERS", 4)
+                )
+                executor = (
+                    DaemonThreadPoolExecutor(max_workers=max_workers)
+                    if max_workers > 1
+                    else None
+                )
+                try:
+                    if executor is not None:
+                        # Submit all items up front; as_completed yields results
+                        # as each future finishes so progress doesn't stall on a
+                        # slow early item. Workers skip remaining work via
+                        # _process_item_guarded once the stop_event is set, so
+                        # the final shutdown(wait=True) below drains quickly.
+                        futures = [
+                            executor.submit(self._process_item_guarded, item)
+                            for item in items
+                        ]
+                        results_iter = as_completed(futures)
                     else:
-                        effective_total = self.session.total_items
-                    if process_limit is not None:
-                        effective_total = min(effective_total, process_limit)
-                    remaining = max(effective_total - processed, 0)
-                    etc = (elapsed / processed * remaining) if processed > 0 else 0
-                    self._emit_progress(
-                        self.session.processed_items / max(effective_total, 1),
-                        self.session.processed_items,
-                        effective_total,
-                        more_pages=not _job_truly_done,
-                        elapsed_seconds=elapsed,
-                        etc_seconds=etc,
-                    )
-
-                    if (
-                        process_limit is not None
-                        and self.session.processed_items >= process_limit
-                    ):
-                        self.logger.info(
-                            f"Processing stopped at configured limit of {process_limit} items"
+                        results_iter = (
+                            self._process_item_guarded(it) for it in items
                         )
-                        break
+
+                    for i, _ in enumerate(results_iter):
+                        if self.stop_event.is_set():
+                            self.logger.info(
+                                f"Job aborted by user after processing "
+                                f"{grand_total_processed} items total"
+                            )
+                            self.log("Job aborted by user.")
+                            # items will be freed by the outer stop_event guard
+                            # below; do NOT del here to avoid UnboundLocalError.
+                            break
+
+                        self.session.processed_items += 1
+                        grand_total_processed += 1
+
+                        # Periodic garbage collection (deterministic here, on
+                        # the consuming thread) frees residual base64 strings
+                        # and API response objects every 3 items.
+                        if self.session.processed_items % 3 == 0:
+                            gc.collect()
+
+                        # Log memory consumption after each image for debugging
+                        if _PSUTIL_AVAILABLE:
+                            mem_mb = (
+                                psutil.Process().memory_info().rss / (1024 * 1024)
+                            )
+                            self.logger.debug(
+                                f"Memory usage after image "
+                                f"{self.session.processed_items}/"
+                                f"{self.session.total_items}: {mem_mb:.2f} MB"
+                            )
+
+                        pct = self.session.processed_items / max(
+                            self.session.total_items, 1
+                        )
+                        # Determine whether more pages will follow this one.
+                        # A page is "definitely the last" if:
+                        #   - auto_paginate is off (never fetches more), OR
+                        #   - this page is partial (< 500 items, server exhausted)
+                        # Otherwise we conservatively keep more_pages=True even on
+                        # the last item of a full page — the empty fetch that
+                        # follows will simply exit the loop without emitting a
+                        # misleading pct=1.0.
+                        _is_last_page = (not self.auto_paginate) or (
+                            page_count < DAMINION_PAGE_SIZE
+                        )
+                        _last_item_on_page = i == page_count - 1
+                        _job_truly_done = _is_last_page and _last_item_on_page
+                        elapsed = (
+                            time.monotonic() - self._start_time
+                            if self._start_time
+                            else 0
+                        )
+                        processed = self.session.processed_items
+                        if self.auto_paginate and expected_total > 0:
+                            effective_total = expected_total
+                        else:
+                            effective_total = self.session.total_items
+                        if process_limit is not None:
+                            effective_total = min(effective_total, process_limit)
+                        remaining = max(effective_total - processed, 0)
+                        etc = (
+                            (elapsed / processed * remaining) if processed > 0 else 0
+                        )
+                        self._emit_progress(
+                            self.session.processed_items / max(effective_total, 1),
+                            self.session.processed_items,
+                            effective_total,
+                            more_pages=not _job_truly_done,
+                            elapsed_seconds=elapsed,
+                            etc_seconds=etc,
+                        )
+
+                        if (
+                            process_limit is not None
+                            and self.session.processed_items >= process_limit
+                        ):
+                            self.logger.info(
+                                f"Processing stopped at configured limit of "
+                                f"{process_limit} items"
+                            )
+                            break
+                finally:
+                    if executor is not None:
+                        # wait=True is safe on abort too: queued items skip work
+                        # via _process_item_guarded, so draining is fast and no
+                        # worker is left running during the cleanup below.
+                        executor.shutdown(wait=True)
 
                 # Stop pagination if abort was requested
                 if self.stop_event.is_set():
-                    if "items" in dir():
+                    if items is not None:
                         del items
                     break
 
@@ -857,6 +907,18 @@ class ProcessingManager:
         except Exception as e:
             raise RuntimeError(f"Failed to load model: {e}")
 
+    def _process_item_guarded(self, item):
+        """
+        Process one item, skipping immediately once abort is requested.
+
+        Workers pick items off the executor queue even after the main loop has
+        broken out on abort; this guard keeps post-abort work bounded to the
+        items already in flight (at most ``max_workers``).
+        """
+        if self.stop_event.is_set():
+            return
+        self._process_single_item(item)
+
     def _process_single_item(self, item):
         """
         Process a single image item through the complete AI tagging pipeline.
@@ -918,6 +980,7 @@ class ProcessingManager:
                     path = daminion_client.download_thumbnail(
                         item_id, width=200, height=200
                     )
+                    temp_thumb = path  # Cleaned up in the finally block below
                     if not path or not path.exists():
                         raise RuntimeError(
                             f"Could not download thumbnail for item {item_id}"
@@ -926,20 +989,27 @@ class ProcessingManager:
                     scale = getattr(ds, "resize_scale", 100)
                     if scale >= 100:
                         path = daminion_client.download_original(item_id)
+                        temp_thumb = path  # Cleaned up in the finally block below
                         if not path or not path.exists():
                             raise RuntimeError(
                                 f"Could not download original for item {item_id}"
                             )
                     else:
-                        # Get original dimensions first to calculate proportional target size
+                        # Fetch dimensions once and compute both target width and
+                        # height so download_preview() doesn't re-fetch them.
                         dims = daminion_client.get_item_dimensions(item_id)
                         if dims:
                             orig_w, orig_h = dims
                             target_w = max(75, int(orig_w * scale / 100))
+                            target_h = max(75, int(orig_h * scale / 100))
                         else:
                             # Fallback: use scale of a base 2000px size
                             target_w = max(75, int(2000 * scale / 100))
-                        path = daminion_client.download_preview(item_id, width=target_w)
+                            target_h = None
+                        path = daminion_client.download_preview(
+                            item_id, width=target_w, height=target_h
+                        )
+                        temp_thumb = path  # Cleaned up in the finally block below
                         if not path or not path.exists():
                             raise RuntimeError(
                                 f"Could not download preview for item {item_id}"
@@ -1378,8 +1448,9 @@ class ProcessingManager:
             self.logger.exception("Full traceback:")
             logging.error(f"Failed to process {name}: {e}")
 
-            # Update failure statistics
-            self.session.failed_items += 1
+            # Update failure statistics (thread-safe under parallel workers)
+            with self._stats_lock:
+                self.session.failed_items += 1
             self.log(f"Failed: {e}")
 
         finally:
@@ -1397,9 +1468,3 @@ class ProcessingManager:
                 except Exception:
                     # Ignore cleanup errors - not critical
                     pass
-
-            # Periodic garbage collection to free any residual base64 strings,
-            # API response objects, and other short-lived allocations.
-            # Every 3 items balances GC overhead with memory pressure.
-            if hasattr(self, "session") and self.session.processed_items % 3 == 0:
-                gc.collect()

@@ -25,6 +25,7 @@ Author: Synapic Project
 
 import logging
 import tempfile
+import threading
 from typing import Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 
@@ -95,6 +96,13 @@ class DaminionClient:
         self._tag_name_to_id: Dict[str, int] = {}
         self._tag_id_to_name: Dict[int, str] = {}
         self._tag_schema: Optional[List[TagInfo]] = None
+        self._tag_guid_map: Dict[str, str] = {}
+
+        # Cache of resolved indexed tag value IDs keyed by (tag_id, text).
+        # Keyword vocabularies repeat heavily across items, so this turns
+        # thousands of find/create API calls per run into a handful.
+        self._tag_value_id_cache: Dict[Tuple[int, str], Optional[int]] = {}
+        self._tag_value_lock = threading.Lock()
 
         logger.info(f"DaminionClient initialized for {base_url}")
 
@@ -145,9 +153,11 @@ class DaminionClient:
             self._tag_schema = self._api.tags.get_all_tags()
 
             # Build lookup dictionaries from standard tags
+            self._tag_guid_map = {}
             for tag in self._tag_schema:
                 self._tag_name_to_id[tag.name.lower()] = tag.id
                 self._tag_id_to_name[tag.id] = tag.name
+                self._tag_guid_map[tag.name.lower()] = tag.guid
 
             # Also fetch from layout to find system tags (Flag, Status, etc)
             try:
@@ -282,6 +292,47 @@ class DaminionClient:
     def _get_tag_id(self, tag_name: str) -> Optional[int]:
         """Get tag ID from tag name."""
         return self._tag_name_to_id.get(tag_name.lower())
+
+    def _resolve_tag_value_id(
+        self, tag_id: Optional[int], tag_guid: str, text: str
+    ) -> Optional[int]:
+        """
+        Find or create an indexed tag value ID, caching per (tag_id, text).
+
+        Keyword values repeat across items, so caching turns the previous
+        per-item ``find_tag_values``/``create_tag_value`` API calls into a
+        single lookup after the first occurrence. The lock is held across a
+        cache miss so concurrent workers can't create the same value twice.
+        """
+        if not tag_id or not text:
+            return None
+        cache_key = (tag_id, text)
+        with self._tag_value_lock:
+            if cache_key in self._tag_value_id_cache:
+                return self._tag_value_id_cache[cache_key]
+            # Miss — resolve on the server while holding the lock so concurrent
+            # workers can't create the same value twice.
+            value_id: Optional[int] = None
+            try:
+                values = self._api.tags.find_tag_values(
+                    tag_id=tag_id, filter_text=text
+                )
+                if values:
+                    value_id = values[0].id
+                else:
+                    new_id = self._api.tags.create_tag_value(
+                        tag_guid=tag_guid, value_text=text
+                    )
+                    value_id = int(new_id) if new_id else None
+            except Exception as e:
+                logger.warning(
+                    f"Failed to resolve tag value '{text}' for tag {tag_id}: {e}"
+                )
+            # Only cache successful resolutions — a transient failure must not
+            # poison the cache for the rest of the run.
+            if value_id is not None:
+                self._tag_value_id_cache[cache_key] = value_id
+            return value_id
 
     def get_shared_collections(
         self, index: int = 0, page_size: int = 100
@@ -784,7 +835,15 @@ class DaminionClient:
     def download_thumbnail(
         self, item_id: int, width: int = 300, height: int = 300
     ) -> Optional[Path]:
-        """Download thumbnail to a temporary file."""
+        """
+        Download thumbnail to a temporary file.
+
+        Returns None when the server has no thumbnail for the item (a
+        legitimate "not available" outcome). Real failures (network errors,
+        disk errors, API errors) are logged and re-raised so callers can
+        distinguish "no thumbnail" from "something went wrong" and react
+        appropriately instead of silently treating every failure alike.
+        """
         try:
             # Fetch thumbnail data
             thumbnail_bytes = self.get_thumbnail(item_id, width, height)
@@ -797,8 +856,8 @@ class DaminionClient:
                 f.write(thumbnail_bytes)
             return temp_file
         except Exception as e:
-            logger.error(f"Failed to download thumbnail: {e}")
-            return None
+            logger.error(f"Failed to download thumbnail for item {item_id}: {e}", exc_info=True)
+            raise
 
     def update_item_tags(self, item_id: int, tags: Dict[str, List[str]]) -> bool:
         """
@@ -824,16 +883,8 @@ class DaminionClient:
                 guid = tag_info.guid if tag_info else tag_name
 
                 for val in values:
-                    # Try to find value ID for indexed tags
-                    val_id = None
-                    if tag_id:
-                        # This should Ideally be cached
-                        found_vals = self._api.tags.find_tag_values(
-                            tag_id=tag_id, filter_text=val
-                        )
-                        if found_vals:
-                            val_id = found_vals[0].id
-
+                    # Find or create the indexed tag value (cached per run)
+                    val_id = self._resolve_tag_value_id(tag_id, guid, val)
                     ops.append(
                         {"guid": guid, "value": val, "id": val_id, "remove": False}
                     )
@@ -894,12 +945,9 @@ class DaminionClient:
                 logger.error("Tag schema not loaded")
                 return False
 
-            # Build tag GUID lookup
-            tag_guid_map = {tag.name.lower(): tag.guid for tag in self._tag_schema}
-
             # Add category if provided
             if category:
-                category_guid = tag_guid_map.get("category") or tag_guid_map.get(
+                category_guid = self._tag_guid_map.get("category") or self._tag_guid_map.get(
                     "categories"
                 )
                 if category_guid:
@@ -907,94 +955,59 @@ class DaminionClient:
                         "categories"
                     )
                     if category_tag_id:
-                        # Find existing category value
-                        category_values = self._api.tags.find_tag_values(
-                            tag_id=category_tag_id, filter_text=category
+                        category_value_id = self._resolve_tag_value_id(
+                            category_tag_id, category_guid, category
                         )
-
-                        if category_values:
+                        if category_value_id:
                             operations.append(
                                 {
                                     "guid": category_guid,
-                                    "id": category_values[0].id,
+                                    "id": category_value_id,
                                     "remove": False,
                                 }
                             )
                         else:
-                            # Try to create or just pass value
-                            try:
-                                new_id = self._api.tags.create_tag_value(
-                                    tag_guid=category_guid, value_text=category
-                                )
-                                operations.append(
-                                    {
-                                        "guid": category_guid,
-                                        "id": new_id,
-                                        "remove": False,
-                                    }
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to create category value '{category}': {e}"
-                                )
-                                # Fallback to value
-                                operations.append(
-                                    {
-                                        "guid": category_guid,
-                                        "value": category,
-                                        "remove": False,
-                                    }
-                                )
+                            # Fallback to value
+                            operations.append(
+                                {
+                                    "guid": category_guid,
+                                    "value": category,
+                                    "remove": False,
+                                }
+                            )
 
             # Add keywords if provided
             if keywords:
-                keywords_guid = tag_guid_map.get("keywords")
+                keywords_guid = self._tag_guid_map.get("keywords")
                 if keywords_guid:
                     keywords_tag_id = self._get_tag_id("keywords")
                     if keywords_tag_id:
                         for keyword in keywords:
-                            # Find or create keyword value
-                            keyword_values = self._api.tags.find_tag_values(
-                                tag_id=keywords_tag_id, filter_text=keyword
+                            # Find or create keyword value (cached per run)
+                            keyword_value_id = self._resolve_tag_value_id(
+                                keywords_tag_id, keywords_guid, keyword
                             )
-
-                            if keyword_values:
+                            if keyword_value_id:
                                 operations.append(
                                     {
                                         "guid": keywords_guid,
-                                        "id": keyword_values[0].id,
+                                        "id": keyword_value_id,
                                         "remove": False,
                                     }
                                 )
                             else:
-                                # Create new keyword
-                                try:
-                                    new_id = self._api.tags.create_tag_value(
-                                        tag_guid=keywords_guid, value_text=keyword
-                                    )
-                                    operations.append(
-                                        {
-                                            "guid": keywords_guid,
-                                            "id": new_id,
-                                            "remove": False,
-                                        }
-                                    )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Failed to create keyword '{keyword}': {e}"
-                                    )
-                                    # Fallback to value
-                                    operations.append(
-                                        {
-                                            "guid": keywords_guid,
-                                            "value": keyword,
-                                            "remove": False,
-                                        }
-                                    )
+                                # Fallback to value
+                                operations.append(
+                                    {
+                                        "guid": keywords_guid,
+                                        "value": keyword,
+                                        "remove": False,
+                                    }
+                                )
 
             # Add description if provided
             if description:
-                description_guid = tag_guid_map.get("description") or tag_guid_map.get(
+                description_guid = self._tag_guid_map.get("description") or self._tag_guid_map.get(
                     "caption"
                 )
                 if description_guid:

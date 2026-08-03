@@ -31,6 +31,12 @@ from src.core.dedup import (
 
 logger = logging.getLogger(__name__)
 
+# Default thumbnail size (px) fetched per item for perceptual hashing.
+# 150px is a deliberate trade-off: large enough for reliable pHash/dHash
+# results, small enough to keep memory and network usage low when scanning
+# large catalogs (a 150x150 JPEG is only a few KB).
+DEFAULT_THUMBNAIL_SIZE = 150
+
 
 class DedupAction(Enum):
     """Actions that can be applied to duplicate items."""
@@ -112,7 +118,7 @@ class DaminionDedupProcessor:
         items: List[Dict],
         algorithm: str = 'phash',
         progress_callback: Optional[Callable[[str, int, int], None]] = None,
-        thumbnail_size: int = 150
+        thumbnail_size: int = DEFAULT_THUMBNAIL_SIZE
     ) -> DedupScanResult:
         """
         Scan Daminion items for duplicates.

@@ -11,6 +11,7 @@ to be forgiving and degrade gracefully if the API surface differs.
 """
 import base64
 import os
+import threading
 
 from typing import List, Dict, Any, Optional
 
@@ -45,6 +46,8 @@ class GroqPackageClient:
         self._cached_key = None  # Track which API key the cached client was created with
         self.available = False
         self.api_key = api_key
+        # Serializes key-rotation state so parallel workers stay consistent.
+        self._rotation_lock = threading.Lock()
         import logging
         logger = logging.getLogger(__name__)
         try:
@@ -228,6 +231,35 @@ class GroqPackageClient:
         return self.available
 
     def chat_with_image_rotating(self, engine_config, model: str, prompt: str,
+                                  image_path: str = None, base64_image: str = None) -> str:
+        """Send a prompt with an image, automatically rotating API keys on errors.
+
+        Thread-safe wrapper: key rotation mutates shared state (active key index,
+        exhausted set), so concurrent workers are serialized through a lock.
+        With a single configured key there is nothing to rotate, so the lock is
+        skipped and parallel workers run concurrently.
+        """
+        keys = engine_config.get_groq_key_list() if hasattr(
+            engine_config, "get_groq_key_list"
+        ) else []
+        if isinstance(keys, list) and len(keys) > 1:
+            with self._rotation_lock:
+                return self._chat_with_image_rotating_locked(
+                    engine_config=engine_config,
+                    model=model,
+                    prompt=prompt,
+                    image_path=image_path,
+                    base64_image=base64_image,
+                )
+        return self._chat_with_image_rotating_locked(
+            engine_config=engine_config,
+            model=model,
+            prompt=prompt,
+            image_path=image_path,
+            base64_image=base64_image,
+        )
+
+    def _chat_with_image_rotating_locked(self, engine_config, model: str, prompt: str,
                                   image_path: str = None, base64_image: str = None) -> str:
         """Send a prompt with an image, automatically rotating API keys on errors.
 

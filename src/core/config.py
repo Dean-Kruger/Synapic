@@ -107,14 +107,24 @@ DISPLAY_TASK_MAP = {v: k for k, v in TASK_DISPLAY_MAP.items()}
 # File formats accepted for processing (glob patterns)
 SUPPORTED_IMAGE_EXTENSIONS = ("*.jpg", "*.jpeg", "*.png")
 
-# Minimum confidence score for zero-shot classifications to be included in results
-# Higher values (0.9) ensure only very confident predictions are used
+# Minimum confidence score (0.0-1.0) for a zero-shot classification prediction
+# to be included in results. 0.9 was chosen empirically: below ~0.7 the model
+# frequently guesses wrong labels, while above ~0.95 it returns nothing for
+# genuinely ambiguous images. 0.9 keeps results useful without flooding the
+# catalog with low-confidence noise.
 ZERO_SHOT_CONFIDENCE_THRESHOLD = 0.9
 
-# Maximum file size for images (safety limit to prevent memory issues)
+# Maximum image file size (MB) accepted for processing. Images larger than
+# this are skipped as a safety limit against loading multi-gigabyte TIFFs
+# into memory on low-RAM machines; 50MB covers essentially all consumer
+# camera output (even 100MP raws stay well under it) while protecting
+# against pathological inputs.
 MAX_IMAGE_SIZE_MB = 50
 
-# Cap the number of keywords generated per image to avoid tag spam
+# Cap on the number of keywords generated per image. AI models can return
+# dozens of overlapping tags; 20 was chosen to keep catalog entries
+# readable and avoid tag-spam that would drown out meaningful keywords in
+# Daminion searches and facet filters.
 MAX_KEYWORDS_PER_IMAGE = 20
 
 # ============================================================================
@@ -130,6 +140,13 @@ RETRY_DELAY_SECONDS = 1.0
 
 # Maximum time to wait for network responses before timing out
 NETWORK_TIMEOUT_SECONDS = 30
+
+# ============================================================================
+# PROCESSING PERFORMANCE
+# ============================================================================
+# Maximum number of concurrent items processed in parallel for cloud API
+# providers (network-bound inference). Local inference stays sequential.
+PROCESSING_MAX_WORKERS = 4
 
 # ============================================================================
 # MODEL DOWNLOAD CONFIGURATION

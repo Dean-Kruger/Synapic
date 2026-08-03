@@ -80,6 +80,11 @@ from typing import Optional, Dict, Any, List, Tuple
 _USE_SYMLINKS = "auto" if os.name != "nt" else False
 _LOCAL_INFERENCE_COMPAT_CACHE: Dict[Tuple[str, str], Optional[str]] = {}
 
+# Persistent session so inference API calls reuse TCP/TLS connections
+# instead of opening a new one per image. Shared across parallel worker
+# threads (urllib3 connection pools are thread-safe).
+_HTTP_SESSION = requests.Session()
+
 
 def get_device_info() -> Dict[str, Any]:
     """
@@ -1447,7 +1452,7 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
 
                 log_api_request(logger, "POST", api_url, headers=headers, data=payload)
 
-                response = requests.post(api_url, headers=headers, json=payload)
+                response = _HTTP_SESSION.post(api_url, headers=headers, json=payload)
                 del payload  # Free the payload immediately after sending
                 elapsed = time.time() - start_time
 
@@ -1504,7 +1509,7 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                 )
                 headers = {"Authorization": f"Bearer {token}"}
 
-                response = requests.post(api_url, headers=headers, json=payload)
+                response = _HTTP_SESSION.post(api_url, headers=headers, json=payload)
                 del payload  # Free immediately after sending
                 try:
                     response.raise_for_status()
@@ -1536,7 +1541,7 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
                 )
                 headers = {"Authorization": f"Bearer {token}"}
 
-                response = requests.post(api_url, headers=headers, json=payload)
+                response = _HTTP_SESSION.post(api_url, headers=headers, json=payload)
                 del payload  # Free immediately after sending
                 response.raise_for_status()
                 result = response.json()

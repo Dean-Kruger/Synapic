@@ -170,7 +170,53 @@ class Step4Results(ctk.CTkFrame):
             subprocess.run(['xdg-open', str(path)])
 
     def export_report(self):
-        logger.info("Exporting report...")
+        """
+        Export the current session results to a CSV file.
 
+        Prompts the user for a destination path, then writes a summary block
+        (total / successful / failed) followed by a header row and one row per
+        processed item (filename, status, tags). The file is opened with UTF-8
+        encoding and a BOM so Excel on Windows renders non-ASCII tag text
+        correctly.
+
+        Exceptions are surfaced via a messagebox rather than silently failing,
+        so the user always knows whether the export succeeded.
+        """
+        import csv
+        from tkinter import filedialog, messagebox
+
+        session = self.controller.session
+        try:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                title="Export Session Results",
+            )
+            if not file_path:
+                logger.info("Report export cancelled by user")
+                return
+
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Total Processed", session.processed_items])
+                writer.writerow([
+                    "Successful",
+                    session.processed_items - session.failed_items,
+                ])
+                writer.writerow(["Failed", session.failed_items])
+                writer.writerow([])
+                writer.writerow(["Filename", "Status", "Tags"])
+                for res in session.results:
+                    writer.writerow([
+                        res.get("filename", "?"),
+                        res.get("status", "?"),
+                        res.get("tags", ""),
+                    ])
+
+            logger.info(f"Report exported to {file_path}")
+            messagebox.showinfo("Export Complete", f"Report saved to:\n{file_path}")
+        except Exception as e:
+            logger.error(f"Failed to export report: {e}", exc_info=True)
+            messagebox.showerror("Export Failed", f"Could not export report:\n{e}")
     def new_session(self):
         self.controller.show_step("Step1Datasource")
