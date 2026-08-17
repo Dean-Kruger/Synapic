@@ -358,3 +358,38 @@ def test_local_ui_llm_only_mode_disables_probability():
 
     assert session.engine.probability_mode == "llm"
     assert session.engine.probability_enabled is False
+
+
+def test_select_local_model_preloads_candidate_tokens():
+    """Selecting a model fills the candidate box with its label set."""
+    session = MockSession()
+    tab = make_tab(session)
+
+    from src.core import huggingface_utils
+
+    with patch.object(
+        huggingface_utils,
+        "get_model_label_tokens",
+        return_value=["cat", "dog", "bird"],
+    ):
+        tab.select_local_model("org/model")
+
+    assert tab.local_model_var.get() == "org/model"
+    assert tab.candidate_box.get("1.0", "end-1c") == "cat,dog,bird"
+
+
+def test_select_local_model_without_labels_keeps_candidates():
+    """Models without a label set (e.g. captioning VLMs) leave the candidate
+    box unchanged."""
+    session = MockSession()
+    tab = make_tab(session)
+
+    tab.candidate_box.delete("1.0", "end")
+    tab.candidate_box.insert("1.0", "A,B,C,D")
+
+    from src.core import huggingface_utils
+
+    with patch.object(huggingface_utils, "get_model_label_tokens", return_value=[]):
+        tab.select_local_model("org/model")
+
+    assert tab.candidate_box.get("1.0", "end-1c") == "A,B,C,D"

@@ -1,10 +1,12 @@
 """Unit tests for run_local_logprob_inference (probability scoring helper)."""
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
 from transformers import Pipeline
 
+from src.core import huggingface_utils
 from src.core.huggingface_utils import run_local_logprob_inference
 
 
@@ -197,3 +199,71 @@ def test_partial_match_keeps_zero_for_unmatched_candidates():
     )
     result = run_local_logprob_inference(pipe, "img.jpg", ["cat", "A"], device=-1)
     assert result == {"cat": 0.9, "A": 0.0}
+
+
+# ---------------------------------------------------------------------------
+# get_model_label_tokens (candidate preloading from the local cache)
+# ---------------------------------------------------------------------------
+
+
+def _make_cached_model(tmp_path, model_id="org/model", id2label=None, raw_config=None):
+    """Create a fake Hugging Face cache entry for a model in tmp_path."""
+    model_dir = tmp_path / f"models--{model_id.replace('/', '--')}"
+    snapshot = model_dir / "snapshots" / "abc123"
+    snapshot.mkdir(parents=True)
+    config = dict(raw_config or {})
+    if id2label is not None:
+        config["id2label"] = id2label
+    (snapshot / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    return tmp_path
+
+
+def test_get_model_label_tokens_dict_id2label(tmp_path):
+    """A dict id2label yields its ordered values as candidate tokens."""
+    cache = _make_cached_model(tmp_path, id2label={0: "cat", 1: "dog", 2: "bird"})
+    with patch.object(huggingface_utils, "HUGGINGFACE_HUB_CACHE", str(cache)):
+        labels = huggingface_utils.get_model_label_tokens("org/model")
+    assert labels == ["cat", "dog", "bird"]
+
+
+def test_get_model_label_tokens_dedupes_and_strips(tmp_path):
+    """Duplicates and empty labels are dropped; whitespace is stripped."""
+    cache = _make_cached_model(
+        tmp_path, id2label={0: " cat ", 1: "cat", 2: "", 3: "dog", 4: "dog"}
+    )
+    with patch.object(huggingface_utils, "HUGGINGFACE_HUB_CACHE", str(cache)):
+        labels = huggingface_utils.get_model_label_tokens("org/model")
+    assert labels == ["cat", "dog"]
+
+
+def test_get_model_label_tokens_list_id2label(tmp_path):
+    """A list-shaped id2label is returned as-is (deduped)."""
+    cache = _make_cached_model(tmp_path, id2label=["a", "b", "a"])
+    with patch.object(huggingface_utils, "HUGGINGFACE_HUB_CACHE", str(cache)):
+        labels = huggingface_utils.get_model_label_tokens("org/model")
+    assert labels == ["a", "b"]
+
+
+def test_get_model_label_tokens_no_labels(tmp_path):
+    """Models without an id2label (e.g. captioning VLMs) return []."""
+    cache = _make_cached_model(tmp_path, raw_config={"architectures": ["Qwen2VL"]})
+    with patch.object(huggingface_utils, "HUGGINGFACE_HUB_CACHE", str(cache)):
+        labels = huggingface_utils.get_model_label_tokens("org/model")
+    assert labels == []
+
+
+def test_get_model_label_tokens_missing_model(tmp_path):
+    """A model not present in the cache returns [] without raising."""
+    with patch.object(huggingface_utils, "HUGGINGFACE_HUB_CACHE", str(tmp_path)):
+        labels = huggingface_utils.get_model_label_tokens("org/unknown")
+    assert labels == []
+
+
+def test_get_model_label_tokens_corrupt_config(tmp_path):
+    """A corrupt config.json returns [] without raising."""
+    model_dir = tmp_path / "models--org--model" / "snapshots" / "abc123"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text("{not json", encoding="utf-8")
+    with patch.object(huggingface_utils, "HUGGINGFACE_HUB_CACHE", str(tmp_path)):
+        labels = huggingface_utils.get_model_label_tokens("org/model")
+    assert labels == []

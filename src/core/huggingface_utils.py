@@ -1570,6 +1570,57 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
         raise
 
 
+def get_model_label_tokens(model_id: str) -> list[str]:
+    """
+    Return the cached model's classification label set, if any.
+
+    Reads ``config.json`` from the model's latest snapshot in the local
+    Hugging Face cache (offline, no model weights are loaded) and extracts
+    the labels from ``id2label``. Order follows the config, duplicates and
+    empty entries are dropped.
+
+    Args:
+        model_id: Hugging Face model id (e.g. ``"google/vit-base-patch16-224"``).
+
+    Returns:
+        Ordered list of label strings, or ``[]`` when the model has no label
+        set (e.g. captioning/VLM models) or cannot be read from the cache.
+    """
+    try:
+        cache_path = Path(HUGGINGFACE_HUB_CACHE)
+        model_dir = cache_path / f"models--{model_id.replace('/', '--')}"
+        snapshot_dir = model_dir / "snapshots"
+        if not snapshot_dir.is_dir():
+            return []
+        snapshot_dirs = [d for d in snapshot_dir.iterdir() if d.is_dir()]
+        if not snapshot_dirs:
+            return []
+        latest = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
+        config_path = latest / "config.json"
+        if not config_path.exists():
+            return []
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        id2label = config.get("id2label")
+        if isinstance(id2label, dict) and id2label:
+            raw_labels = id2label.values()
+        elif isinstance(id2label, list) and id2label:
+            raw_labels = id2label
+        else:
+            return []
+        labels: list[str] = []
+        seen: set[str] = set()
+        for label in raw_labels:
+            text = str(label).strip()
+            if text and text not in seen:
+                seen.add(text)
+                labels.append(text)
+        return labels
+    except Exception as e:
+        logging.debug(f"Could not load label tokens for {model_id}: {e}")
+        return []
+
+
 def _get_pipeline_labels(pipe) -> list:
     """Return the model's ordered label set, if the config exposes one."""
     config = getattr(getattr(pipe, "model", None), "config", None)

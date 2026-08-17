@@ -349,6 +349,27 @@ class LocalProviderTab(ProviderTabBase):
     def select_local_model(self, model_id):
         """Handle local model selection."""
         self.local_model_var.set(model_id)
+        self._preload_candidate_tokens(model_id)
+
+    def _preload_candidate_tokens(self, model_id):
+        """Preload the candidate tokens box from the model's label set.
+
+        Fills the box with the model's classification labels (from the local
+        cache) so the user doesn't have to type candidates by hand. Models
+        without a label set (e.g. captioning VLMs) leave the box unchanged.
+        """
+        try:
+            from src.core import huggingface_utils
+            labels = huggingface_utils.get_model_label_tokens(model_id)
+        except Exception as e:
+            logger.debug(f"Could not preload candidate tokens for {model_id}: {e}")
+            return
+        if labels:
+            self.candidate_box.delete("1.0", "end")
+            self.candidate_box.insert("1.0", ",".join(labels))
+            logger.info(
+                f"Preloaded {len(labels)} candidate tokens for {model_id}"
+            )
 
     def delete_cached_model(self, model_id):
         """Delete a cached model from disk."""

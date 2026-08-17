@@ -201,6 +201,13 @@ Synapic iterates on traditional tagging workflows by providing a linear, 4-step 
 3.  **⚙️ Step 3: Process**: Execute the batch job with real-time feedback, multithreaded logging, and granular progress monitoring.
 4.  **📊 Step 4: Results**: Review your new metadata, verify successful writes to the DAM, and export session reports.
 
+**Probability Scoring (Local Models)**
+- When using a local image-classification model in Step 2, pick a **Tagging Mode**: **LLM only**, **Probability only**, or **Both**.
+- **Probability only** tags assets directly from the model's per-label confidence scores — the top-scoring candidate becomes the category and every candidate passing the threshold becomes a keyword — without running captioning inference.
+- **Both** runs the normal LLM/captioning flow and adds the same per-label scores alongside it.
+- Candidate tokens preload automatically from the selected model's label set, so there's no need to type them by hand.
+- The acceptance threshold is a **Less strict → Strict** slider (0–100%), and during processing the log lists each candidate's score with a **PASS/FAIL** verdict against it.
+
 **Bonus: Deduplication Wizard**
 - A dedicated workflow step to scan collections for visual duplicates, review matches side-by-side, and apply bulk actions (Tag or Delete).
 
