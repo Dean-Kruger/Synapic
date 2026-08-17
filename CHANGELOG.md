@@ -4,7 +4,7 @@ All notable changes to the **Synapic** project will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [2.5.0] - 2026-08-17
 
 ### Added
 - **Probability Scoring for Local Models**: Added calibrated per-label probability scores for local image-classification models, with Step 2 Local tab controls (enable toggle, candidate tokens, optional threshold) wired into the engine configuration and persisted to `~/.synapic_v2_config.json` across restarts.
@@ -153,5 +153,5 @@ All notable changes to the **Synapic** project will be documented in this file.
 ---
 
 ## Status: Production Ready
-**Current Version**: 2.4.5
-**Last Updated**: 2026-08-03
+**Current Version**: 2.5.0
+**Last Updated**: 2026-08-17
