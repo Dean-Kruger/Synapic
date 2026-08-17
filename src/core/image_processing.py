@@ -462,7 +462,8 @@ def extract_tags_from_result(
     model_task: str,
     threshold: float = 0.0,
     stop_words: Optional[List[str]] = None,
-) -> Tuple[str, List[str], str]:
+    probabilities: Optional[Dict[str, float]] = None,
+) -> Tuple[str, List[str], str, Dict[str, float]]:
     """
     Extract category, keywords, and description from AI model output.
 
@@ -492,10 +493,11 @@ def extract_tags_from_result(
                     Primarily used for image-to-text tasks.
 
     Returns:
-        Tuple of (category, keywords, description) where:
+        Tuple of (category, keywords, description, probabilities) where:
         - category: Single best category label (str, may be empty) - Title Cased
         - keywords: List of keyword tags (List[str], may be empty) - Title Cased
         - description: Descriptive caption text (str, may be empty)
+        - probabilities: Dict[str, float] mapping candidate tokens to probabilities (empty dict if None)
 
     Note:
         - For VLMs, attempts to parse JSON from generated text first
@@ -707,7 +709,7 @@ def extract_tags_from_result(
         f"Final tags - Category: '{category}', Keywords: {keywords[:5]}..., Description: '{description[:50]}...'"
     )
 
-    return category, keywords, description
+    return category, keywords, description, probabilities or {}
 
 
 def extract_tags_with_semantics(
