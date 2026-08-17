@@ -1566,3 +1566,37 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
         )
         logger.exception("Full traceback:")
         raise
+
+
+def run_local_logprob_inference(model, image_path: str, candidates: list, device: int = -1) -> dict:
+    """
+    Run local inference with log probabilities using a Hugging Face pipeline.
+
+    Args:
+        model: The Hugging Face model ID or model object
+        image_path: Path to the image file
+        candidates: List of candidate labels/classes
+        device: Device ID (-1 for CPU, 0+ for CUDA)
+
+    Returns:
+        Dictionary mapping candidate labels to their probability scores
+    """
+    if not candidates:
+        return {}
+
+    # Create a pipeline for image-classification with return_all_scores=True
+    pipe = pipeline(
+        "image-classification",
+        model=model,
+        device=device,
+        return_all_scores=True
+    )
+
+    # Run inference on the image
+    results = pipe(image_path)
+
+    # Create a dictionary mapping label to score for easy lookup
+    score_map = {item["label"]: item["score"] for item in results}
+
+    # Return scores only for the requested candidates, defaulting to 0.0 if not found
+    return {candidate: score_map.get(candidate, 0.0) for candidate in candidates}

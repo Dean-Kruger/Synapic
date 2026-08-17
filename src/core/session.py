@@ -127,6 +127,9 @@ class EngineConfig:
         50  # Confidence threshold (1-100) for category/keyword filtering
     )
     device: str = "cpu"  # 'cpu' or 'cuda' for local inference
+    probability_enabled: bool = False
+    probability_candidates: list = field(default_factory=list)
+    probability_threshold: float = 0.0
 
     # Groq integration settings (optional)
     groq_base_url: str = ""  # Base URL for Groq API
