@@ -168,17 +168,45 @@ class LocalProviderTab(ProviderTabBase):
         self.probability_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(5, 10))
         self.probability_frame.grid_columnconfigure(0, weight=1)
 
-        # Section header with toggle
+        # Section header with tagging-mode radio group
         self.probability_header = ctk.CTkFrame(self.probability_frame, fg_color="transparent")
         self.probability_header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
         self.probability_header.grid_columnconfigure(0, weight=1)
 
-        self.probability_enabled = ctk.CTkCheckBox(
+        ctk.CTkLabel(
             self.probability_header,
-            text="Enable calibrated probabilities",
-            command=self._toggle_probability_section
+            text="Tagging Mode:",
+            font=("Roboto", 12, "bold"),
+        ).pack(side="left", padx=(5, 10))
+
+        self.probability_mode_var = ctk.StringVar(value="llm")
+
+        self.mode_llm = ctk.CTkRadioButton(
+            self.probability_header,
+            text="LLM only",
+            variable=self.probability_mode_var,
+            value="llm",
+            command=self._toggle_probability_section,
         )
-        self.probability_enabled.pack(side="left", padx=5)
+        self.mode_llm.pack(side="left", padx=5)
+
+        self.mode_probability = ctk.CTkRadioButton(
+            self.probability_header,
+            text="Probability only",
+            variable=self.probability_mode_var,
+            value="probability",
+            command=self._toggle_probability_section,
+        )
+        self.mode_probability.pack(side="left", padx=5)
+
+        self.mode_both = ctk.CTkRadioButton(
+            self.probability_header,
+            text="Both",
+            variable=self.probability_mode_var,
+            value="both",
+            command=self._toggle_probability_section,
+        )
+        self.mode_both.pack(side="left", padx=5)
 
         # Probability scoring content (initially visible)
         self.probability_content = ctk.CTkFrame(self.probability_frame, fg_color="transparent")
@@ -191,21 +219,53 @@ class LocalProviderTab(ProviderTabBase):
         self.candidate_box.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(5, 5))
         self.candidate_box.insert("1.0", "A,B,C,D")
 
-        # Probability threshold
-        ctk.CTkLabel(self.probability_content, text="Probability Threshold:").grid(row=1, column=0, sticky="w", padx=(0, 10))
-        self.threshold_entry = ctk.CTkEntry(self.probability_content, width=100)
-        self.threshold_entry.grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 5))
-        self.threshold_entry.insert(0, "0.0")
+        # Probability threshold (slider from less-strict 0% to strict 100%)
+        ctk.CTkLabel(self.probability_content, text="Probability Threshold:").grid(
+            row=1, column=0, sticky="w", padx=(0, 10)
+        )
+        self.threshold_value_label = ctk.CTkLabel(
+            self.probability_content,
+            text="0%",
+            width=50,
+        )
+        self.threshold_value_label.grid(row=1, column=1, sticky="e", padx=(0, 10), pady=(0, 5))
+
+        slider_row = ctk.CTkFrame(self.probability_content, fg_color="transparent")
+        slider_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=(0, 10), pady=(0, 5))
+        slider_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            slider_row,
+            text="Less strict",
+            font=("Roboto", 10),
+            text_color="gray",
+        ).grid(row=0, column=0, padx=(0, 10))
+
+        self.threshold_slider = ctk.CTkSlider(
+            slider_row,
+            from_=0.0,
+            to=1.0,
+            number_of_steps=100,
+            command=self._on_threshold_change,
+        )
+        self.threshold_slider.grid(row=0, column=1, sticky="ew")
+
+        ctk.CTkLabel(
+            slider_row,
+            text="Strict",
+            font=("Roboto", 10),
+            text_color="gray",
+        ).grid(row=0, column=2, padx=(10, 0))
 
         # Populate from any previously saved session values
         self._sync_probability_controls_from_session()
 
     def _toggle_probability_section(self):
-        """Toggle the probability scoring section visibility."""
-        if self.probability_enabled.get():
-            self.probability_content.grid()
-        else:
+        """Show the probability controls unless the mode is LLM-only."""
+        if self.probability_mode_var.get() == "llm":
             self.probability_content.grid_remove()
+        else:
+            self.probability_content.grid()
 
     def _parse_probability_candidates(self):
         """Parse candidate tokens from the textbox (comma/newline separated)."""
@@ -215,23 +275,33 @@ class LocalProviderTab(ProviderTabBase):
         return [c.strip() for c in re.split(r"[,;\n]+", text) if c.strip()]
 
     def _parse_probability_threshold(self):
-        """Parse and clamp the probability threshold from the entry (0.0-1.0)."""
-        text = self.threshold_entry.get().strip()
+        """Read and clamp the probability threshold from the slider (0.0-1.0)."""
         try:
-            value = float(text)
+            value = float(self.threshold_slider.get())
         except (TypeError, ValueError):
-            logger.warning(f"Invalid probability threshold '{text}', defaulting to 0.0")
+            logger.warning("Invalid probability threshold, defaulting to 0.0")
             return 0.0
         return max(0.0, min(1.0, value))
+
+    def _on_threshold_change(self, value):
+        """Update the threshold value label when the slider moves."""
+        try:
+            pct = round(float(value) * 100)
+        except (TypeError, ValueError):
+            pct = 0
+        self.threshold_value_label.configure(text=f"{pct}%")
 
     def _sync_probability_controls_from_session(self):
         """Populate the probability scoring controls from the session engine."""
         engine = self.session.engine
-        enabled = bool(getattr(engine, "probability_enabled", False))
-        if enabled:
-            self.probability_enabled.select()
-        else:
-            self.probability_enabled.deselect()
+        mode = str(getattr(engine, "probability_mode", "") or "").lower()
+        if mode not in ("llm", "probability", "both"):
+            # Legacy configs only persisted probability_enabled
+            mode = "both" if getattr(engine, "probability_enabled", False) else "llm"
+        elif mode == "llm" and getattr(engine, "probability_enabled", False):
+            # Legacy sessions enable probabilities without a mode field
+            mode = "both"
+        self.probability_mode_var.set(mode)
 
         candidates = getattr(engine, "probability_candidates", None) or []
         if candidates:
@@ -239,8 +309,9 @@ class LocalProviderTab(ProviderTabBase):
             self.candidate_box.insert("1.0", ",".join(str(c) for c in candidates))
 
         threshold = float(getattr(engine, "probability_threshold", 0.0) or 0.0)
-        self.threshold_entry.delete(0, "end")
-        self.threshold_entry.insert(0, str(threshold))
+        threshold = max(0.0, min(1.0, threshold))
+        self.threshold_slider.set(threshold)
+        self.threshold_value_label.configure(text=f"{round(threshold * 100)}%")
 
         self._toggle_probability_section()
 
@@ -298,7 +369,9 @@ class LocalProviderTab(ProviderTabBase):
         """Write the local tab's UI state (model + probability scoring) into the session engine."""
         self.session.engine.provider = "local"
         self.session.engine.model_id = self.local_model_var.get()
-        self.session.engine.probability_enabled = bool(self.probability_enabled.get())
+        mode = self.probability_mode_var.get()
+        self.session.engine.probability_mode = mode
+        self.session.engine.probability_enabled = mode != "llm"
         self.session.engine.probability_candidates = self._parse_probability_candidates()
         self.session.engine.probability_threshold = self._parse_probability_threshold()
 

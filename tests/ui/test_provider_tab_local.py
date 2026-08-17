@@ -112,10 +112,54 @@ class MockStringVar:
         return self._value
 
 
+class MockLabel(MockWidget):
+    """Label stand-in that records the last configured text."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._text = kwargs.get("text", "")
+
+    def configure(self, **kwargs):
+        if "text" in kwargs:
+            self._text = kwargs["text"]
+
+
+class MockSlider(MockWidget):
+    """Slider stand-in: set()/get() track a float value."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._value = kwargs.get("from_", 0.0)
+
+    def set(self, value):
+        self._value = value
+
+    def get(self):
+        return self._value
+
+
+class MockRadioButton(MockWidget):
+    """Radio button stand-in: select() sets the shared variable to this value."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._variable = kwargs.get("variable")
+        self._value = kwargs.get("value")
+
+    def select(self):
+        if self._variable is not None:
+            self._variable.set(self._value)
+
+    def get(self):
+        if self._variable is None:
+            return 0
+        return 1 if self._variable.get() == self._value else 0
+
+
 # Patch before importing the module
 sys.modules["customtkinter"] = module_mock
 module_mock.CTkFrame = MockWidget
-module_mock.CTkLabel = MockWidget
+module_mock.CTkLabel = MockLabel
 module_mock.CTkButton = MockWidget
 module_mock.CTkCheckBox = MockCheckBox
 module_mock.CTkEntry = MockEntry
@@ -124,10 +168,18 @@ module_mock.CTkSwitch = MockWidget
 module_mock.CTkComboBox = MockWidget
 module_mock.CTkScrollbar = MockWidget
 module_mock.CTkProgressBar = MockWidget
-module_mock.CTkSlider = MockWidget
+module_mock.CTkSlider = MockSlider
+module_mock.CTkRadioButton = MockRadioButton
 module_mock.CTkTabview = MockWidget
 module_mock.CTkFont = MagicMock()
 module_mock.StringVar = MockStringVar
+
+# Another test module (tests/test_ui_dedup.py) may already have imported the
+# provider tab classes with a *different* customtkinter stand-in (one whose
+# CTkFrame lacks grid_columnconfigure). Drop the cached copies so this file's
+# mock is used and ProviderTabBase inheritance resolves correctly.
+for _name in ("src.ui.steps.provider_tab_base", "src.ui.steps.provider_tab_local"):
+    sys.modules.pop(_name, None)
 
 # Now we can import the module
 from src.ui.steps.provider_tab_local import LocalProviderTab
@@ -138,6 +190,7 @@ class MockEngine:
     model_id = ""
     task = "image-classification"
     probability_enabled = False
+    probability_mode = "llm"
     probability_threshold = 0.0
 
 
@@ -165,15 +218,16 @@ def test_local_ui_populates_engine():
     tab = make_tab(session)
 
     # Set UI values
-    tab.probability_enabled.select()  # simulate checkbox checked
+    tab.mode_both.select()  # simulate selecting "Both" mode
     tab.candidate_box.delete("1.0", "end")
     tab.candidate_box.insert("1.0", "A,B,C,D")
-    tab.threshold_entry.insert(0, "0.05")
+    tab.threshold_slider.set(0.05)
 
     # Call save_to_session
     tab.save_to_session()
 
     # Verify engine was updated
+    assert session.engine.probability_mode == "both"
     assert session.engine.probability_enabled == True
     assert session.engine.probability_candidates == ["A", "B", "C", "D"]
     assert session.engine.probability_threshold == 0.05
@@ -184,30 +238,43 @@ def test_local_ui_parses_candidates_one_per_line():
     session = MockSession()
     tab = make_tab(session)
 
-    tab.probability_enabled.select()
+    tab.mode_probability.select()
     tab.candidate_box.delete("1.0", "end")
     tab.candidate_box.insert("1.0", "cat\ndog\nbird")
-    tab.threshold_entry.insert(0, "0.5")
+    tab.threshold_slider.set(0.5)
 
     tab.save_to_session()
 
+    assert session.engine.probability_mode == "probability"
     assert session.engine.probability_candidates == ["cat", "dog", "bird"]
     assert session.engine.probability_threshold == 0.5
 
 
-def test_local_ui_threshold_is_clamped():
-    """Thresholds outside 0.0-1.0 are clamped into range."""
+def test_local_ui_threshold_reads_from_slider():
+    """The threshold comes from the slider and lands in the engine."""
     session = MockSession()
     tab = make_tab(session)
 
-    tab.probability_enabled.select()
-    tab.threshold_entry.insert(0, "5")
+    tab.mode_both.select()
+    tab.threshold_slider.set(0.6)
     tab.save_to_session()
-    assert session.engine.probability_threshold == 1.0
+    assert session.engine.probability_threshold == 0.6
 
-    tab.threshold_entry.insert(0, "-2")
+    tab.threshold_slider.set(0.0)
     tab.save_to_session()
     assert session.engine.probability_threshold == 0.0
+
+
+def test_local_ui_refresh_clamps_out_of_range_threshold():
+    """Refresh clamps out-of-range session thresholds into 0.0-1.0 and shows
+    the percentage in the value label."""
+    session = MockSession(enabled=True, candidates=["X"], threshold=5.0)
+    tab = make_tab(session)
+
+    tab.refresh()
+
+    assert tab.threshold_slider.get() == 1.0
+    assert tab.threshold_value_label._text == "100%"
 
 
 def test_local_ui_refresh():
@@ -219,9 +286,10 @@ def test_local_ui_refresh():
     tab.refresh()
 
     # Verify UI reflects session
-    assert tab.probability_enabled.get() == 1  # selected
+    assert tab.probability_mode_var.get() == "both"  # enabled session -> both
     assert tab.candidate_box.get("1.0", "end-1c") == "X,Y,Z"
-    assert tab.threshold_entry.get() == "0.1"
+    assert tab.threshold_slider.get() == 0.1
+    assert tab.threshold_value_label._text == "10%"
 
 
 def test_save_local_persists_probability_settings(tmp_path):
@@ -230,16 +298,17 @@ def test_save_local_persists_probability_settings(tmp_path):
     session = Session()
     tab = make_tab(session)
 
-    tab.probability_enabled.select()
+    tab.mode_both.select()
     tab.candidate_box.delete("1.0", "end")
     tab.candidate_box.insert("1.0", "cat,dog")
-    tab.threshold_entry.insert(0, "0.25")
+    tab.threshold_slider.set(0.25)
 
     cfg_path = tmp_path / "synapic_config.json"
     with patch.object(config_manager, "CONFIG_PATH", cfg_path):
         tab.save_local()
 
     # Engine reflects the UI immediately
+    assert session.engine.probability_mode == "both"
     assert session.engine.probability_enabled is True
     assert session.engine.probability_candidates == ["cat", "dog"]
     assert session.engine.probability_threshold == 0.25
@@ -248,25 +317,44 @@ def test_save_local_persists_probability_settings(tmp_path):
     fresh = Session()
     with patch.object(config_manager, "CONFIG_PATH", cfg_path):
         config_manager.load_config(fresh)
+    assert fresh.engine.probability_mode == "both"
     assert fresh.engine.probability_enabled is True
     assert fresh.engine.probability_candidates == ["cat", "dog"]
     assert fresh.engine.probability_threshold == 0.25
 
 
 def test_probability_section_toggle():
-    """Test that the probability section shows/hides based on checkbox state."""
+    """The probability controls show only when the mode is not LLM-only."""
     session = MockSession(enabled=False)
     tab = make_tab(session)
 
-    # Disabled session: the section starts collapsed after setup sync
+    # LLM-only session: the section starts collapsed after setup sync
+    assert tab.probability_mode_var.get() == "llm"
     assert tab.probability_content.winfo_viewable() == 0  # hidden
 
-    # Enable -> expands
-    tab.probability_enabled.select()
+    # Probability only -> expands
+    tab.mode_probability.select()
     tab._toggle_probability_section()
     assert tab.probability_content.winfo_viewable() == 1  # visible
 
-    # Disable -> collapses
-    tab.probability_enabled.deselect()
+    # Back to LLM only -> collapses
+    tab.mode_llm.select()
     tab._toggle_probability_section()
     assert tab.probability_content.winfo_viewable() == 0  # hidden
+
+    # Both -> expands
+    tab.mode_both.select()
+    tab._toggle_probability_section()
+    assert tab.probability_content.winfo_viewable() == 1  # visible
+
+
+def test_local_ui_llm_only_mode_disables_probability():
+    """LLM-only mode maps to probability_enabled=False in the engine."""
+    session = MockSession()
+    tab = make_tab(session)
+
+    tab.mode_llm.select()
+    tab.save_to_session()
+
+    assert session.engine.probability_mode == "llm"
+    assert session.engine.probability_enabled is False

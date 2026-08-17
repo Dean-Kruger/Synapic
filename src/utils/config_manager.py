@@ -104,6 +104,14 @@ def load_config(session: Session):
                     if k == "api_key" and isinstance(v, str):
                         v = v.strip()
                     setattr(session.engine, k, v)
+            # Migration: pre-2.5 configs only persisted probability_enabled.
+            # Treat a saved "enabled" flag as the 'both' mode.
+            if (
+                hasattr(session.engine, "probability_mode")
+                and session.engine.probability_mode == "llm"
+                and getattr(session.engine, "probability_enabled", False)
+            ):
+                session.engine.probability_mode = "both"
             logger.debug(f"Engine configuration updated: provider={session.engine.provider}, task={session.engine.task}")
                     
         logger.info("Configuration loaded and applied successfully")

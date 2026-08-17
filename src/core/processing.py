@@ -1119,9 +1119,18 @@ class ProcessingManager:
             # - 'local': Use locally loaded model (self.model)
             # - 'huggingface'/'openrouter': Call API endpoint
 
+            # Tagging mode: 'llm', 'probability', or 'both'.
+            # Legacy configs only persist probability_enabled -> map True to 'both'.
+            mode = str(getattr(engine, "probability_mode", "") or "").lower()
+            if mode not in ("llm", "probability", "both"):
+                mode = "both" if getattr(engine, "probability_enabled", False) else "llm"
+            elif mode == "llm" and getattr(engine, "probability_enabled", False):
+                # Legacy sessions enable probabilities without a mode field
+                mode = "both"
+
             # Handle probability scoring for local models
             prob_dict = {}
-            if engine.provider == "local" and engine.probability_enabled:
+            if engine.provider == "local" and mode != "llm":
                 try:
                     prob_dict = huggingface_utils.run_local_logprob_inference(
                         self.model,
@@ -1129,13 +1138,20 @@ class ProcessingManager:
                         engine.probability_candidates,
                         device=0 if engine.device == "cuda" else -1,
                     )
-                    # Log the probability map (requirement: display in log value)
-                    self.log(f"Probabilities: {prob_dict}")
+                    # Log each candidate score and whether it passes the threshold
+                    # (requirement: display per-option probabilities in the log)
+                    threshold = engine.probability_threshold
+                    for candidate, score in prob_dict.items():
+                        passed = threshold <= 0.0 or score >= threshold
+                        self.log(
+                            f"  {candidate}: {score:.3f} "
+                            f"{'PASS' if passed else 'FAIL'}"
+                        )
                     # Apply optional threshold filter
-                    if engine.probability_threshold > 0.0:
+                    if threshold > 0.0:
                         prob_dict = {
                             k: v for k, v in prob_dict.items()
-                            if v >= engine.probability_threshold
+                            if v >= threshold
                         }
                 except Exception as exc:
                     # Requirement: hide on failure - continue with normal flow
@@ -1146,7 +1162,23 @@ class ProcessingManager:
 
             result = None
 
-            if engine.provider == "local":
+            probability_only = mode == "probability" and engine.provider == "local"
+
+            if probability_only:
+                # ---------------------------------------------------------------
+                # PROBABILITY-ONLY TAGGING (No LLM inference)
+                # ---------------------------------------------------------------
+                # Tags are derived directly from the candidate probability scores:
+                # the top-scoring candidate becomes the category and every
+                # candidate that passed the threshold becomes a keyword.
+                if prob_dict:
+                    cat = max(prob_dict, key=prob_dict.get)
+                    kws = list(prob_dict.keys())
+                    desc = ""
+                    self.log(f"Probability tagging: category={cat}, keywords={kws}")
+                else:
+                    cat, kws, desc = "", [], ""
+            elif engine.provider == "local":
                 # ---------------------------------------------------------------
                 # LOCAL INFERENCE (Model loaded in memory)
                 # ---------------------------------------------------------------
@@ -1464,16 +1496,17 @@ class ProcessingManager:
             # - Filtering classification results by threshold
             # - Extracting top predictions as keywords
             # - Adding semantic enhancement (if taxonomy available)
-            try:
-                cat, kws, desc, semantic_data = image_processing.extract_tags_with_semantics(
-                    result, engine.task, threshold=threshold, taxonomy=None
-                )
-                self.logger.debug(f"Semantic data: {semantic_data}")
-            except (AttributeError, ImportError):
-                # Fallback to original function if new one not available
-                cat, kws, desc, _probabilities = image_processing.extract_tags_from_result(
-                    result, engine.task, threshold=threshold
-                )
+            if not probability_only:
+                try:
+                    cat, kws, desc, semantic_data = image_processing.extract_tags_with_semantics(
+                        result, engine.task, threshold=threshold, taxonomy=None
+                    )
+                    self.logger.debug(f"Semantic data: {semantic_data}")
+                except (AttributeError, ImportError):
+                    # Fallback to original function if new one not available
+                    cat, kws, desc, _probabilities = image_processing.extract_tags_from_result(
+                        result, engine.task, threshold=threshold
+                    )
             self.logger.debug(
                 f"Extracted tags - Category: {cat}, Keywords: {len(kws)}, Description length: {len(desc) if desc else 0}"
             )

@@ -128,6 +128,7 @@ class EngineConfig:
     )
     device: str = "cpu"  # 'cpu' or 'cuda' for local inference
     probability_enabled: bool = False
+    probability_mode: str = "llm"  # 'llm', 'probability', or 'both'
     probability_candidates: list = field(default_factory=list)
     probability_threshold: float = 0.0
 
