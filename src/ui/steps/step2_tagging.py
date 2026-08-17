@@ -2050,6 +2050,13 @@ class Step2Tagging(ctk.CTkFrame):
              
         self._apply_config()
 
+        # Persist the engine configuration immediately (matches other providers)
+        try:
+            from src.utils.config_manager import save_config
+            save_config(self.session)
+        except Exception as e:
+            logger.error(f"Error saving Hugging Face config: {e}")
+
     def save_or(self):
         model_id = self.or_model.get().strip()
         
@@ -2073,6 +2080,13 @@ class Step2Tagging(ctk.CTkFrame):
         # But could be zero-shot if we prompt it right. For now, default to image-to-text (captioning/describe)
         self.session.engine.task = "image-to-text" 
         self._apply_config()
+
+        # Persist the engine configuration immediately (matches other providers)
+        try:
+            from src.utils.config_manager import save_config
+            save_config(self.session)
+        except Exception as e:
+            logger.error(f"Error saving OpenRouter config: {e}")
 
 
 
