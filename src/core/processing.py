@@ -1471,7 +1471,7 @@ class ProcessingManager:
                 self.logger.debug(f"Semantic data: {semantic_data}")
             except (AttributeError, ImportError):
                 # Fallback to original function if new one not available
-                cat, kws, desc = image_processing.extract_tags_from_result(
+                cat, kws, desc, _probabilities = image_processing.extract_tags_from_result(
                     result, engine.task, threshold=threshold
                 )
             self.logger.debug(

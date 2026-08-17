@@ -735,7 +735,7 @@ def extract_tags_with_semantics(
     Returns:
         Tuple of (category, keywords, description, semantic_data)
     """
-    category, keywords, description = extract_tags_from_result(
+    category, keywords, description, _probabilities = extract_tags_from_result(
         result, model_task, threshold, stop_words
     )
     
