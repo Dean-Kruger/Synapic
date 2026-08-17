@@ -45,6 +45,7 @@ import time
 import os
 import shutil
 import base64
+import difflib
 from contextlib import nullcontext
 from pathlib import Path
 from tqdm import tqdm
@@ -61,6 +62,7 @@ import requests
 from requests.exceptions import HTTPError
 from transformers import (
     pipeline,
+    Pipeline,
     AutoConfig,
     AutoTokenizer,
     AutoProcessor,
@@ -1566,3 +1568,146 @@ def run_inference_api(model_id, image_path, task, token, parameters=None):
         )
         logger.exception("Full traceback:")
         raise
+
+
+def _get_pipeline_labels(pipe) -> list:
+    """Return the model's ordered label set, if the config exposes one."""
+    config = getattr(getattr(pipe, "model", None), "config", None)
+    id2label = getattr(config, "id2label", None) if config is not None else None
+    if isinstance(id2label, dict) and id2label:
+        return list(id2label.values())
+    if isinstance(id2label, (list, tuple)) and id2label:
+        return list(id2label)
+    return []
+
+
+def _fuzzy_match_label(
+    candidate: str,
+    labels: list,
+    cutoff: float = 0.6,
+    partial_cutoff: float = 0.45,
+):
+    """Best model label for a candidate via fuzzy string similarity, or None.
+
+    Uses :mod:`difflib` (stdlib) so no extra dependency is required. Matching
+    is case-insensitive and whitespace-insensitive. A candidate that is a
+    prefix/substring of a compound model label (e.g. ``indoor`` ->
+    ``indoor office``) also qualifies when it is at least 3 characters, so
+    short token placeholders like ``A`` never accidentally attach to a label.
+    """
+    pairs = [(label, label.strip().lower()) for label in labels if label and label.strip()]
+    if not pairs:
+        return None
+
+    best_label = None
+    best_normalized = None
+    best_ratio = 0.0
+    for label, normalized in pairs:
+        ratio = difflib.SequenceMatcher(None, candidate, normalized).ratio()
+        if ratio > best_ratio:
+            best_label, best_normalized, best_ratio = label, normalized, ratio
+
+    if best_label is None or best_normalized is None:
+        return None
+    if best_ratio >= cutoff:
+        return best_label
+    is_substring_match = (
+        len(candidate) >= 3
+        and (candidate in best_normalized or best_normalized in candidate)
+        and best_ratio >= partial_cutoff
+    )
+    return best_label if is_substring_match else None
+
+
+def run_local_logprob_inference(
+    model, image_path: str, candidates: list, device: int = -1
+) -> dict:
+    """
+    Run local inference with calibrated label probabilities.
+
+    When ``model`` is an already-loaded :class:`~transformers.Pipeline` (which is
+    what the processing pipeline passes in), the pipeline is reused directly so
+    the model weights are never reloaded per image. Only when a model id/path is
+    supplied is a new ``image-classification`` pipeline constructed.
+
+    Args:
+        model: An already-loaded transformers Pipeline, or a Hugging Face model
+            id/path to load an ``image-classification`` pipeline from.
+        image_path: Path to the image file.
+        candidates: List of candidate labels/classes to score.
+        device: Device ID (-1 for CPU, 0+ for CUDA). Ignored when ``model`` is
+            an already-loaded Pipeline.
+
+    Returns:
+        Dictionary mapping candidate labels to their probability scores.
+        Candidates that cannot be matched to a model label (after
+        case/whitespace normalization and fuzzy fallback) map to 0.0.
+
+    Raises:
+        ValueError: When ``model`` is an already-loaded Pipeline whose task is
+            not ``image-classification`` (such pipelines do not expose
+            per-label probabilities), or when none of the candidates can be
+            matched to any model label (e.g. the UI default ``A,B,C,D`` against
+            an ImageNet-classification model) — surfaced instead of silently
+            reporting all-zero probabilities.
+    """
+    if not candidates:
+        return {}
+
+    # Reuse an already-loaded pipeline instead of rebuilding one per image.
+    # Constructing a fresh pipeline reloads the whole model from disk, which is
+    # prohibitively slow for batch processing and doubles memory while the
+    # original pipeline is still resident.
+    if isinstance(model, Pipeline):
+        pipe = model
+        task = getattr(pipe, "task", "") or ""
+        if task != "image-classification":
+            raise ValueError(
+                "Probability scoring requires an image-classification pipeline, "
+                f"but the loaded pipeline task is '{task}'. Only "
+                "image-classification models expose per-label probabilities."
+            )
+    else:
+        pipe = pipeline("image-classification", model=model, device=device)
+
+    # Request every label so candidates are never silently dropped by the
+    # pipeline's default top_k=5 truncation (postprocess clamps this to the
+    # model's actual label count).
+    config = getattr(getattr(pipe, "model", None), "config", None)
+    num_labels = getattr(config, "num_labels", None) if config is not None else None
+    top_k = num_labels if isinstance(num_labels, int) and num_labels > 0 else 10_000
+
+    # Run inference on the image
+    results = pipe(image_path, top_k=top_k)
+
+    # Create a dictionary mapping label to score for easy lookup
+    score_map = {item["label"]: item["score"] for item in results}
+    scored_labels = list(score_map.keys())
+
+    # Normalized (case-insensitive, whitespace-stripped) lookup so candidates
+    # like "Cat " or "cat" still resolve to a model label "Cat".
+    normalized_index = {label.strip().lower(): label for label in scored_labels}
+
+    probabilities = {}
+    for candidate in candidates:
+        normalized = candidate.strip().lower()
+        matched_label = normalized_index.get(normalized)
+        if matched_label is None:
+            # Fuzzy fallback: e.g. candidate "indoor" matching "indoor office"
+            matched_label = _fuzzy_match_label(normalized, scored_labels)
+        probabilities[candidate] = (
+            score_map[matched_label] if matched_label is not None else 0.0
+        )
+
+    # If not a single candidate resolved to a real model label, the candidate
+    # set is unusable for this model. Fail loudly instead of silently
+    # reporting all-zero probabilities.
+    if probabilities and all(score == 0.0 for score in probabilities.values()):
+        model_labels = _get_pipeline_labels(pipe) or scored_labels
+        raise ValueError(
+            "Probability scoring: none of the candidates matched the model's "
+            f"labels. Candidates: {sorted(candidates)}. Model labels include: "
+            f"{model_labels[:8]}"
+        )
+
+    return probabilities

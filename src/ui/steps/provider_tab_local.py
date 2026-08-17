@@ -2,12 +2,15 @@
 Local provider configuration tab for Step 2.
 """
 
-import customtkinter as ctk
-import tkinter.messagebox as mb
-from .provider_tab_base import ProviderTabBase
 import logging
 import os
+import re
 import shutil
+import tkinter.messagebox as mb
+
+import customtkinter as ctk
+
+from .provider_tab_base import ProviderTabBase
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,9 @@ class LocalProviderTab(ProviderTabBase):
         # Load cached models
         self.refresh_local_cache()
 
+        # Probability Scoring Section (Local only)
+        self._setup_probability_scoring_section()
+
     def _setup_api_key_section(self):
         """Local provider doesn't use API keys."""
         pass
@@ -155,6 +161,89 @@ class LocalProviderTab(ProviderTabBase):
                 text_color="red"
             ).pack()
 
+    def _setup_probability_scoring_section(self):
+        """Set up the probability scoring controls for local models only."""
+        # Probability scoring frame
+        self.probability_frame = ctk.CTkFrame(self)
+        self.probability_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(5, 10))
+        self.probability_frame.grid_columnconfigure(0, weight=1)
+
+        # Section header with toggle
+        self.probability_header = ctk.CTkFrame(self.probability_frame, fg_color="transparent")
+        self.probability_header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        self.probability_header.grid_columnconfigure(0, weight=1)
+
+        self.probability_enabled = ctk.CTkCheckBox(
+            self.probability_header,
+            text="Enable calibrated probabilities",
+            command=self._toggle_probability_section
+        )
+        self.probability_enabled.pack(side="left", padx=5)
+
+        # Probability scoring content (initially visible)
+        self.probability_content = ctk.CTkFrame(self.probability_frame, fg_color="transparent")
+        self.probability_content.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.probability_content.grid_columnconfigure(1, weight=1)
+
+        # Candidate tokens input
+        ctk.CTkLabel(self.probability_content, text="Candidate Tokens:").grid(row=0, column=0, sticky="w", padx=(0, 10))
+        self.candidate_box = ctk.CTkTextbox(self.probability_content, height=60)
+        self.candidate_box.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(5, 5))
+        self.candidate_box.insert("1.0", "A,B,C,D")
+
+        # Probability threshold
+        ctk.CTkLabel(self.probability_content, text="Probability Threshold:").grid(row=1, column=0, sticky="w", padx=(0, 10))
+        self.threshold_entry = ctk.CTkEntry(self.probability_content, width=100)
+        self.threshold_entry.grid(row=1, column=1, sticky="w", padx=(0, 10), pady=(0, 5))
+        self.threshold_entry.insert(0, "0.0")
+
+        # Populate from any previously saved session values
+        self._sync_probability_controls_from_session()
+
+    def _toggle_probability_section(self):
+        """Toggle the probability scoring section visibility."""
+        if self.probability_enabled.get():
+            self.probability_content.grid()
+        else:
+            self.probability_content.grid_remove()
+
+    def _parse_probability_candidates(self):
+        """Parse candidate tokens from the textbox (comma/newline separated)."""
+        text = self.candidate_box.get("1.0", "end-1c").strip()
+        if not text:
+            return []
+        return [c.strip() for c in re.split(r"[,;\n]+", text) if c.strip()]
+
+    def _parse_probability_threshold(self):
+        """Parse and clamp the probability threshold from the entry (0.0-1.0)."""
+        text = self.threshold_entry.get().strip()
+        try:
+            value = float(text)
+        except (TypeError, ValueError):
+            logger.warning(f"Invalid probability threshold '{text}', defaulting to 0.0")
+            return 0.0
+        return max(0.0, min(1.0, value))
+
+    def _sync_probability_controls_from_session(self):
+        """Populate the probability scoring controls from the session engine."""
+        engine = self.session.engine
+        enabled = bool(getattr(engine, "probability_enabled", False))
+        if enabled:
+            self.probability_enabled.select()
+        else:
+            self.probability_enabled.deselect()
+
+        candidates = getattr(engine, "probability_candidates", None) or []
+        if candidates:
+            self.candidate_box.delete("1.0", "end")
+            self.candidate_box.insert("1.0", ",".join(str(c) for c in candidates))
+
+        threshold = float(getattr(engine, "probability_threshold", 0.0) or 0.0)
+        self.threshold_entry.delete(0, "end")
+        self.threshold_entry.insert(0, str(threshold))
+
+        self._toggle_probability_section()
+
     def add_cached_model_item(self, model_id, size_str, capability):
         """Add a cached model to the list."""
         frame = ctk.CTkFrame(self.local_list_frame)
@@ -205,10 +294,17 @@ class LocalProviderTab(ProviderTabBase):
             except Exception as e:
                 mb.showerror("Error", f"Failed to delete model: {e}")
 
-    def save_local(self):
-        """Save the local provider configuration."""
+    def save_to_session(self):
+        """Write the local tab's UI state (model + probability scoring) into the session engine."""
         self.session.engine.provider = "local"
         self.session.engine.model_id = self.local_model_var.get()
+        self.session.engine.probability_enabled = bool(self.probability_enabled.get())
+        self.session.engine.probability_candidates = self._parse_probability_candidates()
+        self.session.engine.probability_threshold = self._parse_probability_threshold()
+
+    def save_local(self):
+        """Save the local provider configuration."""
+        self.save_to_session()
 
         # Find task from cache
         try:
@@ -247,6 +343,9 @@ class LocalProviderTab(ProviderTabBase):
         if hasattr(self, 'local_model_var'):
             current_model = getattr(self.session.engine, "model_id", "") or ""
             self.local_model_var.set(current_model)
+
+        # Sync probability scoring controls from the session
+        self._sync_probability_controls_from_session()
 
 
 def create_local_tab(parent, session, worker, persist_preference_callback, filter_image_models_func):

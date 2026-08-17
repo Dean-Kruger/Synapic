@@ -1118,6 +1118,32 @@ class ProcessingManager:
             # The inference method depends on the configured provider:
             # - 'local': Use locally loaded model (self.model)
             # - 'huggingface'/'openrouter': Call API endpoint
+
+            # Handle probability scoring for local models
+            prob_dict = {}
+            if engine.provider == "local" and engine.probability_enabled:
+                try:
+                    prob_dict = huggingface_utils.run_local_logprob_inference(
+                        self.model,
+                        str(path),
+                        engine.probability_candidates,
+                        device=0 if engine.device == "cuda" else -1,
+                    )
+                    # Log the probability map (requirement: display in log value)
+                    self.log(f"Probabilities: {prob_dict}")
+                    # Apply optional threshold filter
+                    if engine.probability_threshold > 0.0:
+                        prob_dict = {
+                            k: v for k, v in prob_dict.items()
+                            if v >= engine.probability_threshold
+                        }
+                except Exception as exc:
+                    # Requirement: hide on failure - continue with normal flow
+                    self.logger.warning(
+                        f"Local probability inference failed ({type(exc).__name__}): {exc}"
+                    )
+                    prob_dict = {}
+
             result = None
 
             if engine.provider == "local":
@@ -1445,7 +1471,7 @@ class ProcessingManager:
                 self.logger.debug(f"Semantic data: {semantic_data}")
             except (AttributeError, ImportError):
                 # Fallback to original function if new one not available
-                cat, kws, desc = image_processing.extract_tags_from_result(
+                cat, kws, desc, _probabilities = image_processing.extract_tags_from_result(
                     result, engine.task, threshold=threshold
                 )
             self.logger.debug(
@@ -1528,6 +1554,7 @@ class ProcessingManager:
                     "filename": filename if is_daminion else path.name,
                     "status": status,
                     "tags": tags_str,
+                    "probabilities": prob_dict,
                 }
             )
 
