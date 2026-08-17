@@ -210,6 +210,7 @@ Comprehensive documentation is available for both users and developers:
 - **[DEVELOPER_GUIDE.md](docs/developer/DEVELOPER_GUIDE.md)**: Technical architecture and subsystem overview.
 - **[CHANGELOG.md](CHANGELOG.md)**: Detailed version history and fix summaries.
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Standards for code, documentation, and PRs.
+- **[PROBABILITY_SCORING_TAGGING.md](docs/PROBABILITY_SCORING_TAGGING.md)**: Guide to extracting calibrated probability scores from vision models.
 
 ### Knowledge Base (docs/)
 - **[Threshold Features](docs/features/THRESHOLD_FEATURE.md)**: Tuning AI confidence levels.
