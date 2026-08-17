@@ -4,6 +4,23 @@ All notable changes to the **Synapic** project will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Probability Scoring for Local Models**: Added calibrated per-label probability scores for local image-classification models, with Step 2 Local tab controls (enable toggle, candidate tokens, optional threshold) wired into the engine configuration and persisted to `~/.synapic_v2_config.json` across restarts.
+- **Robust Candidate Matching**: Candidates are matched against the model's label set case-insensitively and whitespace-stripped, with a fuzzy fallback for close labels (e.g. `indoor` → `indoor office`); a candidate set that matches nothing now raises a clear error instead of silently reporting all-zero probabilities.
+- **Probability Scoring Guide**: Added `docs/PROBABILITY_SCORING_TAGGING.md` documenting calibrated probability extraction from vision models, linked from the README.
+- **Test Coverage**: Added unit, integration, and UI tests for the probability pipeline (loaded-pipeline reuse, extraction, candidate matching, config round-trip, and Local tab controls).
+
+### Changed
+- **Probability Pipeline Reuse**: Probability scoring now reuses the already-loaded pipeline instead of constructing a new one per image, eliminating per-image model reloads and the associated memory duplication; non-`image-classification` pipelines are rejected with a clear message.
+
+### Fixed
+- **Tag Extraction Regression**: `extract_tags_with_semantics` and the processing fallback path now unpack the new 4-value return of `extract_tags_from_result`, fixing a crash that broke tag extraction for all providers.
+- **Save Config Persistence**: The Hugging Face and OpenRouter "Save Config" buttons now persist the engine configuration immediately, matching the other providers (previously they only updated the in-memory session and could be lost on close).
+
+---
+
 ## [2.4.5] - 2026-08-03
 
 > **Note:** 2.4.5 supersedes the earlier 2.4.0 draft entries for this release. The feature set is unchanged — 2.4.0 was a provisional version number used while the changelog was being assembled and should not be referenced.
