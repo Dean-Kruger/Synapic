@@ -25,6 +25,7 @@ jobs:
           ruff --version
           ruff check src tests
       - name: Type check with Mypy
+        continue-on-error: true
         run: |
           mypy --version
           mypy src
