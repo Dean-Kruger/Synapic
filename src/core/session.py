@@ -454,19 +454,9 @@ class Session:
             if not self.engine.model_id:
                 return False, "Please select a model in Step 2"
 
-            # Validate engine configuration
+            # Validate engine configuration (includes local-model download check)
             if not self.validate_engine():
                 return False, "Engine configuration is invalid. Please check your settings in Step 2"
-
-            # If using local engine, validate model is downloaded
-            if self.engine.provider == "local":
-                try:
-                    from src.core.huggingface_utils import is_model_downloaded
-                    if not is_model_downloaded(self.engine.model_id):
-                        return False, f"Model '{self.engine.model_id}' is not downloaded. Please download it first in Step 2"
-                except Exception as e:
-                    self.logger.error(f"Error checking model download status: {e}")
-                    return False, f"Could not verify model download status: {str(e)}"
 
             # Validate datasource based on type
             if self.datasource.type == "local":

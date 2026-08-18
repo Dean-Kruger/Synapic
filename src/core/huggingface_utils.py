@@ -573,34 +573,55 @@ def get_remote_model_size(model_id: str, token: Optional[str] = None) -> int:
 
 
 def is_model_downloaded(model_id, token=None):
-    """Check if a model is fully downloaded."""
+    """Check if a model is fully downloaded.
+
+    First performs a fast offline check of the local cache (no network).
+    Only falls back to the Hub API when the local check is ambiguous
+    (e.g. an empty snapshot directory where we can't tell if the model
+    was partially downloaded or simply missing).
+    """
+    model_cache_dir = get_model_cache_dir(model_id)
+    snapshot_dir = os.path.join(model_cache_dir, "snapshots")
+
+    if not os.path.exists(snapshot_dir):
+        return False
+
+    snapshots = os.listdir(snapshot_dir)
+    if not snapshots:
+        return False
+
+    latest_snapshot = sorted(snapshots)[-1]
+    snapshot_path = os.path.join(snapshot_dir, latest_snapshot)
+
+    # Offline heuristic: a downloaded model always has config.json.
+    # If it's present and the snapshot has >0 regular files, the model
+    # is present — no need to call the Hub API.
+    if os.path.isfile(os.path.join(snapshot_path, "config.json")):
+        file_count = sum(
+            1 for f in os.listdir(snapshot_path)
+            if not f.endswith(config.MODEL_FILE_EXCLUSIONS)
+        )
+        if file_count > 0:
+            return True
+
+    # Fallback: verify against the Hub (requires network).
     try:
         api = HfApi(token=token)
         model_info = api.model_info(repo_id=model_id)
-        model_cache_dir = get_model_cache_dir(model_id)
-        # Check for snapshot directory
-        snapshot_dir = os.path.join(model_cache_dir, "snapshots")
-        if not os.path.exists(snapshot_dir):
-            return False
-        # Get the latest snapshot
-        snapshots = os.listdir(snapshot_dir)
-        if not snapshots:
-            return False
-        latest_snapshot = sorted(snapshots)[-1]
 
         if model_info.siblings:
             for file_info in model_info.siblings:
                 if file_info.rfilename.endswith(config.MODEL_FILE_EXCLUSIONS):
                     continue
-                file_path = os.path.join(
-                    snapshot_dir, latest_snapshot, file_info.rfilename
-                )
+                file_path = os.path.join(snapshot_path, file_info.rfilename)
                 if not os.path.exists(file_path):
                     logging.info(
                         f"Model {model_id} is not fully downloaded. Missing file: {file_info.rfilename}"
                     )
                     return False
             return True
+        # No siblings info from Hub — trust the local config.json check above.
+        return os.path.isfile(os.path.join(snapshot_path, "config.json"))
     except HTTPError as e:
         if e.response.status_code == 404:
             logging.warning(f"Model not found on Hub: {model_id}")

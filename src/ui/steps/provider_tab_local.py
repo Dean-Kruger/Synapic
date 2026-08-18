@@ -91,6 +91,11 @@ class LocalProviderTab(ProviderTabBase):
         ctk.CTkLabel(footer, textvariable=self.local_model_var,
                      font=("Roboto", 12, "bold")).pack(side="left", padx=10)
 
+        self.model_status_label = ctk.CTkLabel(
+            footer, text="", text_color="gray", font=("Roboto", 10)
+        )
+        self.model_status_label.pack(side="left", padx=10)
+
         ctk.CTkButton(footer, text="Use for Local Inference",
                       command=self.save_local).pack(side="right")
 
@@ -349,6 +354,10 @@ class LocalProviderTab(ProviderTabBase):
     def select_local_model(self, model_id):
         """Handle local model selection."""
         self.local_model_var.set(model_id)
+        self.model_status_label.configure(
+            text="✓ Model selected — click 'Use for Local Inference' to confirm",
+            text_color="#2FA572",
+        )
         self._preload_candidate_tokens(model_id)
 
     def _preload_candidate_tokens(self, model_id):
@@ -416,6 +425,11 @@ class LocalProviderTab(ProviderTabBase):
         try:
             from src.utils.config_manager import save_config
             save_config(self.session)
+            if hasattr(self, 'model_status_label'):
+                self.model_status_label.configure(
+                    text="✓ Configuration saved",
+                    text_color="#2FA572",
+                )
         except Exception as e:
             logger.error(f"Error saving config: {e}")
 
