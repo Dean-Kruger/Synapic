@@ -127,7 +127,9 @@ class LocalProviderTab(ProviderTabBase):
     def open_download_manager(self):
         """Opens a separate dialog for browsing and downloading models."""
         from .step2_tagging import DownloadManagerDialog
-        DownloadManagerDialog(self.parent, self.session)
+        # CTkToplevel needs the root window, not a CTkFrame parent
+        root = self.winfo_toplevel()
+        DownloadManagerDialog(root, self.session)
 
     def refresh_local_cache(self):
         """Refresh the list of locally cached models."""
