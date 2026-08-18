@@ -1164,21 +1164,28 @@ class ProcessingManager:
 
             probability_only = mode == "probability" and engine.provider == "local"
 
-            if probability_only:
+            if probability_only and prob_dict:
                 # ---------------------------------------------------------------
                 # PROBABILITY-ONLY TAGGING (No LLM inference)
                 # ---------------------------------------------------------------
                 # Tags are derived directly from the candidate probability scores:
                 # the top-scoring candidate becomes the category and every
                 # candidate that passed the threshold becomes a keyword.
-                if prob_dict:
-                    cat = max(prob_dict, key=prob_dict.get)
-                    kws = list(prob_dict.keys())
-                    desc = ""
-                    self.log(f"Probability tagging: category={cat}, keywords={kws}")
-                else:
-                    cat, kws, desc = "", [], ""
-            elif engine.provider == "local":
+                cat = max(prob_dict, key=prob_dict.get)
+                kws = list(prob_dict.keys())
+                desc = ""
+                self.log(f"Probability tagging: category={cat}, keywords={kws}")
+            elif probability_only and not prob_dict:
+                # Probability scoring failed (e.g. non-classification model).
+                # Fall through to LLM instead of producing empty tags.
+                self.log(
+                    "Probability scoring returned no results — "
+                    "falling back to LLM tagging"
+                )
+                probability_only = False
+                # Deliberately fall through to the LLM path below
+
+            if not probability_only and engine.provider == "local":
                 # ---------------------------------------------------------------
                 # LOCAL INFERENCE (Model loaded in memory)
                 # ---------------------------------------------------------------

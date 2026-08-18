@@ -248,6 +248,38 @@ def test_processing_legacy_enabled_flag_maps_to_both(monkeypatch, tmp_path):
     assert entry["probabilities"] == {"A": 0.7, "B": 0.2, "C": 0.08, "D": 0.02}
 
 
+def test_processing_probability_only_falls_back_to_llm_on_empty_scores(monkeypatch, tmp_path):
+    """When probability-only mode gets empty scores (e.g. non-classification
+    model), processing should fall back to LLM tagging instead of producing
+    zero tags."""
+    img_path = make_image(tmp_path)
+
+    session = make_test_session()
+    engine = session.engine
+    engine.provider = "local"
+    engine.probability_mode = "probability"
+    engine.probability_candidates = ["forest", "lake"]
+    engine.probability_threshold = 0.0
+    engine.task = "image-text-to-text"
+
+    manager, logs = make_manager(session, tmp_path)
+    manager.model.task = "image-text-to-text"
+    manager.model.reset_mock()
+
+    with patch("src.core.huggingface_utils.run_local_logprob_inference") as mock_inf:
+        # Simulate a non-classification model returning empty scores
+        mock_inf.return_value = {}
+        manager._process_single_item(img_path)
+
+    # Should log the fallback message
+    assert any("falling back to LLM" in m for m in logs)
+    # The model should still have been called for LLM inference
+    assert manager.model.called, "LLM should have been called as fallback"
+    assert not any("Failed" in m for m in logs), f"Item failed: {logs}"
+    assert len(session.results) == 1
+    assert session.results[0]["status"] == "Success"
+
+
 def test_processing_fallback_extraction_still_works(monkeypatch, tmp_path):
     """Regression: the 3-tuple fallback unpack of extract_tags_from_result in
     processing.py must be a 4-tuple unpack now that the function returns four

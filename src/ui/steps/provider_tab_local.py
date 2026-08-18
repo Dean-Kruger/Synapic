@@ -354,11 +354,35 @@ class LocalProviderTab(ProviderTabBase):
     def select_local_model(self, model_id):
         """Handle local model selection."""
         self.local_model_var.set(model_id)
+        self._preload_candidate_tokens(model_id)
+
+        # Warn if the model doesn't support probability scoring but a
+        # probability mode is selected, so the user learns immediately
+        # rather than after a full batch produces zero tags.
+        mode = self.probability_mode_var.get()
+        if mode in ("probability", "both"):
+            try:
+                from src.core import huggingface_utils
+                models = huggingface_utils.find_local_models()
+                info = models.get(model_id, {})
+                task = info.get("suggested_task", "")
+                if task and task != "image-classification":
+                    self.model_status_label.configure(
+                        text=(
+                            f"⚠ {model_id} is a '{task}' model — "
+                            "probability scoring requires an "
+                            "'image-classification' model."
+                        ),
+                        text_color="#FF8C00",
+                    )
+                    return
+            except Exception:
+                pass
+
         self.model_status_label.configure(
             text="✓ Model selected — click 'Use for Local Inference' to confirm",
             text_color="#2FA572",
         )
-        self._preload_candidate_tokens(model_id)
 
     def _preload_candidate_tokens(self, model_id):
         """Preload the candidate tokens box from the model's label set.
