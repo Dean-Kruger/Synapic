@@ -340,30 +340,38 @@ class LocalProviderTab(ProviderTabBase):
         total = len(self._model_buttons)
 
         for btn, _mid, is_class in self._model_buttons:
-            if needs_classifier and not is_class:
-                btn.configure(
-                    fg_color="#3B3B3B",
-                    text_color="#666666",
-                    state="disabled",
-                )
-            else:
-                btn.configure(
-                    fg_color="transparent",
-                    text_color="#2FA572",
-                    state="normal",
-                )
-                selectable += 1
+            try:
+                if needs_classifier and not is_class:
+                    btn.configure(
+                        fg_color="#3B3B3B",
+                        text_color="#666666",
+                        state="disabled",
+                    )
+                else:
+                    btn.configure(
+                        fg_color="transparent",
+                        text_color="#2FA572",
+                        state="normal",
+                    )
+                    selectable += 1
+            except Exception:
+                pass
 
         # Update the list header with a compatibility note
-        if needs_classifier and total > 0:
-            self.list_header.configure(
-                text=(
-                    f"{self._get_models_header_text()}"
-                    f"    [{selectable}/{total} models support probability scoring]"
-                ),
-            )
-        else:
-            self.list_header.configure(text=self._get_models_header_text())
+        if not hasattr(self, "list_header"):
+            return
+        try:
+            if needs_classifier and total > 0:
+                self.list_header.configure(
+                    text=(
+                        f"{self._get_models_header_text()}"
+                        f"    [{selectable}/{total} models support probability scoring]"
+                    ),
+                )
+            else:
+                self.list_header.configure(text=self._get_models_header_text())
+        except Exception:
+            pass  # widget may not be fully realised yet during init
 
     # ------------------------------------------------------------------
     # Candidate token autocomplete
