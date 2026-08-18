@@ -242,7 +242,8 @@ class LocalProviderTab(ProviderTabBase):
         )
         self.candidate_entry.grid(row=0, column=0, sticky="ew")
         self.candidate_entry.bind("<KeyRelease>", self._on_candidate_key_release)
-        self.candidate_entry.bind("<FocusOut>", self._hide_autocomplete)
+        self.candidate_entry.bind("<FocusOut>", self._on_candidate_focus_out)
+        self.candidate_entry.bind("<Return>", self._on_candidate_focus_out)
 
         # Hidden text box backing store for comma-separated candidates
         self.candidate_box = ctk.CTkTextbox(candidate_frame, height=1)
@@ -403,7 +404,7 @@ class LocalProviderTab(ProviderTabBase):
                 return
 
         typed_lower = typed.lower()
-        matches = [l for l in self._current_label_tokens if typed_lower in l.lower()]
+        matches = [tok for tok in self._current_label_tokens if typed_lower in tok.lower()]
         matches = matches[:8]  # cap dropdown
 
         if not matches:
@@ -438,7 +439,7 @@ class LocalProviderTab(ProviderTabBase):
                 hover_color="#3B5998",
                 height=26,
                 font=("Roboto", 11),
-                command=lambda l=label: self._select_autocomplete(l),
+                command=lambda lbl=label: self._select_autocomplete(lbl),
             )
             btn.pack(fill="x", padx=2, pady=1)
             self._autocomplete_buttons.append(btn)
@@ -472,6 +473,42 @@ class LocalProviderTab(ProviderTabBase):
                 pass
             self._autocomplete_frame = None
             self._autocomplete_buttons.clear()
+
+    # ------------------------------------------------------------------
+    # Candidate input formatting
+    # ------------------------------------------------------------------
+
+    def _on_candidate_focus_out(self, _event=None):
+        """Format the candidate text when the user leaves the entry."""
+        self._hide_autocomplete()
+        self._format_candidate_text()
+
+    def _format_candidate_text(self):
+        """Normalize the comma-separated candidate string.
+
+        - Strips leading/trailing whitespace from each token
+        - Removes empty tokens (double commas, trailing comma)
+        - Deduplicates tokens (case-insensitive, keeps first occurrence)
+        - Joins with ', ' (consistent single space after comma)
+        """
+        raw = self.candidate_entry.get().strip()
+        if not raw:
+            return
+        parts = [p.strip() for p in re.split(r"[,;\n]+", raw) if p.strip()]
+        # Deduplicate preserving order (case-insensitive)
+        seen: set[str] = set()
+        unique: list[str] = []
+        for part in parts:
+            key = part.lower()
+            if key not in seen:
+                seen.add(key)
+                unique.append(part)
+        formatted = ", ".join(unique)
+        self.candidate_entry.delete(0, "end")
+        self.candidate_entry.insert(0, formatted)
+        # Sync hidden backing store
+        self.candidate_box.delete("1.0", "end")
+        self.candidate_box.insert("1.0", formatted)
 
     def _sync_probability_controls_from_session(self):
         """Populate the probability scoring controls from the session engine."""

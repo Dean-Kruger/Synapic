@@ -201,7 +201,7 @@ for _name in ("src.ui.steps.provider_tab_base", "src.ui.steps.provider_tab_local
     sys.modules.pop(_name, None)
 
 # Now we can import the module
-from src.ui.steps.provider_tab_local import LocalProviderTab
+from src.ui.steps.provider_tab_local import LocalProviderTab  # noqa: E402
 
 
 class MockEngine:
@@ -247,7 +247,7 @@ def test_local_ui_populates_engine():
 
     # Verify engine was updated
     assert session.engine.probability_mode == "both"
-    assert session.engine.probability_enabled == True
+    assert session.engine.probability_enabled is True
     assert session.engine.probability_candidates == ["A", "B", "C", "D"]
     assert session.engine.probability_threshold == 0.05
 
