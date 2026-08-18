@@ -2101,10 +2101,11 @@ class DownloadManagerDialog(ctk.CTkToplevel):
     """
     """Separate dialog for browsing Hub and downloading models."""
     
-    def __init__(self, parent, session):
+    def __init__(self, parent, session, local_tab=None):
         super().__init__(parent)
         self.parent = parent
         self.session = session
+        self.local_tab = local_tab
         self._search_results_cache = []
         self._size_filter_min = 0
         self._size_filter_max = 0
@@ -2196,6 +2197,88 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.progress = ctk.CTkProgressBar(self.footer)
         self.progress.pack(side="right", padx=10, fill="x", expand=True)
         self.progress.set(0)
+
+        # Pre-populate: auto-load top models per category on launch
+        self._prefetch_page = 0
+        self._prefetch_per_page = 20
+        self._prefetch_categories = [
+            ("keyword", [config.MODEL_TASK_IMAGE_CLASSIFICATION]),
+            ("category", [config.MODEL_TASK_ZERO_SHOT]),
+            ("description", [config.MODEL_TASK_IMAGE_TO_TEXT]),
+            ("multimodal", ["image-text-to-text"]),
+        ]
+        self._prefetch_all_results = []
+        self.after(200, self._start_prefetch)
+
+    def _start_prefetch(self):
+        """Load top models per category in background on dialog launch."""
+        self.lbl_status.configure(text="Loading popular models from Hub...", text_color="gray")
+        self._worker.submit("prefetch", self._prefetch_worker)
+
+    def _prefetch_worker(self):
+        """Fetch top-N models for each category."""
+        try:
+            from huggingface_hub import list_models
+            from src.core import huggingface_utils
+
+            all_results = []
+            for cat_name, tasks in self._prefetch_categories:
+                for task in tasks:
+                    models = list_models(
+                        filter=task,
+                        library="transformers",
+                        limit=self._prefetch_per_page,
+                        sort="downloads",
+                        direction=-1,
+                    )
+                    for m in models:
+                        all_results.append({
+                            "id": m.id,
+                            "task": task,
+                            "capability": huggingface_utils.get_model_capability(task),
+                        })
+
+            # Deduplicate
+            seen = set()
+            unique = []
+            for r in all_results:
+                if r["id"] not in seen:
+                    unique.append(r)
+                    seen.add(r["id"])
+
+            # Fetch sizes concurrently
+            from src.utils.concurrency import DaemonThreadPoolExecutor as ThreadPoolExecutor
+
+            def fetch_size(item):
+                try:
+                    sz = huggingface_utils.get_remote_model_size(item["id"])
+                    item["size_bytes"] = sz
+                    item["size_str"] = huggingface_utils.format_size(sz)
+                except Exception:
+                    item["size_bytes"] = 0
+                    item["size_str"] = "Unknown"
+                return item
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(fetch_size, unique))
+
+            self.after(0, lambda: self._show_prefetch_results(results) if self.winfo_exists() else None)
+        except Exception as e:
+            self.after(0, lambda: self.lbl_status.configure(
+                text=f"Could not load models: {e}", text_color="red"
+            ) if self.winfo_exists() else None)
+
+    def _show_prefetch_results(self, results):
+        """Display prefetched models and set up infinite scroll."""
+        self._prefetch_all_results = results
+        self._search_results_cache = list(results)
+        self._configure_size_filter(results)
+        filtered = self._get_size_filtered_results()
+        self.lbl_status.configure(
+            text=f"Showing {len(filtered)} popular models. Use Search for specific queries.",
+            text_color="gray",
+        )
+        self.show_search_results(results)
 
     def start_search(self):
         query = self.search_entry.get()
@@ -2383,14 +2466,16 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         btn_download.pack(side="right", padx=5)
 
     def test_via_api(self, model_id):
-        # Switch to HF tab in parent and select model
-        self.parent.engine_var.set("huggingface")
-        self.parent.hf_model.delete(0, "end")
-        self.parent.hf_model.insert(0, model_id)
-        # self.parent.hf_task_var.set(self.task_var.get()) # Task var removed from HF tab
+        # Switch to HF tab in Step2Tagging and select model
+        step2 = self.local_tab
+        if step2 is None or not hasattr(step2, 'engine_var'):
+            self.lbl_status.configure(text="Cannot switch tabs from this context.", text_color="red")
+            return
+        step2.engine_var.set("huggingface")
+        step2.hf_model.delete(0, "end")
+        step2.hf_model.insert(0, model_id)
         self.lbl_status.configure(text=f"Selected {model_id} for API testing. Switch to 'Hugging Face' tab.")
-        # Optional: focus parent
-        self.parent.focus_set()
+        step2.focus_set()
 
     def start_download(self, model_id):
         self.lbl_status.configure(text=f"Preparing download for {model_id}...", text_color="gray")
@@ -2477,11 +2562,12 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             logger.warning(f"Could not determine task for {model_id}: {e}")
             self.session.engine.task = "image-to-text"  # Default fallback
         
-        # Refresh parent cache and update selection
-        if hasattr(self.parent, 'refresh_local_cache'):
-            self.parent.refresh_local_cache()
-        if hasattr(self.parent, 'local_model_var'):
-            self.parent.local_model_var.set(model_id)
+        # Refresh local tab cache and update selection
+        if self.local_tab is not None:
+            if hasattr(self.local_tab, 'refresh_local_cache'):
+                self.local_tab.refresh_local_cache()
+            if hasattr(self.local_tab, 'local_model_var'):
+                self.local_tab.local_model_var.set(model_id)
     
     def destroy(self):
         """Override destroy to clean up worker thread."""

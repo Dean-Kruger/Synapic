@@ -129,7 +129,7 @@ class LocalProviderTab(ProviderTabBase):
         from .step2_tagging import DownloadManagerDialog
         # CTkToplevel needs the root window, not a CTkFrame parent
         root = self.winfo_toplevel()
-        DownloadManagerDialog(root, self.session)
+        DownloadManagerDialog(root, self.session, local_tab=self)
 
     def refresh_local_cache(self):
         """Refresh the list of locally cached models."""
@@ -337,6 +337,8 @@ class LocalProviderTab(ProviderTabBase):
 
     def _update_model_list_filter(self):
         """Dim non-classification models when probability mode is active."""
+        if not hasattr(self, "probability_mode_var"):
+            return
         mode = self.probability_mode_var.get()
         needs_classifier = mode in ("probability", "both")
         selectable = 0
