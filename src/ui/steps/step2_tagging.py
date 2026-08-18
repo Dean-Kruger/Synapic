@@ -313,22 +313,22 @@ class Step2Tagging(ctk.CTkFrame):
         self.model_info_label.configure(text=self._get_model_display_text())
         
     def next_step(self):
+        # Flush the active tab's UI state into the session before validation,
+        # so the session reflects what the user just configured.
+        active_engine = self.engine_var.get()
+        self.controller.session.engine.provider = active_engine
+        active_tab = self.provider_tabs.get(active_engine)
+        if active_tab and hasattr(active_tab, "save_to_session"):
+            try:
+                active_tab.save_to_session()
+            except Exception as e:
+                logger.warning(f"Could not flush tab state to session: {e}")
+
         # Validate before proceeding
         is_valid, error_msg = self.controller.session.validate_workflow_state("Step3Process")
         if not is_valid:
             messagebox.showwarning("Validation Error", error_msg)
             return
-
-        # Update session
-        self.controller.session.engine.provider = self.engine_var.get()
-
-        # We need to retrieve values from the dialog if it was opened, or use defaults/session
-        # This UI flow is a bit tricky because the dialog is modal.
-        # Ideally, the dialog should update the session directly when "Save" is clicked (if we had a Save button)
-        # Or we should have the inputs on the main card.
-
-        # For now, let's assume the user configured it via the dialog which we will update to write to session.
-        pass
 
         logger.debug(f"Selected Engine: {self.controller.session.engine.provider}")
         self.controller.show_step("Step3Process")
