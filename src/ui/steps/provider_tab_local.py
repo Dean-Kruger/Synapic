@@ -59,6 +59,9 @@ class LocalProviderTab(ProviderTabBase):
                                               text_color="gray")
         self.cache_count_label.pack(side="left", padx=5)
 
+        # Tracks (button, model_id, is_classification) for filtering
+        self._model_buttons: list[tuple] = []
+
         ctk.CTkButton(header, text="+ Find & Download Models",
                       command=self.open_download_manager,
                       width=180).pack(side="right", padx=5)
@@ -130,6 +133,7 @@ class LocalProviderTab(ProviderTabBase):
         """Refresh the list of locally cached models."""
         for widget in self.local_list_frame.winfo_children():
             widget.destroy()
+        self._model_buttons.clear()
 
         try:
             from src.core import huggingface_utils
@@ -153,11 +157,17 @@ class LocalProviderTab(ProviderTabBase):
                 sorted_models = sorted(all_local.items(), key=lambda x: x[1].get('size_bytes', 0), reverse=True)
 
                 for model_id, info in sorted_models:
+                    task = info.get('suggested_task', '')
+                    is_class = (task == 'image-classification')
                     self.add_cached_model_item(
                         model_id,
                         info.get('size_str', 'Unknown size'),
-                        info.get('capability', 'Unknown')
+                        info.get('capability', 'Unknown'),
+                        is_classification=is_class,
                     )
+
+            # Apply current probability-mode filter
+            self._update_model_list_filter()
 
         except Exception as e:
             ctk.CTkLabel(
@@ -218,11 +228,32 @@ class LocalProviderTab(ProviderTabBase):
         self.probability_content.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
         self.probability_content.grid_columnconfigure(1, weight=1)
 
-        # Candidate tokens input
+        # Candidate tokens input — autocomplete entry
         ctk.CTkLabel(self.probability_content, text="Candidate Tokens:").grid(row=0, column=0, sticky="w", padx=(0, 10))
-        self.candidate_box = ctk.CTkTextbox(self.probability_content, height=60)
-        self.candidate_box.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(5, 5))
+
+        candidate_frame = ctk.CTkFrame(self.probability_content, fg_color="transparent")
+        candidate_frame.grid(row=0, column=1, sticky="ew", padx=(0, 10), pady=(5, 5))
+        candidate_frame.grid_columnconfigure(0, weight=1)
+
+        self.candidate_entry = ctk.CTkEntry(
+            candidate_frame,
+            placeholder_text="Type to search model labels, e.g. 'forest'...",
+            height=32,
+        )
+        self.candidate_entry.grid(row=0, column=0, sticky="ew")
+        self.candidate_entry.bind("<KeyRelease>", self._on_candidate_key_release)
+        self.candidate_entry.bind("<FocusOut>", self._hide_autocomplete)
+
+        # Hidden text box backing store for comma-separated candidates
+        self.candidate_box = ctk.CTkTextbox(candidate_frame, height=1)
+        self.candidate_box.grid(row=1, column=0, sticky="ew")
+        self.candidate_box.grid_remove()  # hidden — used only for persistence
         self.candidate_box.insert("1.0", "A,B,C,D")
+
+        # Autocomplete dropdown (hidden by default)
+        self._autocomplete_frame = None
+        self._autocomplete_buttons: list[ctk.CTkButton] = []
+        self._current_label_tokens: list[str] = []
 
         # Probability threshold (slider from less-strict 0% to strict 100%)
         ctk.CTkLabel(self.probability_content, text="Probability Threshold:").grid(
@@ -271,10 +302,11 @@ class LocalProviderTab(ProviderTabBase):
             self.probability_content.grid_remove()
         else:
             self.probability_content.grid()
+        self._update_model_list_filter()
 
     def _parse_probability_candidates(self):
-        """Parse candidate tokens from the textbox (comma/newline separated)."""
-        text = self.candidate_box.get("1.0", "end-1c").strip()
+        """Parse candidate tokens from the entry (comma separated)."""
+        text = self.candidate_entry.get().strip()
         if not text:
             return []
         return [c.strip() for c in re.split(r"[,;\n]+", text) if c.strip()]
@@ -296,6 +328,143 @@ class LocalProviderTab(ProviderTabBase):
             pct = 0
         self.threshold_value_label.configure(text=f"{pct}%")
 
+    # ------------------------------------------------------------------
+    # Model list filtering (probability mode)
+    # ------------------------------------------------------------------
+
+    def _update_model_list_filter(self):
+        """Dim non-classification models when probability mode is active."""
+        mode = self.probability_mode_var.get()
+        needs_classifier = mode in ("probability", "both")
+        selectable = 0
+        total = len(self._model_buttons)
+
+        for btn, _mid, is_class in self._model_buttons:
+            if needs_classifier and not is_class:
+                btn.configure(
+                    fg_color="#3B3B3B",
+                    text_color="#666666",
+                    state="disabled",
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    text_color="#2FA572",
+                    state="normal",
+                )
+                selectable += 1
+
+        # Update the list header with a compatibility note
+        if needs_classifier and total > 0:
+            self.list_header.configure(
+                text=(
+                    f"{self._get_models_header_text()}"
+                    f"    [{selectable}/{total} models support probability scoring]"
+                ),
+            )
+        else:
+            self.list_header.configure(text=self._get_models_header_text())
+
+    # ------------------------------------------------------------------
+    # Candidate token autocomplete
+    # ------------------------------------------------------------------
+
+    def _on_candidate_key_release(self, event):
+        """Show autocomplete suggestions as the user types."""
+        # Ignore modifier-only keys
+        if event.keysym in ("Shift_L", "Shift_R", "Control_L", "Control_R",
+                            "Alt_L", "Alt_R", "Caps_Lock", "Tab"):
+            return
+
+        typed = self.candidate_entry.get().strip().rstrip(",;")
+        if len(typed) < 1:
+            self._hide_autocomplete()
+            return
+
+        # Load label tokens from the selected model (cached)
+        if not self._current_label_tokens:
+            model_id = self.local_model_var.get()
+            if not model_id:
+                return
+            try:
+                from src.core import huggingface_utils
+                self._current_label_tokens = huggingface_utils.get_model_label_tokens(model_id)
+            except Exception:
+                return
+            if not self._current_label_tokens:
+                return
+
+        typed_lower = typed.lower()
+        matches = [l for l in self._current_label_tokens if typed_lower in l.lower()]
+        matches = matches[:8]  # cap dropdown
+
+        if not matches:
+            self._hide_autocomplete()
+            return
+
+        self._show_autocomplete(matches, typed)
+
+    def _show_autocomplete(self, matches, typed):
+        """Display an autocomplete dropdown below the entry."""
+        self._hide_autocomplete()
+
+        self._autocomplete_frame = ctk.CTkToplevel(self)
+        self._autocomplete_frame.overrideredirect(True)
+        self._autocomplete_frame.attributes("-topmost", True)
+        self._autocomplete_frame.configure(fg_color="#2B2B2B")
+
+        # Position below the entry widget
+        x = self.candidate_entry.winfo_rootx()
+        y = self.candidate_entry.winfo_rooty() + self.candidate_entry.winfo_height()
+        w = self.candidate_entry.winfo_width()
+        h = min(len(matches) * 28 + 4, 250)
+        self._autocomplete_frame.geometry(f"{w}x{h}+{x}+{y}")
+
+        self._autocomplete_buttons.clear()
+        for label in matches:
+            btn = ctk.CTkButton(
+                self._autocomplete_frame,
+                text=label,
+                anchor="w",
+                fg_color="transparent",
+                hover_color="#3B5998",
+                height=26,
+                font=("Roboto", 11),
+                command=lambda l=label: self._select_autocomplete(l),
+            )
+            btn.pack(fill="x", padx=2, pady=1)
+            self._autocomplete_buttons.append(btn)
+
+    def _select_autocomplete(self, label):
+        """Insert the selected label into the entry, replacing the partial text."""
+        current = self.candidate_entry.get().strip()
+        # Build the new candidate list: replace partial with the full label
+        parts = [p.strip() for p in re.split(r"[,;]+", current) if p.strip()]
+        if parts:
+            parts[-1] = label  # replace the last (incomplete) token
+        else:
+            parts = [label]
+        new_text = ", ".join(parts) + ", "
+        self.candidate_entry.delete(0, "end")
+        self.candidate_entry.insert(0, new_text)
+
+        # Also update the hidden backing store
+        self.candidate_box.delete("1.0", "end")
+        self.candidate_box.insert("1.0", new_text)
+
+        self._hide_autocomplete()
+        self.candidate_entry.focus_set()
+
+    def _hide_autocomplete(self, _event=None):
+        """Close the autocomplete dropdown if open."""
+        if self._autocomplete_frame is not None:
+            try:
+                self._autocomplete_frame.destroy()
+            except Exception:
+                pass
+            self._autocomplete_frame = None
+            self._autocomplete_buttons.clear()
+
     def _sync_probability_controls_from_session(self):
         """Populate the probability scoring controls from the session engine."""
         engine = self.session.engine
@@ -310,8 +479,13 @@ class LocalProviderTab(ProviderTabBase):
 
         candidates = getattr(engine, "probability_candidates", None) or []
         if candidates:
+            text = ",".join(str(c) for c in candidates)
+            self.candidate_entry.delete(0, "end")
+            self.candidate_entry.insert(0, text)
             self.candidate_box.delete("1.0", "end")
-            self.candidate_box.insert("1.0", ",".join(str(c) for c in candidates))
+            self.candidate_box.insert("1.0", text)
+        # Clear cached labels so they reload for the new model
+        self._current_label_tokens = []
 
         threshold = float(getattr(engine, "probability_threshold", 0.0) or 0.0)
         threshold = max(0.0, min(1.0, threshold))
@@ -320,7 +494,7 @@ class LocalProviderTab(ProviderTabBase):
 
         self._toggle_probability_section()
 
-    def add_cached_model_item(self, model_id, size_str, capability):
+    def add_cached_model_item(self, model_id, size_str, capability, is_classification=True):
         """Add a cached model to the list."""
         frame = ctk.CTkFrame(self.local_list_frame)
         frame.pack(fill="x", pady=2)
@@ -340,6 +514,9 @@ class LocalProviderTab(ProviderTabBase):
             command=lambda m=model_id: self.select_local_model(m)
         )
         btn.pack(side="left", fill="x", expand=True)
+
+        # Track for filtering
+        self._model_buttons.append((btn, model_id, is_classification))
 
         # Delete button
         ctk.CTkButton(
@@ -385,11 +562,12 @@ class LocalProviderTab(ProviderTabBase):
         )
 
     def _preload_candidate_tokens(self, model_id):
-        """Preload the candidate tokens box from the model's label set.
+        """Preload the candidate tokens from the model's label set.
 
-        Fills the box with the model's classification labels (from the local
+        Fills the entry with the model's classification labels (from the local
         cache) so the user doesn't have to type candidates by hand. Models
-        without a label set (e.g. captioning VLMs) leave the box unchanged.
+        without a label set (e.g. captioning VLMs) leave the entry unchanged.
+        Also caches the labels for autocomplete.
         """
         try:
             from src.core import huggingface_utils
@@ -397,9 +575,14 @@ class LocalProviderTab(ProviderTabBase):
         except Exception as e:
             logger.debug(f"Could not preload candidate tokens for {model_id}: {e}")
             return
+        # Cache for autocomplete
+        self._current_label_tokens = labels or []
         if labels:
+            text = ",".join(labels)
+            self.candidate_entry.delete(0, "end")
+            self.candidate_entry.insert(0, text)
             self.candidate_box.delete("1.0", "end")
-            self.candidate_box.insert("1.0", ",".join(labels))
+            self.candidate_box.insert("1.0", text)
             logger.info(
                 f"Preloaded {len(labels)} candidate tokens for {model_id}"
             )

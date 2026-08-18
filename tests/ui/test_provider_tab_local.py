@@ -51,10 +51,28 @@ class MockWidget:
     def winfo_viewable(self):
         return 1 if self._visible else 0
 
+    def winfo_rootx(self):
+        return 0
+
+    def winfo_rooty(self):
+        return 0
+
+    def winfo_height(self):
+        return 20
+
+    def winfo_width(self):
+        return 200
+
     def grid_columnconfigure(self, *args, **kwargs):
         pass
 
     def grid_rowconfigure(self, *args, **kwargs):
+        pass
+
+    def bind(self, *args, **kwargs):
+        pass
+
+    def focus_set(self):
         pass
 
 
@@ -172,6 +190,7 @@ module_mock.CTkSlider = MockSlider
 module_mock.CTkRadioButton = MockRadioButton
 module_mock.CTkTabview = MockWidget
 module_mock.CTkFont = MagicMock()
+module_mock.CTkToplevel = MockWidget
 module_mock.StringVar = MockStringVar
 
 # Another test module (tests/test_ui_dedup.py) may already have imported the
@@ -219,8 +238,8 @@ def test_local_ui_populates_engine():
 
     # Set UI values
     tab.mode_both.select()  # simulate selecting "Both" mode
-    tab.candidate_box.delete("1.0", "end")
-    tab.candidate_box.insert("1.0", "A,B,C,D")
+    tab.candidate_entry.delete(0, "end")
+    tab.candidate_entry.insert(0, "A,B,C,D")
     tab.threshold_slider.set(0.05)
 
     # Call save_to_session
@@ -239,8 +258,8 @@ def test_local_ui_parses_candidates_one_per_line():
     tab = make_tab(session)
 
     tab.mode_probability.select()
-    tab.candidate_box.delete("1.0", "end")
-    tab.candidate_box.insert("1.0", "cat\ndog\nbird")
+    tab.candidate_entry.delete(0, "end")
+    tab.candidate_entry.insert(0, "cat\ndog\nbird")
     tab.threshold_slider.set(0.5)
 
     tab.save_to_session()
@@ -287,7 +306,7 @@ def test_local_ui_refresh():
 
     # Verify UI reflects session
     assert tab.probability_mode_var.get() == "both"  # enabled session -> both
-    assert tab.candidate_box.get("1.0", "end-1c") == "X,Y,Z"
+    assert tab.candidate_entry.get() == "X,Y,Z"
     assert tab.threshold_slider.get() == 0.1
     assert tab.threshold_value_label._text == "10%"
 
@@ -299,8 +318,8 @@ def test_save_local_persists_probability_settings(tmp_path):
     tab = make_tab(session)
 
     tab.mode_both.select()
-    tab.candidate_box.delete("1.0", "end")
-    tab.candidate_box.insert("1.0", "cat,dog")
+    tab.candidate_entry.delete(0, "end")
+    tab.candidate_entry.insert(0, "cat,dog")
     tab.threshold_slider.set(0.25)
 
     cfg_path = tmp_path / "synapic_config.json"
@@ -375,7 +394,7 @@ def test_select_local_model_preloads_candidate_tokens():
         tab.select_local_model("org/model")
 
     assert tab.local_model_var.get() == "org/model"
-    assert tab.candidate_box.get("1.0", "end-1c") == "cat,dog,bird"
+    assert tab.candidate_entry.get() == "cat,dog,bird"
 
 
 def test_select_local_model_without_labels_keeps_candidates():
@@ -384,12 +403,12 @@ def test_select_local_model_without_labels_keeps_candidates():
     session = MockSession()
     tab = make_tab(session)
 
-    tab.candidate_box.delete("1.0", "end")
-    tab.candidate_box.insert("1.0", "A,B,C,D")
+    tab.candidate_entry.delete(0, "end")
+    tab.candidate_entry.insert(0, "A,B,C,D")
 
     from src.core import huggingface_utils
 
     with patch.object(huggingface_utils, "get_model_label_tokens", return_value=[]):
         tab.select_local_model("org/model")
 
-    assert tab.candidate_box.get("1.0", "end-1c") == "A,B,C,D"
+    assert tab.candidate_entry.get() == "A,B,C,D"
