@@ -743,6 +743,11 @@ def find_local_models() -> Dict[str, Dict[str, Any]]:
         A dictionary mapping model IDs to a metadata dict containing:
         'config', 'path', 'size_bytes', 'size_str', 'suggested_task', and 'capability'.
     """
+    # Weight file extensions that indicate a model is actually usable.
+    # Config-only repos (from Hub browsing or compatibility probes) only have
+    # config.json / preprocessor_config.json and are not usable for inference.
+    _WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth", ".onnx", ".gguf")
+
     local_models = {}
     cache_path = Path(HUGGINGFACE_HUB_CACHE)
     if not cache_path.exists():
@@ -770,25 +775,38 @@ def find_local_models() -> Dict[str, Dict[str, Any]]:
             latest_snapshot = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
             config_path = latest_snapshot / "config.json"
 
-            if config_path.exists():
-                with open(config_path, "r", encoding="utf-8") as f:
-                    model_config = json.load(f)
+            if not config_path.exists():
+                continue
 
-                # Calculate size of the entire model directory (snapshots + metadata)
-                size_bytes = get_dir_size(model_dir)
+            # Require at least one weight file — config-only repos (from Hub
+            # browsing or compatibility probes) are not usable for inference.
+            has_weights = any(
+                f.suffix in _WEIGHT_EXTENSIONS
+                for f in latest_snapshot.iterdir()
+                if f.is_file()
+            )
+            if not has_weights:
+                logging.debug(f"Skipping config-only model {model_id} (no weight files)")
+                continue
 
-                # Infer suggested task
-                suggested_task = get_suggested_task(model_config)
-                capability = get_model_capability(suggested_task)
+            with open(config_path, "r", encoding="utf-8") as f:
+                model_config = json.load(f)
 
-                local_models[model_id] = {
-                    "config": model_config,
-                    "path": latest_snapshot,
-                    "size_bytes": size_bytes,
-                    "size_str": format_size(size_bytes),
-                    "suggested_task": suggested_task,
-                    "capability": capability,
-                }
+            # Calculate size of the entire model directory (snapshots + metadata)
+            size_bytes = get_dir_size(model_dir)
+
+            # Infer suggested task
+            suggested_task = get_suggested_task(model_config)
+            capability = get_model_capability(suggested_task)
+
+            local_models[model_id] = {
+                "config": model_config,
+                "path": latest_snapshot,
+                "size_bytes": size_bytes,
+                "size_str": format_size(size_bytes),
+                "suggested_task": suggested_task,
+                "capability": capability,
+            }
         except Exception as e:
             logging.debug(f"Could not inspect model {model_id}: {e}")
             continue

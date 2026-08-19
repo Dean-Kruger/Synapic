@@ -2197,7 +2197,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.progress.pack(side="right", padx=10, fill="x", expand=True)
         self.progress.set(0)
 
-        # No auto-prefetch on launch — user must pick a filter or search first.
+        # Auto-fetch models for the default filter on dialog open.
         self._prefetch_per_page = 20
         self._prefetch_categories = [
             ("keyword", [config.MODEL_TASK_IMAGE_CLASSIFICATION]),
@@ -2206,6 +2206,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             ("multimodal", ["image-text-to-text"]),
         ]
         self._prefetch_all_results = []
+        self.after(200, self._on_filter_changed)
 
     def _show_prefetch_results(self, results):
         """Display prefetched models and set up infinite scroll."""
