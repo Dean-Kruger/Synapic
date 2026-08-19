@@ -2234,7 +2234,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         """Fetch top models for a single category from the Hub."""
         try:
             from huggingface_hub import list_models
-            from src.core import huggingface_utils
+            from src.core import huggingface_utils, config
 
             filter_tasks = {
                 "keyword": [config.MODEL_TASK_IMAGE_CLASSIFICATION],
@@ -2265,19 +2265,25 @@ class DownloadManagerDialog(ctk.CTkToplevel):
                     unique.append(r)
                     seen.add(r["id"])
 
+            # Show models immediately with "Loading..." size, then fetch sizes
+            # in background to avoid blocking the UI.
+            for item in unique:
+                item["size_bytes"] = 0
+                item["size_str"] = "Loading..."
+            self.after(0, lambda: self._show_prefetch_results(list(unique)) if self.winfo_exists() else None)
+
             from src.utils.concurrency import DaemonThreadPoolExecutor as ThreadPoolExecutor
             def fetch_size(item):
                 try:
-                    sz = huggingface_utils.get_remote_model_size(item["id"])
-                    item["size_bytes"] = sz
-                    item["size_str"] = huggingface_utils.format_size(sz)
+                	sz = huggingface_utils.get_remote_model_size(item["id"])
+                	item["size_bytes"] = sz
+                	item["size_str"] = huggingface_utils.format_size(sz)
                 except Exception:
-                    item["size_bytes"] = 0
-                    item["size_str"] = "Unknown"
+                	item["size_bytes"] = 0
+                	item["size_str"] = "Unknown"
                 return item
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=10) as executor:
                 results = list(executor.map(fetch_size, unique))
-            results = [r for r in results if (r.get("size_bytes") or 0) >= 1_000_000]
             self.after(0, lambda: self._show_prefetch_results(results) if self.winfo_exists() else None)
         except Exception as e:
             self.after(0, lambda: self.lbl_status.configure(
@@ -2336,28 +2342,26 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             # Note: suitability filtering happens on select/download, not here —
             # the download manager shows ALL Hub models so the user can browse.
             
-            # Fetch sizes concurrently to avoid UI lag
-            # from concurrent.futures import ThreadPoolExecutor -> Replaced with Daemon version
+            # Show models immediately with placeholder sizes, then fetch sizes
+            # in background so the user can see results right away.
+            for item in unique_results:
+                item['size_bytes'] = 0
+                item['size_str'] = "Loading..."
+            self.after(0, lambda: self.show_search_results(list(unique_results)) if self.winfo_exists() else None)
+
             from src.utils.concurrency import DaemonThreadPoolExecutor as ThreadPoolExecutor
-            
             def fetch_size(item):
-                mid = item['id']
                 try:
-                    size_bytes = huggingface_utils.get_remote_model_size(mid)
-                    item['size_bytes'] = size_bytes
-                    item['size_str'] = huggingface_utils.format_size(size_bytes)
+                    sz = huggingface_utils.get_remote_model_size(item['id'])
+                    item['size_bytes'] = sz
+                    item['size_str'] = huggingface_utils.format_size(sz)
                 except Exception:
                     item['size_bytes'] = 0
                     item['size_str'] = "Unknown"
                 return item
-
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=10) as executor:
                 results_with_details = list(executor.map(fetch_size, unique_results))
-
-            # Filter out tiny repos (config-only, adapters, etc.) under 1 MB
-            results_with_details = [r for r in results_with_details if (r.get('size_bytes') or 0) >= 1_000_000]
-
-            self.after(0, lambda: self.show_search_results(results_with_details) if self.winfo_exists() else None)
+            self.after(0, lambda: self.show_search_results(results_with_details, refresh_size_filter=False) if self.winfo_exists() else None)
         except Exception as e:
             error_msg = str(e)
             self.after(0, lambda: self.lbl_status.configure(text=f"Error: {error_msg}", text_color="red") if self.winfo_exists() else None)
