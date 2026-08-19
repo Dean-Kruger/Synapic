@@ -2503,34 +2503,44 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.poll_download_queue()
 
     def _prepare_and_download_model(self, model_id, download_queue):
+        import logging
         from src.core import huggingface_utils
 
+        logger = logging.getLogger(__name__)
+        logger.info(f"[DownloadManager] Preparing download for {model_id}")
+
         download_queue.put(("status_update", f"Checking compatibility for {model_id}..."))
+        logger.info(f"[DownloadManager] Running compatibility check for {model_id}")
         reason = huggingface_utils.get_local_inference_incompatibility_reason(model_id)
         if reason is not None:
+            logger.warning(f"[DownloadManager] Model {model_id} incompatible: {reason}")
             download_queue.put(("incompatible_model", (model_id, reason)))
             return
+        logger.info(f"[DownloadManager] Compatibility check passed for {model_id}")
 
+        logger.info(f"[DownloadManager] Starting download_model_worker for {model_id}")
         huggingface_utils.download_model_worker(model_id, download_queue)
 
     def poll_download_queue(self):
+        import logging
+        _logger = logging.getLogger(__name__)
         try:
             while True:
                 msg_type, data = self.download_queue.get_nowait()
+                _logger.info(f"[DownloadManager] Queue message: {msg_type} (data={data!r:.200})" if isinstance(data, str) else f"[DownloadManager] Queue message: {msg_type}")
                 
                 if msg_type == "model_download_progress":
                     downloaded, total = data
                     if total > 0:
                         self.progress.set(downloaded / total)
-                        # Optional: Update status with %
-                        # self.lbl_status.configure(text=f"Downloading... {downloaded/total*100:.1f}%")
                 
                 elif msg_type == "status_update":
                     self.lbl_status.configure(text=data, text_color="gray")
                 
                 elif msg_type == "download_complete":
+                    _logger.info(f"[DownloadManager] Download complete: {data}")
                     self.on_download_complete(data)
-                    return # Stop polling
+                    return
                 
                 elif msg_type == "incompatible_model":
                     model_id, reason = data

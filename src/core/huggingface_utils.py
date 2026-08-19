@@ -483,17 +483,27 @@ def _download_missing_files_with_progress(model_id: str, q, token=None) -> str:
     sees aggregate byte updates across concurrent downloads and xet/http code
     paths, while still letting snapshot_download manage caching and resume.
     """
+    logging.info(f"[Download] _download_missing_files_with_progress called for {model_id}")
     _, missing_files = _get_missing_repo_files(model_id, token=token)
 
     total_to_download = sum(size for _, size in missing_files)
     files_to_download = len(missing_files)
+    logging.info(
+        f"[Download] {model_id}: {files_to_download} files to download, "
+        f"total size: {format_size(total_to_download)} ({total_to_download:,} bytes)"
+    )
+    for fname, fsize in missing_files:
+        logging.info(f"[Download]   - {fname}: {format_size(fsize)}")
 
     if files_to_download == 0:
+        logging.info(f"[Download] {model_id}: no missing files found")
         snapshot_path = _get_latest_snapshot_path(model_id)
         if snapshot_path is not None:
+            logging.info(f"[Download] {model_id}: returning existing snapshot at {snapshot_path}")
             q.put(("model_download_progress", (1, 1)))
             return snapshot_path
 
+        logging.info(f"[Download] {model_id}: no snapshot found, calling snapshot_download")
         local_model_path = snapshot_download(
             repo_id=model_id,
             token=token,
@@ -504,8 +514,8 @@ def _download_missing_files_with_progress(model_id: str, q, token=None) -> str:
 
     q.put(("total_model_size", total_to_download))
     logging.info(
-        f"Need to download {files_to_download} files, total size: "
-        f"{format_size(total_to_download)} ({total_to_download:,} bytes)"
+        f"[Download] {model_id}: starting download of {files_to_download} files, "
+        f"total: {format_size(total_to_download)} ({total_to_download:,} bytes)"
     )
 
     q.put(("status_update", f"Downloading {model_id}..."))
@@ -520,6 +530,7 @@ def _download_missing_files_with_progress(model_id: str, q, token=None) -> str:
         return nullcontext(tracker.register_bar(total=total, initial=initial))
 
     try:
+        logging.info(f"[Download] {model_id}: calling snapshot_download...")
         hf_file_download._get_progress_bar_context = _patched_get_progress_bar_context
         local_model_path = snapshot_download(
             repo_id=model_id,
@@ -527,6 +538,10 @@ def _download_missing_files_with_progress(model_id: str, q, token=None) -> str:
             token=token,
             local_dir_use_symlinks=_USE_SYMLINKS,
         )
+        logging.info(f"[Download] {model_id}: snapshot_download returned {local_model_path}")
+    except Exception as e:
+        logging.exception(f"[Download] {model_id}: snapshot_download FAILED: {e}")
+        raise
     finally:
         hf_file_download._get_progress_bar_context = original_get_progress_bar_context
 
@@ -590,19 +605,28 @@ def is_model_downloaded(model_id, token=None):
     if not snapshots:
         return False
 
-    latest_snapshot = sorted(snapshots)[-1]
-    snapshot_path = os.path.join(snapshot_dir, latest_snapshot)
-
-    # Offline heuristic: a downloaded model always has config.json.
-    # If it's present and the snapshot has >0 regular files, the model
-    # is present — no need to call the Hub API.
-    if os.path.isfile(os.path.join(snapshot_path, "config.json")):
-        file_count = sum(
-            1 for f in os.listdir(snapshot_path)
-            if not f.endswith(config.MODEL_FILE_EXCLUSIONS)
+    # Offline heuristic: a fully downloaded model has config.json AND
+    # at least one weight file (.safetensors, .bin, etc.). Config-only
+    # repos (from Hub browsing or compatibility probes) only have config
+    # files and are not usable for inference.
+    # Check ALL snapshots — some models have multiple (partial probe + full download).
+    _WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".pt", ".pth", ".onnx", ".gguf")
+    for snap_name in sorted(snapshots):
+        snapshot_path = os.path.join(snapshot_dir, snap_name)
+        if not os.path.isfile(os.path.join(snapshot_path, "config.json")):
+            continue
+        has_weights = any(
+            f.endswith(_WEIGHT_EXTENSIONS)
+            for f in os.listdir(snapshot_path)
         )
-        if file_count > 0:
+        if has_weights:
             return True
+
+    # No snapshot has both config and weights — model is not fully downloaded.
+    logging.debug(
+        f"Model {model_id} has no snapshot with weight files — treating as not downloaded"
+    )
+    return False
 
     # Fallback: verify against the Hub (requires network).
     try:
@@ -772,21 +796,27 @@ def find_local_models() -> Dict[str, Dict[str, Any]]:
             if not snapshot_dirs:
                 continue
 
-            latest_snapshot = max(snapshot_dirs, key=lambda p: p.stat().st_mtime)
-            config_path = latest_snapshot / "config.json"
+            # Find the snapshot that has the most complete set of files.
+            # Some models have multiple snapshots (e.g. a partial probe + full download).
+            best_snapshot = None
+            best_weight_count = 0
+            for snap in snapshot_dirs:
+                weight_count = sum(
+                    1 for entry in snap.iterdir()
+                    if (entry.is_file() or entry.is_symlink())
+                    and entry.name.endswith(_WEIGHT_EXTENSIONS)
+                )
+                if weight_count > best_weight_count:
+                    best_weight_count = weight_count
+                    best_snapshot = snap
 
-            if not config_path.exists():
+            if best_snapshot is None or best_weight_count == 0:
+                logging.debug(f"Skipping config-only model {model_id} (no weight files in any snapshot)")
                 continue
 
-            # Require at least one weight file — config-only repos (from Hub
-            # browsing or compatibility probes) are not usable for inference.
-            has_weights = any(
-                f.suffix in _WEIGHT_EXTENSIONS
-                for f in latest_snapshot.iterdir()
-                if f.is_file()
-            )
-            if not has_weights:
-                logging.debug(f"Skipping config-only model {model_id} (no weight files)")
+            latest_snapshot = best_snapshot
+            config_path = latest_snapshot / "config.json"
+            if not config_path.exists():
                 continue
 
             with open(config_path, "r", encoding="utf-8") as f:
@@ -1017,23 +1047,27 @@ def _legacy_load_model_with_progress(model_id, task, q, token=None, device=-1):
 
 def download_model_worker(model_id, q, token=None):
     """Worker thread specifically for downloading a model with accurate progress reporting."""
-    logging.info(f"Starting model download worker for: {model_id}")
+    logging.info(f"[Download] Starting download worker for: {model_id}")
     try:
-        if is_model_downloaded(model_id, token=token):
-            logging.info(f"Model {model_id} already fully downloaded.")
+        logging.info(f"[Download] Checking if {model_id} is already downloaded...")
+        downloaded = is_model_downloaded(model_id, token=token)
+        logging.info(f"[Download] is_model_downloaded({model_id}) = {downloaded}")
+        if downloaded:
+            logging.info(f"[Download] Model {model_id} already fully downloaded — skipping.")
             q.put(("model_download_progress", (100, 100)))
             q.put(("download_complete", model_id))
             return
 
         q.put(("status_update", f"Checking files for {model_id}..."))
-        logging.info(f"Checking which files need to be downloaded for {model_id}...")
+        logging.info(f"[Download] Checking which files need to be downloaded for {model_id}...")
 
+        logging.info(f"[Download] Calling _download_missing_files_with_progress for {model_id}")
         _download_missing_files_with_progress(model_id, q, token=token)
 
-        logging.info(f"Model download complete for {model_id}!")
+        logging.info(f"[Download] Download complete for {model_id}!")
         q.put(("download_complete", model_id))
     except Exception as e:
-        logging.exception(f"Failed to download model: {model_id}")
+        logging.exception(f"[Download] Failed to download model: {model_id}")
         q.put(("error", f"Failed to download model: {e}"))
 
 
