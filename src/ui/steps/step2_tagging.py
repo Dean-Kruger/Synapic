@@ -1800,11 +1800,9 @@ class Step2Tagging(ctk.CTkFrame):
                 for t in tasks:
                     models = list_models(
                         filter=t,
-                        library="transformers",
                         search=query,
                         limit=5,
                         sort="downloads",
-                        direction=-1,
                     )
                     for m in models:
                         all_results.append({
@@ -2226,10 +2224,8 @@ class DownloadManagerDialog(ctk.CTkToplevel):
                 for task in tasks:
                     models = list_models(
                         filter=task,
-                        library="transformers",
                         limit=self._prefetch_per_page,
                         sort="downloads",
-                        direction=-1,
                     )
                     for m in models:
                         all_results.append({
@@ -2261,6 +2257,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
 
             with ThreadPoolExecutor(max_workers=5) as executor:
                 results = list(executor.map(fetch_size, unique))
+
+            # Filter out tiny repos (config-only, adapters, etc.) under 1 MB
+            results = [r for r in results if (r.get('size_bytes') or 0) >= 1_000_000]
 
             self.after(0, lambda: self._show_prefetch_results(results) if self.winfo_exists() else None)
         except Exception as e:
@@ -2310,11 +2309,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             for t in tasks:
                 models = list_models(
                     filter=t,
-                    library="transformers",
                     search=query,
                     limit=10,
                     sort="downloads",
-                    direction=-1,
                 )
                 for m in models:
                     all_results.append({
@@ -2331,14 +2328,8 @@ class DownloadManagerDialog(ctk.CTkToplevel):
                     unique_results.append(r)
                     seen.add(r['id'])
             
-            # Filter out models our local runtime can't use.
-            compatible_results = []
-            for r in unique_results:
-                if huggingface_utils.is_model_suitable_for_local_inference(r['id'], task=r['task']):
-                    compatible_results.append(r)
-                else:
-                    logger.debug(f"Filtered out incompatible model: {r['id']}")
-            unique_results = compatible_results
+            # Note: suitability filtering happens on select/download, not here —
+            # the download manager shows ALL Hub models so the user can browse.
             
             # Fetch sizes concurrently to avoid UI lag
             # from concurrent.futures import ThreadPoolExecutor -> Replaced with Daemon version
@@ -2357,6 +2348,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
 
             with ThreadPoolExecutor(max_workers=5) as executor:
                 results_with_details = list(executor.map(fetch_size, unique_results))
+
+            # Filter out tiny repos (config-only, adapters, etc.) under 1 MB
+            results_with_details = [r for r in results_with_details if (r.get('size_bytes') or 0) >= 1_000_000]
 
             self.after(0, lambda: self.show_search_results(results_with_details) if self.winfo_exists() else None)
         except Exception as e:
@@ -2466,16 +2460,25 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         btn_download.pack(side="right", padx=5)
 
     def test_via_api(self, model_id):
-        # Switch to HF tab in Step2Tagging and select model
-        step2 = self.local_tab
-        if step2 is None or not hasattr(step2, 'engine_var'):
+        # Try to select the model in the local tab (or HF tab if opened from Step2Tagging)
+        local_tab = self.local_tab
+        if local_tab is None:
             self.lbl_status.configure(text="Cannot switch tabs from this context.", text_color="red")
             return
-        step2.engine_var.set("huggingface")
-        step2.hf_model.delete(0, "end")
-        step2.hf_model.insert(0, model_id)
-        self.lbl_status.configure(text=f"Selected {model_id} for API testing. Switch to 'Hugging Face' tab.")
-        step2.focus_set()
+        # If local_tab is the LocalProviderTab, set model directly
+        if hasattr(local_tab, 'local_model_var'):
+            local_tab.local_model_var.set(model_id)
+            if hasattr(local_tab, 'select_local_model'):
+                local_tab.select_local_model()
+            self.lbl_status.configure(text=f"Selected {model_id} for local inference.", text_color="green")
+        elif hasattr(local_tab, 'engine_var'):
+            # Opened from Step2Tagging
+            local_tab.engine_var.set("huggingface")
+            local_tab.hf_model.delete(0, "end")
+            local_tab.hf_model.insert(0, model_id)
+            self.lbl_status.configure(text=f"Selected {model_id} for API testing.", text_color="green")
+        else:
+            self.lbl_status.configure(text="Cannot switch tabs from this context.", text_color="red")
 
     def start_download(self, model_id):
         self.lbl_status.configure(text=f"Preparing download for {model_id}...", text_color="gray")

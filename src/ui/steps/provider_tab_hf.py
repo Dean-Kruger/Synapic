@@ -141,11 +141,9 @@ class HuggingFaceProviderTab(ProviderTabBase):
         for t in tasks:
             models = list_models(
                 filter=t,
-                library="transformers",
                 search=query_text,
                 limit=5,
                 sort="downloads",
-                direction=-1,
             )
             for m in models:
                 all_results.append({

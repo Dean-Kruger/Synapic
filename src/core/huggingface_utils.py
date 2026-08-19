@@ -640,9 +640,7 @@ def get_downloaded_models(task, token=None):
         # Limit results to reduce network load and UI clutter
         models = list_models(
             filter=task,
-            library="transformers",
             sort="downloads",
-            direction=-1,
             limit=config.MODEL_SEARCH_LIMIT,
             token=token,
         )
@@ -666,9 +664,7 @@ def find_models_worker(task, q, token=None):
         # Request the top N models by downloads to keep the UI responsive.
         models = list_models(
             filter=task,
-            library="transformers",
             sort="downloads",
-            direction=-1,
             limit=config.MODEL_SEARCH_LIMIT,
             token=token,
         )
@@ -1102,9 +1098,7 @@ def find_models_by_task(task: str) -> Tuple[List[str], List[str]]:
         # Limit to the top N models to avoid overwhelming the UI and reduce network usage
         models = list_models(
             filter=task,
-            library="transformers",
             sort="downloads",
-            direction=-1,
             limit=config.MODEL_SEARCH_LIMIT,
         )
         model_ids = [
