@@ -2149,6 +2149,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
                 text=label,
                 value=value,
                 variable=self.search_filter_var,
+                command=self._on_filter_changed,
             ).pack(side="left", padx=8, pady=8)
 
         size_filter = ctk.CTkFrame(self)
@@ -2196,8 +2197,7 @@ class DownloadManagerDialog(ctk.CTkToplevel):
         self.progress.pack(side="right", padx=10, fill="x", expand=True)
         self.progress.set(0)
 
-        # Pre-populate: auto-load top models per category on launch
-        self._prefetch_page = 0
+        # No auto-prefetch on launch — user must pick a filter or search first.
         self._prefetch_per_page = 20
         self._prefetch_categories = [
             ("keyword", [config.MODEL_TASK_IMAGE_CLASSIFICATION]),
@@ -2206,66 +2206,6 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             ("multimodal", ["image-text-to-text"]),
         ]
         self._prefetch_all_results = []
-        self.after(200, self._start_prefetch)
-
-    def _start_prefetch(self):
-        """Load top models per category in background on dialog launch."""
-        self.lbl_status.configure(text="Loading popular models from Hub...", text_color="gray")
-        self._worker.submit("prefetch", self._prefetch_worker)
-
-    def _prefetch_worker(self):
-        """Fetch top-N models for each category."""
-        try:
-            from huggingface_hub import list_models
-            from src.core import huggingface_utils
-
-            all_results = []
-            for cat_name, tasks in self._prefetch_categories:
-                for task in tasks:
-                    models = list_models(
-                        filter=task,
-                        limit=self._prefetch_per_page,
-                        sort="downloads",
-                    )
-                    for m in models:
-                        all_results.append({
-                            "id": m.id,
-                            "task": task,
-                            "capability": huggingface_utils.get_model_capability(task),
-                        })
-
-            # Deduplicate
-            seen = set()
-            unique = []
-            for r in all_results:
-                if r["id"] not in seen:
-                    unique.append(r)
-                    seen.add(r["id"])
-
-            # Fetch sizes concurrently
-            from src.utils.concurrency import DaemonThreadPoolExecutor as ThreadPoolExecutor
-
-            def fetch_size(item):
-                try:
-                    sz = huggingface_utils.get_remote_model_size(item["id"])
-                    item["size_bytes"] = sz
-                    item["size_str"] = huggingface_utils.format_size(sz)
-                except Exception:
-                    item["size_bytes"] = 0
-                    item["size_str"] = "Unknown"
-                return item
-
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                results = list(executor.map(fetch_size, unique))
-
-            # Filter out tiny repos (config-only, adapters, etc.) under 1 MB
-            results = [r for r in results if (r.get('size_bytes') or 0) >= 1_000_000]
-
-            self.after(0, lambda: self._show_prefetch_results(results) if self.winfo_exists() else None)
-        except Exception as e:
-            self.after(0, lambda: self.lbl_status.configure(
-                text=f"Could not load models: {e}", text_color="red"
-            ) if self.winfo_exists() else None)
 
     def _show_prefetch_results(self, results):
         """Display prefetched models and set up infinite scroll."""
@@ -2278,6 +2218,70 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             text_color="gray",
         )
         self.show_search_results(results)
+
+    def _on_filter_changed(self):
+        """Fetch top models for the newly selected filter category."""
+        search_filter = self.search_filter_var.get()
+        self.lbl_status.configure(text=f"Loading top {search_filter} models from Hub...", text_color="gray")
+        self._search_results_cache = []
+        self._reset_size_filter()
+        for widget in self.results_frame.winfo_children():
+            widget.destroy()
+        self._worker.submit_replacing("prefetch", self._filter_worker, search_filter)
+
+    def _filter_worker(self, category):
+        """Fetch top models for a single category from the Hub."""
+        try:
+            from huggingface_hub import list_models
+            from src.core import huggingface_utils
+
+            filter_tasks = {
+                "keyword": [config.MODEL_TASK_IMAGE_CLASSIFICATION],
+                "category": [config.MODEL_TASK_ZERO_SHOT],
+                "description": [config.MODEL_TASK_IMAGE_TO_TEXT],
+                "multimodal": ["image-text-to-text", "visual-question-answering", config.MODEL_TASK_IMAGE_TO_TEXT],
+            }
+            tasks = filter_tasks.get(category, filter_tasks["multimodal"])
+
+            all_results = []
+            for t in tasks:
+                models = list_models(
+                    filter=t,
+                    limit=self._prefetch_per_page,
+                    sort="downloads",
+                )
+                for m in models:
+                    all_results.append({
+                        "id": m.id,
+                        "task": t,
+                        "capability": huggingface_utils.get_model_capability(t),
+                    })
+
+            seen = set()
+            unique = []
+            for r in all_results:
+                if r["id"] not in seen:
+                    unique.append(r)
+                    seen.add(r["id"])
+
+            from src.utils.concurrency import DaemonThreadPoolExecutor as ThreadPoolExecutor
+            def fetch_size(item):
+                try:
+                    sz = huggingface_utils.get_remote_model_size(item["id"])
+                    item["size_bytes"] = sz
+                    item["size_str"] = huggingface_utils.format_size(sz)
+                except Exception:
+                    item["size_bytes"] = 0
+                    item["size_str"] = "Unknown"
+                return item
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                results = list(executor.map(fetch_size, unique))
+            results = [r for r in results if (r.get("size_bytes") or 0) >= 1_000_000]
+            self.after(0, lambda: self._show_prefetch_results(results) if self.winfo_exists() else None)
+        except Exception as e:
+            self.after(0, lambda: self.lbl_status.configure(
+                text=f"Could not load models: {e}", text_color="red"
+            ) if self.winfo_exists() else None)
 
     def start_search(self):
         query = self.search_entry.get()
