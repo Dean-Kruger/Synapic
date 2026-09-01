@@ -998,12 +998,9 @@ def _legacy_load_model_with_progress(model_id, task, q, token=None, device=-1):
             q.put(("model_download_progress", (total_missing, total_missing)))
         else:
             logging.info(f"Model {model_id} already downloaded.")
-            model_cache_dir = get_model_cache_dir(model_id)
-            snapshot_dir = os.path.join(model_cache_dir, "snapshots")
-            snapshots = os.listdir(snapshot_dir)
-            if snapshots:
-                latest_snapshot = sorted(snapshots)[-1]
-                local_model_path = os.path.join(snapshot_dir, latest_snapshot)
+            local_model_path = _get_latest_snapshot_path(model_id)
+            if local_model_path:
+                pass
             else:
                 local_model_path = snapshot_download(
                     repo_id=model_id,
@@ -1251,13 +1248,10 @@ def load_model(
             logging.info(f"Model download complete for {model_id} (sync).")
         else:
             logging.info(f"Model {model_id} is already downloaded (sync).")
-            model_cache_dir = get_model_cache_dir(model_id)
-            snapshot_dir = os.path.join(model_cache_dir, "snapshots")
-            snapshots = os.listdir(snapshot_dir)
-            if snapshots:
-                latest_snapshot = sorted(snapshots)[-1]
-                local_model_path = os.path.join(snapshot_dir, latest_snapshot)
-                logging.info(f"Using latest snapshot: {latest_snapshot}")
+            local_model_path = _get_latest_snapshot_path(model_id)
+            if local_model_path:
+                snapshot_name = os.path.basename(local_model_path)
+                logging.info(f"Using best snapshot: {snapshot_name}")
             else:
                 # Should typically not happen if is_model_downloaded returned True,
                 # but good for safety.
