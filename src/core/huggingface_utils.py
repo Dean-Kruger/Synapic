@@ -428,7 +428,11 @@ class LiveByteProgressTracker:
 
 
 def _get_latest_snapshot_path(model_id: str) -> Optional[str]:
-    """Return the most recent cached snapshot path for a model, if available."""
+    """Return the best cached snapshot path for a model, if available.
+
+    Picks the snapshot with the most files (most complete download).
+    Falls back to lexicographic sort for equal counts.
+    """
     model_cache_dir = get_model_cache_dir(model_id)
     snapshot_dir = os.path.join(model_cache_dir, "snapshots")
     if not os.path.exists(snapshot_dir):
@@ -438,8 +442,15 @@ def _get_latest_snapshot_path(model_id: str) -> Optional[str]:
     if not snapshots:
         return None
 
-    latest_snapshot = sorted(snapshots)[-1]
-    return os.path.join(snapshot_dir, latest_snapshot)
+    # Prefer the snapshot with the most files (most complete download)
+    best_snapshot = max(
+        snapshots,
+        key=lambda s: (
+            len(os.listdir(os.path.join(snapshot_dir, s))),
+            s,  # lexicographic tiebreak
+        ),
+    )
+    return os.path.join(snapshot_dir, best_snapshot)
 
 
 def _get_missing_repo_files(
