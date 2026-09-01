@@ -121,6 +121,15 @@ class Step3Process(ctk.CTkFrame):
         self.console.insert("0.0", "--- Log initialized ---\n")
         self.console.configure(state="disabled")
 
+        # Right-click context menu for copying log text
+        self._console_menu = tk.Menu(self.console, tearoff=0)
+        self._console_menu.add_command(label="Copy", command=self._console_copy_selection)
+        self._console_menu.add_command(label="Select All", command=self._console_select_all)
+        self._console_menu.add_separator()
+        self._console_menu.add_command(label="Copy All", command=self._console_copy_all)
+        self.console.bind("<Button-3>", self._show_console_menu)
+        self.console.bind("<Control-a>", lambda e: self._console_select_all())
+
         # Navigation Buttons
         nav_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         nav_frame.grid(row=5, column=0, pady=20, sticky="ew")
@@ -240,3 +249,24 @@ class Step3Process(ctk.CTkFrame):
         self.console.insert("end", f"> {message}\n")
         self.console.see("end")
         self.console.configure(state="disabled")
+
+    def _show_console_menu(self, event):
+        self._console_menu.tk_popup(event.x_root, event.y_root)
+
+    def _console_copy_selection(self):
+        try:
+            selection = self.console.get("sel.first", "sel.last")
+            self.clipboard_clear()
+            self.clipboard_append(selection)
+        except tk.TclError:
+            pass  # No selection
+
+    def _console_select_all(self):
+        self.console.configure(state="normal")
+        self.console.tag_add("sel", "1.0", "end")
+        self.console.configure(state="disabled")
+        return "break"
+
+    def _console_copy_all(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.console.get("1.0", "end"))
