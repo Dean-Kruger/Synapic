@@ -1,6 +1,7 @@
 ; Synapic Installer
 ; NSIS Script to create installer for Synapic
 
+!define VERSION "2.5.0"
 !define PRODUCT_NAME "Synapic"
 !define PRODUCT_VERSION "${VERSION}"
 !define PRODUCT_PUBLISHER "Synapic Project"
