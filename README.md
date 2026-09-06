@@ -243,7 +243,7 @@ Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ## License
 
-Proprietary. All rights reserved.
+Released under the [MIT License](LICENSE).
 
 ## Credits
 

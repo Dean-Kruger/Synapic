@@ -3,7 +3,7 @@
 
 ; Version: set via command line (makensis /DVERSION=x.y.z), or defaults here
 !ifndef VERSION
-  !define VERSION "2.5.0"
+  !define VERSION "2.5.1"
 !endif
 !define PRODUCT_NAME "Synapic"
 !define PRODUCT_VERSION "${VERSION}"
