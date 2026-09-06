@@ -47,6 +47,15 @@ sys.modules["tkinter"] = MagicMock()
 # separate mock, which import_module would resolve instead.
 import tkinter  # noqa: E402
 
+# Also register the submodules that the steps package imports via
+# ``import tkinter.messagebox as messagebox``. A bare MagicMock has no
+# ``__path__``, so the import system cannot resolve real submodules behind
+# it and headless environments (no real tkinter) fail during collection.
+tkinter.messagebox = MagicMock()
+tkinter.filedialog = MagicMock()
+sys.modules["tkinter.messagebox"] = tkinter.messagebox
+sys.modules["tkinter.filedialog"] = tkinter.filedialog
+
 from src.ui.steps.step4_results import Step4Results, logger  # noqa: E402
 
 
@@ -93,10 +102,13 @@ class TestExportReport:
         assert rows[1] == ["Successful", "1"]
         assert rows[2] == ["Failed", "1"]
         assert rows[3] == []
-        # Header + one row per result
-        assert rows[4] == ["Filename", "Status", "Tags"]
-        assert rows[5] == ["a.jpg", "Success", "Cat: Nature, Kws: 2, Desc: ..."]
-        assert rows[6] == ["b.jpg", "Write Failed", "Cat: , Kws: 0, Desc: [AI: No Result]..."]
+        # Header + one row per result (results without a scoring payload get
+        # empty tier/calibrated/probability cells)
+        assert rows[4] == ["Filename", "Status", "Tags", "Scoring Tier", "Calibrated", "Probabilities"]
+        assert rows[5][:3] == ["a.jpg", "Success", "Cat: Nature, Kws: 2, Desc: ..."]
+        assert rows[5][3:] == ["", "", ""]
+        assert rows[6][:3] == ["b.jpg", "Write Failed", "Cat: , Kws: 0, Desc: [AI: No Result]..."]
+        assert rows[6][3:] == ["", "", ""]
         assert len(rows) == 7
 
         # Success messagebox shown with the path
@@ -171,5 +183,115 @@ class TestExportReport:
         with open(target, encoding="utf-8-sig", newline="") as f:
             rows = list(csv.reader(f))
         assert rows[0] == ["Total Processed", "2"]
-        assert rows[4] == ["Filename", "Status", "Tags"]
+        assert rows[4] == ["Filename", "Status", "Tags", "Scoring Tier", "Calibrated", "Probabilities"]
         assert len(rows) == 5
+
+    # -------------------------------------------------------------------
+    # Tier badge + calibrated labeling (KEYWORD_SCORING_DESIGN.md integration)
+    # -------------------------------------------------------------------
+
+    def test_export_includes_tier_calibrated_and_probabilities(self, tmp_path):
+        session = make_session()
+        session.results = deque([
+            {
+                "filename": "scored.jpg",
+                "status": "Success",
+                "tags": "Cat: A, Kws: 2, Desc: ...",
+                "probabilities": {"A": 0.7, "B": 0.2},
+                "scoring": {
+                    "tier": "label_confidence",
+                    "calibrated": False,
+                    "scores": [
+                        {"keyword": "A", "score": 0.7, "matched": True, "match_type": "exact"},
+                        {"keyword": "B", "score": 0.2, "matched": True, "match_type": "exact"},
+                    ],
+                    "notes": [],
+                },
+            },
+            {
+                "filename": "calibrated.jpg",
+                "status": "Success",
+                "tags": "Cat: X, Kws: 1, Desc: ...",
+                "probabilities": {"X": 0.9},
+                "scoring": {"tier": "logprob", "calibrated": True, "scores": [], "notes": []},
+            },
+        ])
+        step = make_step(session)
+        target = tmp_path / "tiers.csv"
+
+        with patch.object(
+            tkinter.filedialog, "asksaveasfilename", return_value=str(target)
+        ), patch.object(tkinter.messagebox, "showinfo"):
+            step.export_report()
+
+        with open(target, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.reader(f))
+
+        assert rows[4] == ["Filename", "Status", "Tags", "Scoring Tier", "Calibrated", "Probabilities"]
+        assert rows[5][:3] == ["scored.jpg", "Success", "Cat: A, Kws: 2, Desc: ..."]
+        assert rows[5][3] == "label_confidence"
+        assert rows[5][4] == "no"
+        assert rows[5][5] == "A=0.700; B=0.200"
+        assert rows[6][3] == "logprob"
+        assert rows[6][4] == "yes"
+        assert rows[6][5] == "X=0.900"
+
+    def test_export_legacy_entries_without_scoring_get_blank_tier_columns(self, tmp_path):
+        """Results from runs before the scoring contract export empty tier/
+        calibrated cells and keep the legacy probabilities rendering."""
+        session = make_session()
+        session.results = deque([
+            {
+                "filename": "legacy.jpg",
+                "status": "Success",
+                "tags": "Cat: Nature, Kws: 1, Desc: ...",
+                "probabilities": {"A": 0.5},
+            },
+            {"filename": "no-probs.jpg", "status": "Write Failed", "tags": "Cat: , Kws: 0, Desc: ..."},
+        ])
+        step = make_step(session)
+        target = tmp_path / "legacy.csv"
+
+        with patch.object(
+            tkinter.filedialog, "asksaveasfilename", return_value=str(target)
+        ), patch.object(tkinter.messagebox, "showinfo"):
+            step.export_report()
+
+        with open(target, encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.reader(f))
+
+        assert rows[5][3] == ""
+        assert rows[5][4] == ""
+        assert rows[5][5] == "A=0.500"
+        assert rows[6][3] == ""
+        assert rows[6][4] == ""
+        assert rows[6][5] == ""
+
+    def test_format_probabilities_formats_and_tolerates_non_numeric(self):
+        fmt = Step4Results._format_probabilities
+        assert fmt({"A": 0.7, "B": 0.2}) == "A=0.700; B=0.200"
+        assert fmt(None) == ""
+        assert fmt({}) == ""
+        assert fmt({"weird": "high"}) == "weird=high"
+
+    def test_scoring_badge_labels_calibrated_vs_not(self):
+        assert Step4Results.scoring_badge({"tier": "logprob"}) == (
+            "logprob · calibrated", "green"
+        )
+        assert Step4Results.scoring_badge({"tier": "label_confidence"}) == (
+            "label conf. · not calibrated", "orange"
+        )
+        assert Step4Results.scoring_badge({"tier": "semantic_json"}) == (
+            "semantic JSON · not calibrated", "orange"
+        )
+        assert Step4Results.scoring_badge({"tier": "unavailable"}) == (
+            "scoring unavailable", "gray"
+        )
+
+    def test_scoring_badge_is_none_for_legacy_entries_and_unknown_tiers(self):
+        # Pre-scoring results: no badge rather than a misleading default.
+        assert Step4Results.scoring_badge(None) is None
+        assert Step4Results.scoring_badge("not-a-dict") is None
+        assert Step4Results.scoring_badge({}) is None
+        # Unknown tier from a newer payload: shown honestly, gray.
+        assert Step4Results.scoring_badge({"tier": "quantum"}) == ("quantum", "gray")

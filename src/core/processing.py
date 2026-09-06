@@ -56,14 +56,17 @@ from . import openrouter_utils
 from . import image_processing
 from . import config
 from src.utils.concurrency import DaemonThreadPoolExecutor
+from . import keyword_scoring
+from . import keyword_scoring_adapters
 
 # Optional Groq integration (for Groq SDK-based inference)
 try:
-    from src.integrations.groq_package_client import GroqPackageClient
+    from src.integrations.groq_package_client import GroqPackageClient, GroqVisionClientAdapter
 
     GROQ_AVAILABLE = True
 except ImportError:
     GroqPackageClient = None
+    GroqVisionClientAdapter = None
     GROQ_AVAILABLE = False
 
 # Optional Ollama integration (official client with host config)
@@ -306,7 +309,14 @@ class ProcessingManager:
             self._api_client = None  # Will hold the reusable API client
             engine = self.session.engine
 
-            if engine.provider == "local":
+            if engine.provider == "openrouter":
+                # Reusable OpenRouter vision client; tier 1 (logprobs) and
+                # tier 3 (semantic JSON) scoring share it with regular tagging.
+                self._api_client = openrouter_utils.OpenRouterClient(
+                    token=lambda: engine.api_key or None
+                )
+                self.logger.info("OpenRouter client initialized (reused for all items)")
+            elif engine.provider == "local":
                 self._init_local_model()
             elif engine.provider == "groq_package":
                 if not GROQ_AVAILABLE:
@@ -1011,6 +1021,52 @@ class ProcessingManager:
             return
         self._process_single_item(item)
 
+    def _score_keywords_cloud(self, engine, path: str, mode: str):
+        """Run the keyword-scoring ladder for cloud vision providers.
+
+        Builds the tier-1 (logprob) and tier-3 (vision chat) clients for the
+        configured provider and delegates to the shared orchestrator. Provider
+        construction failures raise; the caller degrades per the "hide on
+        failure" contract shared with local scoring.
+        """
+        logprob_factory = None
+        vision_factory = None
+
+        if engine.provider == "groq_package":
+            groq_client = self._api_client
+            if groq_client is None:
+                raise RuntimeError("Groq client not initialized for scoring")
+            model_id = (
+                engine.model_id or "meta-llama/llama-4-scout-17b-16e-instruct"
+            )
+
+            def logprob_factory():
+                # Pick up the current (possibly rotated) key, mirroring the
+                # per-item refresh the regular tagging path performs.
+                groq_client.api_key = engine.groq_api_key
+                return groq_client, model_id
+
+            def vision_factory():
+                return GroqVisionClientAdapter(groq_client, engine), model_id
+        elif engine.provider == "openrouter":
+            openrouter_client = self._api_client
+            if openrouter_client is None:
+                raise RuntimeError("OpenRouter client not initialized for scoring")
+
+            def logprob_factory():
+                return openrouter_client, engine.model_id
+
+            def vision_factory():
+                return openrouter_client, engine.model_id
+
+        return keyword_scoring_adapters.score_keywords(
+            engine,
+            path,
+            mode=mode,
+            logprob_client_factory=logprob_factory,
+            vision_client_factory=vision_factory,
+        )
+
     def _process_single_item(self, item):
         """
         Process a single image item through the complete AI tagging pipeline.
@@ -1129,40 +1185,121 @@ class ProcessingManager:
                 mode = "both"
 
             # Handle probability scoring for local models
+            # score_result carries the tier-annotated contract; prob_dict is
+            # the legacy post-threshold {candidate: score} map kept for the
+            # results export (and existing tests) below.
+            score_result = None
             prob_dict = {}
             if engine.provider == "local" and mode != "llm":
                 try:
-                    prob_dict = huggingface_utils.run_local_logprob_inference(
-                        self.model,
+                    score_result = keyword_scoring_adapters.score_keywords(
+                        engine,
                         str(path),
-                        engine.probability_candidates,
-                        device=0 if engine.device == "cuda" else -1,
+                        mode=mode,
+                        local_pipeline=self.model,
                     )
-                    # Log each candidate score and whether it passes the threshold
-                    # (requirement: display per-option probabilities in the log)
-                    threshold = engine.probability_threshold
-                    for candidate, score in prob_dict.items():
-                        passed = threshold <= 0.0 or score >= threshold
-                        self.log(
-                            f"  {candidate}: {score:.3f} "
-                            f"{'PASS' if passed else 'FAIL'}"
-                        )
-                    # Apply optional threshold filter
-                    if threshold > 0.0:
-                        prob_dict = {
-                            k: v for k, v in prob_dict.items()
-                            if v >= threshold
-                        }
+                    prob_dict = score_result.score_map
+                    if (
+                        score_result.tier == keyword_scoring_adapters.SCORING_TIER.UNAVAILABLE
+                        and all(score == 0.0 for score in prob_dict.values())
+                    ):
+                        # Scoring did not run (or failed): surface the reason and
+                        # continue with an empty map so the legacy fallbacks apply.
+                        for note in score_result.notes:
+                            self.logger.warning(f"Probability scoring unavailable: {note}")
+                        score_result = None
+                        prob_dict = {}
+                    else:
+                        # Log each candidate score and whether it passes the
+                        # threshold (requirement: display per-option probabilities
+                        # in the log)
+                        threshold = engine.probability_threshold
+                        for candidate, score in prob_dict.items():
+                            passed = threshold <= 0.0 or score >= threshold
+                            self.log(
+                                f"  {candidate}: {score:.3f} "
+                                f"{'PASS' if passed else 'FAIL'}"
+                            )
+                        # Apply optional threshold filter
+                        if threshold > 0.0:
+                            prob_dict = {
+                                k: v for k, v in prob_dict.items()
+                                if v >= threshold
+                            }
+                            score_result = (
+                                keyword_scoring.build_thresholded_view(
+                                    score_result, threshold
+                                )
+                            )
                 except Exception as exc:
                     # Requirement: hide on failure - continue with normal flow
                     self.logger.warning(
                         f"Local probability inference failed ({type(exc).__name__}): {exc}"
                     )
+                    score_result = None
                     prob_dict = {}
 
             result = None
 
-            probability_only = mode == "probability" and engine.provider == "local"
+            # Cloud keyword scoring (tier 1 calibrated logprobs, or tier 3
+            # semantic JSON fallback). Local scoring ran above; this block
+            # gives cloud vision providers the same probability pass.
+            if (
+                score_result is None
+                and engine.provider in ("groq_package", "openrouter")
+                and mode != "llm"
+            ):
+                try:
+                    score_result = self._score_keywords_cloud(
+                        engine, str(path), mode
+                    )
+                    if score_result is not None:
+                        prob_dict = score_result.score_map
+                        if (
+                            score_result.tier
+                            == keyword_scoring_adapters.SCORING_TIER.UNAVAILABLE
+                            and all(score == 0.0 for score in prob_dict.values())
+                        ):
+                            # Scoring did not run: surface the reason and
+                            # continue with an empty map so the legacy
+                            # probability-only LLM fallback applies.
+                            for note in score_result.notes:
+                                self.logger.warning(
+                                    f"Cloud probability scoring unavailable: {note}"
+                                )
+                            score_result = None
+                            prob_dict = {}
+                        else:
+                            threshold = engine.probability_threshold
+                            for candidate, score in prob_dict.items():
+                                passed = threshold <= 0.0 or score >= threshold
+                                self.log(
+                                    f"  {candidate}: {score:.3f} "
+                                    f"{'PASS' if passed else 'FAIL'}"
+                                )
+                            if threshold > 0.0:
+                                prob_dict = {
+                                    k: v for k, v in prob_dict.items()
+                                    if v >= threshold
+                                }
+                                score_result = (
+                                    keyword_scoring.build_thresholded_view(
+                                        score_result, threshold
+                                    )
+                                )
+                except Exception as exc:
+                    # Hide on failure — mirror the local scoring contract.
+                    self.logger.warning(
+                        f"Cloud probability scoring failed ({type(exc).__name__}): {exc}"
+                    )
+                    score_result = None
+                    prob_dict = {}
+
+            probability_only = mode == "probability" and engine.provider in (
+                "local",
+                "groq_package",
+                "openrouter",
+            )
 
             if probability_only and prob_dict:
                 # ---------------------------------------------------------------
@@ -1588,15 +1725,19 @@ class ProcessingManager:
             )
             self.log(f"Result: {tags_str}")
 
-            # Store result for export/review in Step 4
-            self.session.results.append(
-                {
-                    "filename": filename if is_daminion else path.name,
-                    "status": status,
-                    "tags": tags_str,
-                    "probabilities": prob_dict,
-                }
-            )
+            # Store result for export/review in Step 4. The legacy
+            # "probabilities" key (post-threshold score map) is preserved for
+            # the export and existing consumers; "scoring" adds the tier-
+            # annotated contract when a scoring pass ran.
+            result_entry = {
+                "filename": filename if is_daminion else path.name,
+                "status": status,
+                "tags": tags_str,
+                "probabilities": prob_dict,
+            }
+            if score_result is not None:
+                result_entry["scoring"] = score_result.to_plain_dict()
+            self.session.results.append(result_entry)
 
         except Exception as e:
             # ===============================================================

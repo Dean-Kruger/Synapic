@@ -25,6 +25,7 @@ from typing import List, Tuple, Optional, Any, Dict
 from src.core import config
 
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 SITE_URL = "https://github.com/deanable/Synapic"
 SITE_NAME = "Synapic"
 
@@ -632,3 +633,184 @@ def run_inference_api(
             logger.exception(f"OpenRouter API inference failed on fallback: {e}")
             raise ValueError(f"OpenRouter inference failed: {e}")
 
+
+
+class OpenRouterClient:
+    """Reusable OpenRouter vision chat client.
+
+    Implements both chat protocols used by the keyword-scoring ladder:
+
+    - ``chat_with_image`` — plain VLM call returning response text
+      (satisfies ``VisionChatClient`` for tier 3 / regular tagging).
+    - ``chat_with_image_logprobs`` — a ``max_tokens=1`` completion with
+      ``logprobs`` enabled, returning the first token's top alternatives
+      as ``{token: logprob}`` (satisfies ``LogprobChatClient`` for
+      tier 1 calibrated scoring). Returns ``None`` when the model does
+      not return logprob data, which the scoring orchestrator treats as
+      "degrade to tier 3".
+
+    The API key is injected via a callable rather than stored, so key
+    sources can change between calls without re-instantiating.
+    """
+
+    def __init__(self, token_provider=None, token: Optional[str] = None):
+        self._token_provider = token_provider
+        self._token = token
+
+    def _token_value(self) -> Optional[str]:
+        if self._token_provider is not None:
+            return self._token_provider()
+        return self._token
+
+    @staticmethod
+    def _headers(token: Optional[str], with_content_type: bool = True) -> Dict[str, str]:
+        headers = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        headers["HTTP-Referer"] = SITE_URL
+        headers["X-Title"] = SITE_NAME
+        if with_content_type:
+            headers["Content-Type"] = "application/json"
+        return headers
+
+    def chat_with_image(self, model_name: str, prompt: str, image_path: str) -> str:
+        """Send a vision prompt and return the assistant's response text."""
+        import base64
+        from pathlib import Path
+
+        img_path = Path(image_path)
+        if not img_path.exists():
+            return f"Error: Image not found: {image_path}"
+
+        with open(img_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        body = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64}",
+                                "detail": "auto",
+                            },
+                        },
+                    ],
+                }
+            ],
+            "stream": False,
+        }
+        del b64
+
+        try:
+            resp = _HTTP_SESSION.post(
+                OPENROUTER_CHAT_URL,
+                headers=self._headers(self._token_value()),
+                json=body,
+                timeout=60,
+            )
+            resp.raise_for_status()
+            resp_json = resp.json()
+            resp.close()
+
+            choices = resp_json.get("choices") or []
+            if not choices:
+                return f"Error: empty response from OpenRouter ({model_name})"
+            message = choices[0].get("message") or {}
+            content = message.get("content")
+            if isinstance(content, str):
+                return content
+            # Some models return structured content lists; stringify as fallback.
+            return str(content) if content is not None else ""
+        except Exception as e:
+            return f"Error calling OpenRouter chat: {e}"
+
+    def chat_with_image_logprobs(
+        self, model_name: str, prompt: str, image_path: str
+    ) -> Optional[Dict[str, float]]:
+        """Return first-token logprobs for the candidate-letter prompt (tier 1).
+
+        Uses ``max_tokens=1`` with ``logprobs`` enabled; the top
+        alternatives of the single generated token are returned as
+        ``{token: logprob}`` (natural log, typically the top 20).
+        Returns ``None`` when the endpoint/model returns no logprob data
+        (callers degrade to tier 3); raises ``RuntimeError`` on transport
+        or HTTP failures so the failure is recorded instead of silently
+        misread.
+        """
+        import base64
+        from pathlib import Path
+
+        img_path = Path(image_path)
+        if not img_path.exists():
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
+        with open(img_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+
+        body = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64}",
+                                "detail": "auto",
+                            },
+                        },
+                    ],
+                }
+            ],
+            "stream": False,
+            "max_tokens": 1,
+            "temperature": 0.0,
+            "logprobs": True,
+            "top_logprobs": 20,
+        }
+        del b64
+
+        try:
+            resp = _HTTP_SESSION.post(
+                OPENROUTER_CHAT_URL,
+                headers=self._headers(self._token_value()),
+                json=body,
+                timeout=60,
+            )
+            resp.raise_for_status()
+            resp_json = resp.json()
+            resp.close()
+        except Exception as e:
+            raise RuntimeError(f"OpenRouter logprob call failed: {e}")
+
+        try:
+            choices = resp_json.get("choices") or []
+            if not choices:
+                return None
+            choice = choices[0]
+            logprobs_obj = choice.get("logprobs") or {}
+            content = logprobs_obj.get("content") or []
+            if not content:
+                # Model/endpoint accepted the request but returned no
+                # logprob payload — treat as unsupported.
+                return None
+            top_list = content[0].get("top_logprobs") or []
+
+            result: Dict[str, float] = {}
+            for alt in top_list:
+                token = str(alt.get("token", "")).strip()
+                lp = alt.get("logprob")
+                if token and lp is not None and token not in result:
+                    result[token] = float(lp)
+            return result or None
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            raise RuntimeError(
+                f"Could not parse logprobs from OpenRouter response: {e}"
+            )

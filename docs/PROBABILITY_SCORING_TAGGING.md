@@ -1,10 +1,42 @@
 # Probability-Based Image Tagging & Scoring
 
-This document provides a technical specification and implementation guide for extracting mathematically calibrated confidence scores (probabilities) from vision models. 
+This document covers two related but distinct topics:
+
+1. **The API scoring design reference** (Methods 1 and 2 below) — how a
+   *cloud LLM/VLM* can be made to emit calibrated confidence scores using
+   token logprobs or constrained JSON output.
+2. **What the Synapic local implementation actually does today** — which is
+   *not* calibrated logprob extraction. The local path reuses an
+   `image-classification` pipeline and reports its per-label confidence
+   scores.
+
+> **Read this first:** the section titled *Local Model Implementation
+> (Synapic Application)* describes shipping behavior. The two "Method"
+> sections above it are a design reference for API providers and are
+> **not** what the desktop app currently executes for local models.
 
 ---
 
-## Technical Decision Matrix
+## Scope: what "scoring user keywords" means here
+
+Synapic does not score arbitrary free-form user keywords. The scoring
+feature is the **candidate-token probability pass**:
+
+- The user enters a comma-separated list of **candidate tokens** in Step 2
+  (Local provider tab).
+- For each processed image, every candidate receives a score in `[0.0, 1.0]`.
+- In **Probability-only** tagging mode, the top-scoring candidate becomes
+  the Category and every candidate passing the threshold becomes a Keyword.
+- In **Both** mode, the scores are logged and stored alongside the normal
+  LLM/caption flow.
+
+A candidate only produces a meaningful score when it corresponds to one of
+the *classification model's* trained labels. This constraint is enforced
+loudly (see *Mismatch behavior* below).
+
+---
+
+## Technical Decision Matrix (API design reference)
 
 Choose the appropriate method based on API capabilities:
 
@@ -163,7 +195,7 @@ def parse_and_normalize_json_probs(raw_json: str, candidates: list) -> Dict[str,
 
 ---
 
-## Verification & Implementation Checklist
+## Verification & Implementation Checklist (API methods)
 
 An implementing agent or developer must verify the following criteria:
 
@@ -175,21 +207,115 @@ An implementing agent or developer must verify the following criteria:
 - [ ] **Sum-to-One Invariant**: Resulting dictionary values sum to exactly `1.0` (within a tolerance of `1e-9`).
 
 ---
-## Local Model Implementation (Synapic Application)
 
-The Synapic desktop application implements probability scoring for local HF models via:
+## Local Model Implementation (Synapic Application) — actual behavior
 
-### UI Controls
-- In Step 2 (Engine selection), under the Local provider tab, expand "Probability Scoring (Local only)"
-- Toggle "Enable calibrated probabilities" to activate the feature
-- Enter candidate tokens as comma-separated values (e.g., `A,B,C,D`) or one per line
-- Optional: Set probability threshold (0.0-1.0) to filter low-confidence candidates
+Entry point: `run_local_logprob_inference()` in
+`src/core/huggingface_utils.py`. Wired in
+`ProcessingManager._process_single_item()` (`src/core/processing.py`),
+configured from `EngineConfig.probability_*` (`src/core/session.py`),
+and edited in the Local provider tab
+(`src/ui/steps/provider_tab_local.py`).
 
-### Processing & Logging
-- When enabled, the application logs a line for each processed image:
-  `Probabilities: {'A': 0.85, 'B': 0.10, 'C': 0.04, 'D': 0.01}`
-- The probability map is also stored in the session result for export
-- On failure (model doesn't support logprobs), the feature is hidden and normal caption flow continues
+### What the scores actually are — read before trusting them
 
-### Configuration Persistence
-- Settings are saved to `~/.synapic_v2_config.json` and restored on application restart
+| Question | Answer |
+| :--- | :--- |
+| Are these calibrated logprobs from a prompted LLM? | **No.** The local path never extracts token logprobs. |
+| Are they softmax over raw classification-head logits? | **No.** The pipeline returns post-processed per-label confidences (usually softmax over the head, but transformers decides; Synapic does not touch raw logits). |
+| Are they temperature-scaled or Platt-scaled? | **No.** No calibration is performed or claimed. |
+| What are they, precisely? | The `image-classification` pipeline's `score` for the model label that the user's candidate token was **matched to**. |
+| Do they sum to 1.0 across the user's candidates? | **No.** Each score is that label's confidence over the *model's full label space*, so the user-visible map does not sum to one and is not a distribution over the candidate set. |
+| Can two candidates receive the same score? | **Yes** — when both map to the same model label. |
+
+Treat the scores as **relative confidences over the model's label space,
+surfaced through candidate tokens**, not as a calibrated probability
+distribution over the user's keywords.
+
+### How a candidate is matched to a model label
+
+For each candidate, in order:
+
+1. **Normalized exact match** — case-insensitive, whitespace-stripped
+   lookup against the labels the pipeline returned (`" cat "` → `"Cat"`).
+2. **Fuzzy fallback** — `difflib.SequenceMatcher` string similarity
+   (`_fuzzy_match_label`), full-match cutoff `0.6`; a substring/prefix
+   match qualifies at cutoff `0.45` when the candidate is ≥ 3 characters
+   (so placeholders like `"A"` never attach to a label). Example:
+   `"indoor"` → `"indoor office"`.
+3. **No match** — the candidate scores `0.0`.
+
+**ML caveat:** the fuzzy fallback is *string* similarity, not semantic
+similarity. A fuzzy-matched score means "confidence of the nearest
+label *string*," which may be a different concept from what the user
+typed.
+
+### Pipeline behavior
+
+- An already-loaded `Pipeline` is **reused**; the pipeline factory is
+  never invoked per image (rebuilding would reload model weights per
+  image and is treated as a test-visible error).
+- `top_k` is derived from the model config's `num_labels` (fallback
+  `10_000`) so the pipeline's default `top_k=5` truncation never hides a
+  label the user asked about.
+
+### Limits
+
+- **Local provider only.** Cloud providers (Groq, OpenRouter, Ollama,
+  Nvidia, Google AI, Cerebras, HF Inference API) do not run this pass.
+- **`image-classification` models only.** A loaded pipeline with any
+  other task raises `ValueError`; captioning/VLM models do not expose
+  per-label probabilities.
+- **Candidates must correspond to the model's label space.** A
+  classification model can only score its own trained labels; arbitrary
+  concepts score `0.0` or fail the run (see below).
+- **Threshold semantics are separate from the global tag threshold.**
+  The *Candidate Probability Threshold* (0.0–1.0, Local tab) filters the
+  candidate score map. The *Confidence Threshold* on the main tagging
+  step (1–100, `engine.confidence_threshold`) filters extracted
+  LLM/classification tags. They are different knobs.
+- **Scores are not a distribution over the candidate set** (see table
+  above) — do not compare them as if they summed to one.
+
+### Mismatch and failure behavior
+
+| Stage | Behavior |
+| :--- | :--- |
+| **UI, config time** | The Local tab runs a pre-flight check (`summarize_candidate_compatibility`) comparing the candidate list to the model's cached `id2label` labels, and shows an amber warning when no candidate matches exactly, when some match only fuzzily, or when nothing matches. Exact matches show no warning. |
+| **Runtime, all candidates unmatched** | `ValueError` is raised with the model's label sample and the full candidate list — never a silent all-zero map. In the pipeline this is caught and logged as a warning; `prob_dict` becomes `{}` and processing continues. |
+| **Runtime, partial mismatch** | Unmatched candidates score `0.0`; matched ones score normally. No error. |
+| **Runtime, non-classification pipeline** | `ValueError` ("requires an image-classification pipeline"); treated the same as above — probability pass skipped, flow continues. |
+| **Probability-only mode with empty scores** | Falls back to LLM tagging instead of writing zero tags. |
+| **Both / LLM mode with empty scores** | Normal LLM flow proceeds; results record `probabilities: {}`. |
+
+### Logging and persistence
+
+- Per image, one line per candidate is logged with PASS/FAIL against the
+  threshold: `  A: 0.850 PASS`, `  B: 0.100 FAIL`, …
+- A summary line is logged in probability-only mode:
+  `Probability tagging: category=<top>, keywords=[…]`.
+- The (threshold-filtered) map is stored per result as
+  `session.results[i]["probabilities"]` for export.
+- Settings persist via the normal engine config path
+  (`probability_mode`, `probability_enabled`, `probability_candidates`,
+  `probability_threshold`).
+
+---
+
+## Configuring it (UI)
+
+- Step 2 → **Local Inference** tab → **Tagging Mode**: `LLM only`,
+  `Probability only`, or `Both`.
+- **Candidate Tokens**: comma/semicolon/newline separated; preloaded
+  from the model's label set when one exists, with autocomplete over
+  those labels.
+- **Candidate Probability Threshold**: slider 0–100%; candidates below
+  it are dropped from the stored/derived score map (`0.0` disables
+  filtering).
+
+## Configuration Persistence
+
+- Settings are saved with the engine config (see `src/utils/config_manager.py`,
+  default file `~/.synapic_v2_config.json`) and restored on restart.
+  Legacy configs that only set `probability_enabled=True` load as mode
+  `"both"`.

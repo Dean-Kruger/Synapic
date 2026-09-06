@@ -258,8 +258,10 @@ class LocalProviderTab(ProviderTabBase):
         self._autocomplete_buttons: list[ctk.CTkButton] = []
         self._current_label_tokens: list[str] = []
 
-        # Probability threshold (slider from less-strict 0% to strict 100%)
-        ctk.CTkLabel(self.probability_content, text="Probability Threshold:").grid(
+        # Probability threshold — filters the *candidate* probability map before it is
+        # used for tagging. This is separate from the global confidence threshold on the
+        # main tagging step (which filters extracted tags; it uses a 1-100 scale).
+        ctk.CTkLabel(self.probability_content, text="Candidate Probability Threshold:").grid(
             row=1, column=0, sticky="w", padx=(0, 10)
         )
         self.threshold_value_label = ctk.CTkLabel(
@@ -275,7 +277,7 @@ class LocalProviderTab(ProviderTabBase):
 
         ctk.CTkLabel(
             slider_row,
-            text="Less strict",
+            text="Pass more candidates",
             font=("Roboto", 10),
             text_color="gray",
         ).grid(row=0, column=0, padx=(0, 10))
@@ -291,10 +293,25 @@ class LocalProviderTab(ProviderTabBase):
 
         ctk.CTkLabel(
             slider_row,
-            text="Strict",
+            text="Pass fewer candidates",
             font=("Roboto", 10),
             text_color="gray",
         ).grid(row=0, column=2, padx=(10, 0))
+
+        # CLIP embedding rescue (opt-in). When the model's label space cannot
+        # score the candidates at all, the run can fall back to CLIP
+        # image-text similarity — but CLIP is a ~600MB download on first use,
+        # so this never happens unless the user asks for it here.
+        self.embedding_rescue_var = ctk.BooleanVar(value=False)
+        self.embedding_rescue_checkbox = ctk.CTkCheckBox(
+            self.probability_content,
+            text="Rescue unmatched candidates with CLIP similarity (downloads ~600MB model on first use; scores are not calibrated)",
+            variable=self.embedding_rescue_var,
+            font=("Roboto", 11),
+        )
+        self.embedding_rescue_checkbox.grid(
+            row=3, column=0, columnspan=2, sticky="w", padx=(0, 10), pady=(5, 0)
+        )
 
         # Populate from any previously saved session values
         self._sync_probability_controls_from_session()
@@ -541,6 +558,10 @@ class LocalProviderTab(ProviderTabBase):
         self.threshold_slider.set(threshold)
         self.threshold_value_label.configure(text=f"{round(threshold * 100)}%")
 
+        self.embedding_rescue_var.set(
+            bool(getattr(engine, "embedding_rescue_enabled", False))
+        )
+
         self._toggle_probability_section()
 
     def add_cached_model_item(self, model_id, size_str, capability, is_classification=True):
@@ -581,34 +602,81 @@ class LocalProviderTab(ProviderTabBase):
         """Handle local model selection."""
         self.local_model_var.set(model_id)
         self._preload_candidate_tokens(model_id)
-
-        # Warn if the model doesn't support probability scoring but a
-        # probability mode is selected, so the user learns immediately
-        # rather than after a full batch produces zero tags.
-        mode = self.probability_mode_var.get()
-        if mode in ("probability", "both"):
-            try:
-                from src.core import huggingface_utils
-                models = huggingface_utils.find_local_models()
-                info = models.get(model_id, {})
-                task = info.get("suggested_task", "")
-                if task and task != "image-classification":
-                    self.model_status_label.configure(
-                        text=(
-                            f"⚠ {model_id} is a '{task}' model — "
-                            "probability scoring requires an "
-                            "'image-classification' model."
-                        ),
-                        text_color="#FF8C00",
-                    )
-                    return
-            except Exception:
-                pass
-
+        self._update_probability_compatibility_warning()
         self.model_status_label.configure(
             text="✓ Model selected — click 'Use for Local Inference' to confirm",
             text_color="#2FA572",
         )
+
+    def _update_probability_compatibility_warning(self):
+        """Show an early, explicit warning when the candidate set is incompatible
+        with the selected local classification model.
+
+        This is a pre-flight check only. It mirrors the logic in
+        :func:`~src.core.huggingface_utils.run_local_logprob_inference` so users
+        see problems at config time instead of mid-batch.
+        """
+        if not hasattr(self, "probability_mode_var"):
+            return
+
+        mode = self.probability_mode_var.get()
+        if mode == "llm":
+            self._clear_probability_warning()
+            return
+
+        model_id = self.local_model_var.get()
+        if not model_id:
+            self._clear_probability_warning()
+            return
+
+        try:
+            from src.core import huggingface_utils
+
+            candidates = self._parse_probability_candidates()
+            labels = huggingface_utils.get_model_label_tokens(model_id)
+            summary = huggingface_utils.summarize_candidate_compatibility(candidates, labels)
+
+            if summary["total"] == 0:
+                self._clear_probability_warning()
+                return
+
+            if summary["unmatched"] and not summary["exact"] and not summary["fuzzy"]:
+                self.model_status_label.configure(
+                    text=(
+                        "⚠ Probability scoring will likely fail: none of the candidate tokens "
+                        f"match {model_id}'s labels.\n"
+                        f"Details: {summary['reason']}"
+                    ),
+                    text_color="#FF8C00",
+                )
+                return
+
+            if not summary["exact"] and (summary["fuzzy"] or summary["unmatched"]):
+                self.model_status_label.configure(
+                    text=(
+                        "⚠ Probability scoring is usable, but not exact: "
+                        f"{summary['reason']}\n"
+                        "Candidates that do not match a model label score 0.0, "
+                        "and fuzzy matches score the nearest model label, not the candidate concept."
+                    ),
+                    text_color="#FF8C00",
+                )
+                return
+
+            self._clear_probability_warning()
+        except Exception as e:
+            logger.debug(f"Could not check probability candidate compatibility for {model_id}: {e}")
+            self._clear_probability_warning()
+
+    def _clear_probability_warning(self):
+        """Restore the normal selection status text after a compatibility check."""
+        if hasattr(self, "probability_mode_var") and self.probability_mode_var.get() != "llm":
+            if not self.local_model_var.get():
+                return
+            self.model_status_label.configure(
+                text="✓ Model selected — click 'Use for Local Inference' to confirm",
+                text_color="#2FA572",
+            )
 
     def _preload_candidate_tokens(self, model_id):
         """Preload the candidate tokens from the model's label set.
@@ -660,6 +728,9 @@ class LocalProviderTab(ProviderTabBase):
         self.session.engine.probability_enabled = mode != "llm"
         self.session.engine.probability_candidates = self._parse_probability_candidates()
         self.session.engine.probability_threshold = self._parse_probability_threshold()
+        self.session.engine.embedding_rescue_enabled = bool(
+            self.embedding_rescue_var.get()
+        )
 
     def save_local(self):
         """Save the local provider configuration."""

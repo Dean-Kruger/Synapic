@@ -1,7 +1,10 @@
 ; Synapic Installer
 ; NSIS Script to create installer for Synapic
 
-!define VERSION "2.5.0"
+; Version: set via command line (makensis /DVERSION=x.y.z), or defaults here
+!ifndef VERSION
+  !define VERSION "2.5.0"
+!endif
 !define PRODUCT_NAME "Synapic"
 !define PRODUCT_VERSION "${VERSION}"
 !define PRODUCT_PUBLISHER "Synapic Project"

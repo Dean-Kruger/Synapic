@@ -67,7 +67,7 @@ class Step4Results(ctk.CTkFrame):
         # Results Grid (Simple scrollable frame)
         ctk.CTkLabel(self.container, text="Session Details:", anchor="w").grid(row=2, column=0, sticky="nw", padx=20, pady=(10,0))
         
-        self.results_frame = ctk.CTkScrollableFrame(self.container, label_text="Filename | Status | Tags")
+        self.results_frame = ctk.CTkScrollableFrame(self.container, label_text="Filename | Status | Tags | Scoring")
         self.results_frame.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
 
         self.action_frame = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -108,7 +108,12 @@ class Step4Results(ctk.CTkFrame):
             widget.destroy()
             
         for res in s.results:
-            self.add_result_row(res.get("filename", "?"), res.get("status", "?"), res.get("tags", ""))
+            self.add_result_row(
+                res.get("filename", "?"),
+                res.get("status", "?"),
+                res.get("tags", ""),
+                scoring=res.get("scoring"),
+            )
 
     def create_metric(self, parent, label: str, value: str, col: int, color: str = "white"):
         """
@@ -128,7 +133,37 @@ class Step4Results(ctk.CTkFrame):
         ctk.CTkLabel(frame, text=value, font=("Roboto", 30, "bold"), text_color=color).pack()
         ctk.CTkLabel(frame, text=label, font=("Roboto", 12)).pack()
 
-    def add_result_row(self, filename, status, tags):
+    # Human-readable badge text and color per scoring tier. Only tier 1
+    # (logprob) is calibrated; label-confidence and semantic-JSON scores are
+    # explicitly labeled as not calibrated so users never mistake them for
+    # true probabilities (docs/KEYWORD_SCORING_DESIGN.md §3).
+    SCORING_BADGES = {
+        "logprob": ("logprob · calibrated", "green"),
+        "label_confidence": ("label conf. · not calibrated", "orange"),
+        "embedding": ("CLIP similarity · not calibrated", "orange"),
+        "semantic_json": ("semantic JSON · not calibrated", "orange"),
+        "unavailable": ("scoring unavailable", "gray"),
+    }
+
+    @classmethod
+    def scoring_badge(cls, scoring):
+        """Return (badge_text, color) for a result's scoring payload, or None.
+
+        Results produced before the tier-annotated scoring contract (no
+        "scoring" key) get no badge rather than a misleading default.
+        """
+        if not isinstance(scoring, dict):
+            return None
+        tier = str(scoring.get("tier", "") or "")
+        if not tier:
+            return None
+        badge = cls.SCORING_BADGES.get(tier)
+        if badge is not None:
+            return badge
+        # Unknown tier from a newer payload: show the raw tier honestly.
+        return (tier, "gray")
+
+    def add_result_row(self, filename, status, tags, scoring=None):
         row = ctk.CTkFrame(self.results_frame)
         row.pack(fill="x", pady=2)
         row.grid_columnconfigure(2, weight=1)
@@ -139,6 +174,18 @@ class Step4Results(ctk.CTkFrame):
         ctk.CTkLabel(row, text=status, width=80, text_color=color).grid(row=0, column=1, padx=5, sticky="w")
         
         ctk.CTkLabel(row, text=tags, anchor="w", justify="left", wraplength=700).grid(row=0, column=2, padx=5, sticky="ew")
+
+        badge = self.scoring_badge(scoring)
+        if badge is not None:
+            badge_text, badge_color = badge
+            ctk.CTkLabel(
+                row,
+                text=badge_text,
+                width=220,
+                anchor="w",
+                font=("Roboto", 11),
+                text_color=badge_color,
+            ).grid(row=0, column=3, padx=(5, 15), sticky="w")
 
     def open_logs(self):
         """Open the detailed log file (synapic.log)."""
@@ -205,12 +252,30 @@ class Step4Results(ctk.CTkFrame):
                 ])
                 writer.writerow(["Failed", session.failed_items])
                 writer.writerow([])
-                writer.writerow(["Filename", "Status", "Tags"])
+                writer.writerow([
+                    "Filename",
+                    "Status",
+                    "Tags",
+                    "Scoring Tier",
+                    "Calibrated",
+                    "Probabilities",
+                ])
                 for res in session.results:
+                    scoring = res.get("scoring")
+                    if not isinstance(scoring, dict):
+                        scoring = {}
+                    tier = scoring.get("tier", "")
+                    calibrated = scoring.get("calibrated")
+                    calibrated_text = (
+                        "" if calibrated is None else ("yes" if calibrated else "no")
+                    )
                     writer.writerow([
                         res.get("filename", "?"),
                         res.get("status", "?"),
                         res.get("tags", ""),
+                        tier,
+                        calibrated_text,
+                        self._format_probabilities(res.get("probabilities")),
                     ])
 
             logger.info(f"Report exported to {file_path}")
@@ -218,5 +283,23 @@ class Step4Results(ctk.CTkFrame):
         except Exception as e:
             logger.error(f"Failed to export report: {e}", exc_info=True)
             messagebox.showerror("Export Failed", f"Could not export report:\n{e}")
+    @staticmethod
+    def _format_probabilities(probabilities):
+        """Format a result's score map as "A=0.700; B=0.200" for CSV export.
+
+        Entries without a score map (e.g. results from runs with scoring
+        disabled) export as an empty cell. Non-float values are printed
+        as-is rather than crashing the export.
+        """
+        if not isinstance(probabilities, dict) or not probabilities:
+            return ""
+        parts = []
+        for keyword, score in probabilities.items():
+            try:
+                parts.append(f"{keyword}={float(score):.3f}")
+            except (TypeError, ValueError):
+                parts.append(f"{keyword}={score}")
+        return "; ".join(parts)
+
     def new_session(self):
         self.controller.show_step("Step1Datasource")

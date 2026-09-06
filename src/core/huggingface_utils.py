@@ -1693,6 +1693,133 @@ def get_model_label_tokens(model_id: str) -> list[str]:
         return []
 
 
+def summarize_candidate_compatibility(
+    candidates: list[str],
+    model_labels: list[str],
+    exact_cutoff: float = 0.6,
+    partial_cutoff: float = 0.45,
+) -> dict:
+    """
+    Summarize how a user-supplied candidate token list is likely to map onto
+    a model's label space.
+
+    This is a UI-time / pre-flight helper. It does **not** run inference and
+    does **not** change scoring behavior. It mirrors what
+
+    :func:`run_local_logprob_inference` will do at inference time so the UI can
+    warn users early when their candidate set is structurally incompatible with
+    the selected classification model.
+
+    Args:
+        candidates: User-supplied candidate tokens (may include placeholders like
+            "A,B,C,D" or free-form concepts).
+        model_labels: Ordered list of the model's classification labels.
+        exact_cutoff: Similarity cutoff treated as an exact-style match.
+        partial_cutoff: Similarity cutoff for substring/prefix fallback matches.
+
+    Returns:
+        Dict with keys:
+        - ``"exact"``: candidates with a normalized exact label match.
+        - ``"fuzzy"``: candidates that only matched via fuzzy/substring fallback.
+        - "`"unmatched"``: candidates the helper could not map to any label.
+        - ``"total"``: len(candidates).
+        - ``"reason"``: a short human-readable explanation suitable for a status
+          label or tooltip.
+    """
+    if not candidates:
+        return {
+            "exact": [],
+            "fuzzy": [],
+            "unmatched": [],
+            "total": 0,
+            "reason": "No candidate tokens provided.",
+        }
+
+    exact: list[str] = []
+    fuzzy: list[str] = []
+    unmatched: list[str] = []
+
+    normalized_labels = [lbl.strip().lower() for lbl in model_labels if lbl and lbl.strip()]
+
+    for candidate in candidates:
+        normalized = candidate.strip().lower()
+        if not normalized:
+            continue
+
+        if normalized in normalized_labels:
+            exact.append(candidate)
+            continue
+
+        matched = _fuzzy_match_label(
+            normalized, model_labels, cutoff=exact_cutoff, partial_cutoff=partial_cutoff
+        )
+        if matched is not None:
+            fuzzy.append(candidate)
+        else:
+            unmatched.append(candidate)
+
+    reason = _candidate_compatibility_reason(exact, fuzzy, unmatched, model_labels)
+    return {
+        "exact": exact,
+        "fuzzy": fuzzy,
+        "unmatched": unmatched,
+        "total": len(candidates),
+        "reason": reason,
+    }
+
+
+def _candidate_compatibility_reason(
+    exact: list[str],
+    fuzzy: list[str],
+    unmatched: list[str],
+    model_labels: list[str],
+) -> str:
+    """Build a short compatibility explanation for the candidate set."""
+    if not model_labels:
+        return "Model has no classification label set (e.g. a captioning/VLM model). Probability scoring is not available for this model."
+
+    if not exact and not fuzzy and unmatched:
+        sample = model_labels[:8]
+        if len(model_labels) > len(sample):
+            sample_text = ", ".join(sample) + "..."
+        else:
+            sample_text = ", ".join(sample)
+        return (
+            "None of the candidate tokens match this model's labels. "
+            "Probability scoring requires candidates that correspond to the model's actual classification labels. "
+            "Model labels include: {sample_text}."
+        )
+
+    if not exact and fuzzy and not unmatched:
+        return (
+            "No candidate matches this model's labels exactly. All candidates matched via fuzzy string similarity, "
+            "so scores reflect the nearest model label rather than the candidate concept itself."
+        )
+
+    if not exact and fuzzy and unmatched:
+        return (
+            "Some candidates matched the model's labels only via fuzzy similarity and some matched nothing. "
+            "Fuzzy matches score the nearest model label, not the candidate concept; unmatched candidates score 0.0."
+        )
+
+    if exact and not fuzzy and not unmatched:
+        return "All candidate tokens match this model's labels exactly."
+
+    if exact and fuzzy and not unmatched:
+        return (
+            "Some candidate tokens match this model's labels exactly and some matched only via fuzzy similarity. "
+            "Exact matches score the intended label; fuzzy matches score the nearest model label."
+        )
+
+    if exact and not fuzzy and unmatched:
+        return (
+            "Some candidate tokens match this model's labels exactly and some matched nothing. "
+            "Unmatched candidates will score 0.0."
+        )
+
+    return "Candidate tokens partially match this model's labels."
+
+
 def _get_pipeline_labels(pipe) -> list:
     """Return the model's ordered label set, if the config exposes one."""
     config = getattr(getattr(pipe, "model", None), "config", None)
@@ -1717,7 +1844,8 @@ def _fuzzy_match_label(
     prefix/substring of a compound model label (e.g. ``indoor`` ->
     ``indoor office``) also qualifies when it is at least 3 characters, so
     short token placeholders like ``A`` never accidentally attach to a label.
-    """
+
+    Important ML caveat: this is string similarity, not semantic similarity. """
     pairs = [(label, label.strip().lower()) for label in labels if label and label.strip()]
     if not pairs:
         return None
@@ -1828,9 +1956,24 @@ def run_local_logprob_inference(
     if probabilities and all(score == 0.0 for score in probabilities.values()):
         model_labels = _get_pipeline_labels(pipe) or scored_labels
         raise ValueError(
-            "Probability scoring: none of the candidates matched the model's "
-            f"labels. Candidates: {sorted(candidates)}. Model labels include: "
-            f"{model_labels[:8]}"
+            "Probability scoring: none of the candidate tokens matched the selected model's labels. "
+            "This usually means the candidate list is not compatible with this image-classification model "
+            "(for example placeholder tokens such as 'A,B,C,D' against an ImageNet model). "
+            "Choose candidates that correspond to the model's actual classification labels. "
+            f"Model labels include: {_format_label_sample(model_labels, scored_labels, n=8)}. "
+            f"Candidates: {sorted(candidates)}."
         )
 
     return probabilities
+
+
+def _format_label_sample(model_labels: list[str], scored_labels: list[str], n: int = 8) -> str:
+    """Return a readable sample of the model's labels for error / warning text."""
+    combined = list(dict.fromkeys(model_labels + scored_labels))
+    if not combined:
+        return "(label list unavailable)"
+    sample = combined[:n]
+    if len(combined) > len(sample):
+        return ", ".join(sample) + "..."
+
+    return ", ".join(sample)

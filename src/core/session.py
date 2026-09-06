@@ -110,6 +110,10 @@ class EngineConfig:
         system_prompt: Custom system prompt for LLM-based models
         task: Model task type - 'image-classification', 'zero-shot-image-classification',
               'image-to-text', or 'image-text-to-text'
+        device: Inference device for local models - 'cpu' or 'cuda' (GPU)
+        embedding_rescue_enabled: When True, allow tier 2.5 CLIP-embedding
+            scoring to rescue failed local probability passes (candidates
+            outside the model's label space). First use downloads ~600MB.
         confidence_threshold: Minimum confidence (1-100) for including tags in results
                             Lower = more permissive, Higher = more strict
         device: Inference device for local models - 'cpu' or 'cuda' (GPU)
@@ -131,6 +135,7 @@ class EngineConfig:
     probability_mode: str = "llm"  # 'llm', 'probability', or 'both'
     probability_candidates: list = field(default_factory=list)
     probability_threshold: float = 0.0
+    embedding_rescue_enabled: bool = False  # Opt-in: tier 2.5 CLIP rescue (~600MB download on first use)
 
     # Groq integration settings (optional)
     groq_base_url: str = ""  # Base URL for Groq API

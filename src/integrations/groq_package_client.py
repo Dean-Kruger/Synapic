@@ -13,7 +13,7 @@ import base64
 import os
 import threading
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 # Known patterns for vision-capable models on Groq
 # These models can accept image inputs in chat completions
@@ -176,6 +176,102 @@ class GroqPackageClient:
         finally:
             # Free the large messages dict containing the embedded base64 image
             del messages
+
+    def chat_with_image_logprobs(
+        self, model_name: str, prompt: str, image_path: str = None
+    ) -> Optional[Dict[str, float]]:
+        """Return first-token logprobs for the candidate-letter prompt (tier 1).
+
+        Sends the lettered classification prompt as an image+text message
+        with ``max_tokens=1`` and ``logprobs=True``, then extracts the top
+        logprobs of the single generated token into a mapping of candidate
+        letter -> natural-log probability.
+
+        Returns:
+            ``{letter: logprob}`` for the top alternatives of the first
+            output token (typically the top 20), or ``None`` when the SDK
+            or the model does not support logprobs — callers degrade to
+            tier 3 per the scoring ladder.
+
+        Raises:
+            RuntimeError: on API/transport failures so the orchestrator
+                records the failure (and can fall back to tier 3) instead
+                of misreading it as "logprobs unsupported".
+        """
+        client = self._ensure_client()
+        if client is None:
+            raise RuntimeError("Groq SDK not available for logprob scoring")
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ]
+
+        # Embed the image when provided (tier-1 scoring is a vision call).
+        if image_path:
+            if not is_vision_model(model_name):
+                raise RuntimeError(
+                    f"Model '{model_name}' does not support vision/image input "
+                    "for logprob scoring"
+                )
+            try:
+                with open(image_path, "rb") as f:
+                    b64 = base64.b64encode(f.read()).decode()
+            except Exception as e:
+                raise RuntimeError(f"Error reading image for logprob scoring: {e}")
+            messages[0]["content"].append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                }
+            )
+            del b64
+
+        try:
+            completion = client.chat.completions.create(
+                messages=messages,
+                model=model_name,
+                max_tokens=1,
+                temperature=0.0,
+                logprobs=True,
+                top_logprobs=20,
+            )
+        except TypeError as e:
+            # Older Groq SDK versions reject the logprobs/top_logprobs
+            # parameters entirely: treat as "not supported", not an error.
+            import logging
+            logging.getLogger(__name__).debug(
+                f"Groq SDK rejected logprobs parameters: {e}"
+            )
+            return None
+        except Exception as e:
+            raise RuntimeError(f"Groq logprob scoring call failed: {e}")
+
+        try:
+            choice = completion.choices[0]
+            logprobs_obj = getattr(choice, "logprobs", None)
+            first_content = getattr(logprobs_obj, "content", None) if logprobs_obj else None
+            if not first_content:
+                # SDK accepted the params but returned no logprob data
+                # (some models silently ignore the flag).
+                return None
+            top_list = getattr(first_content[0], "top_logprobs", None) or []
+
+            result: Dict[str, float] = {}
+            for alt in top_list:
+                token = str(getattr(alt, "token", "")).strip()
+                lp = getattr(alt, "logprob", None)
+                if token and lp is not None and token not in result:
+                    result[token] = float(lp)
+            return result or None
+        except (AttributeError, IndexError, TypeError, ValueError) as e:
+            raise RuntimeError(
+                f"Could not parse logprobs from Groq response: {e}"
+            )
 
     def list_models(self, dataset: Optional[str] = None, limit: int = 40) -> List[Dict[str, Any]]:
         """Fetch available models from Groq API.
@@ -348,4 +444,28 @@ class GroqPackageClient:
         # All keys exhausted
         logger.error(f"All {num_keys} Groq API keys exhausted. Last error: {last_error}")
         return f"Error: All {num_keys} API keys exhausted (quota/rate-limit). Last error: {last_error}"
+
+
+class GroqVisionClientAdapter:
+    """Adapt ``GroqPackageClient`` to the keyword-scoring ``VisionChatClient``
+    protocol (tier 3).
+
+    Groq's ``chat_with_image`` uses the signature ``chat_with_image(model,
+    prompt, ...)`` while the scoring protocol expects ``chat_with_image(
+    model_name, prompt, image_path)``; this thin wrapper also forwards key
+    rotation through ``chat_with_image_rotating`` so quota errors behave
+    exactly like the regular tagging path.
+    """
+
+    def __init__(self, client: "GroqPackageClient", engine_config: Any):
+        self._client = client
+        self._engine_config = engine_config
+
+    def chat_with_image(self, model_name: str, prompt: str, image_path: str) -> str:
+        return self._client.chat_with_image_rotating(
+            engine_config=self._engine_config,
+            model=model_name,
+            prompt=prompt,
+            image_path=image_path,
+        )
 

@@ -7,6 +7,7 @@ stack by replacing windowing modules with mocks.
 """
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.core.session import Session
@@ -77,17 +78,28 @@ class MockWidget:
 
 
 class MockCheckBox(MockWidget):
-    """Checkbox stand-in: select()/deselect()/get() -> 0 or 1."""
+    """Checkbox stand-in: select()/deselect()/get() -> 0 or 1.
+
+    Syncs a bound BooleanVar like real customtkinter, so production code
+    that reads ``variable.get()`` observes select()/deselect() calls.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._selected = False
+        self._variable = kwargs.get("variable")
+        self._selected = (
+            bool(self._variable.get()) if self._variable is not None else False
+        )
 
     def select(self):
         self._selected = True
+        if self._variable is not None:
+            self._variable.set(True)
 
     def deselect(self):
         self._selected = False
+        if self._variable is not None:
+            self._variable.set(False)
 
     def get(self):
         return 1 if self._selected else 0
@@ -125,6 +137,19 @@ class MockStringVar:
 
     def set(self, value):
         self._value = value
+
+    def get(self):
+        return self._value
+
+
+class MockBooleanVar:
+    """BooleanVar stand-in storing a Python bool like the real Tk variable."""
+
+    def __init__(self, *args, value=None, **kwargs):
+        self._value = bool(value) if value is not None else False
+
+    def set(self, value):
+        self._value = bool(value)
 
     def get(self):
         return self._value
@@ -188,6 +213,7 @@ module_mock.CTkScrollbar = MockWidget
 module_mock.CTkProgressBar = MockWidget
 module_mock.CTkSlider = MockSlider
 module_mock.CTkRadioButton = MockRadioButton
+module_mock.BooleanVar = MockBooleanVar
 module_mock.CTkTabview = MockWidget
 module_mock.CTkFont = MagicMock()
 module_mock.CTkToplevel = MockWidget
@@ -211,6 +237,7 @@ class MockEngine:
     probability_enabled = False
     probability_mode = "llm"
     probability_threshold = 0.0
+    embedding_rescue_enabled = False
 
 
 class MockSession:
@@ -412,3 +439,81 @@ def test_select_local_model_without_labels_keeps_candidates():
         tab.select_local_model("org/model")
 
     assert tab.candidate_entry.get() == "A,B,C,D"
+
+
+def test_embedding_rescue_defaults_off():
+    """The CLIP rescue checkbox is unchecked on a fresh session: the ~600MB
+    download must never happen unless the user asks for it."""
+    session = MockSession()
+    tab = make_tab(session)
+
+    assert tab.embedding_rescue_var.get() is False
+    tab.save_to_session()
+    assert session.engine.embedding_rescue_enabled is False
+
+
+def test_embedding_rescue_opt_in_saves_to_engine():
+    """Checking the box persists embedding_rescue_enabled=True in the engine."""
+    session = MockSession()
+    tab = make_tab(session)
+
+    tab.mode_both.select()
+    tab.embedding_rescue_checkbox.select()
+    tab.save_to_session()
+
+    assert session.engine.embedding_rescue_enabled is True
+
+    tab.embedding_rescue_checkbox.deselect()
+    tab.save_to_session()
+    assert session.engine.embedding_rescue_enabled is False
+
+
+def test_embedding_rescue_round_trips_through_config(tmp_path):
+    """Opting in survives save_local() -> config file -> fresh session,
+    alongside the other probability settings."""
+    session = Session()
+    tab = make_tab(session)
+
+    tab.mode_both.select()
+    tab.candidate_entry.delete(0, "end")
+    tab.candidate_entry.insert(0, "cat,dog")
+    tab.threshold_slider.set(0.25)
+    tab.embedding_rescue_checkbox.select()
+
+    cfg_path = tmp_path / "synapic_config.json"
+    with patch.object(config_manager, "CONFIG_PATH", cfg_path):
+        tab.save_local()
+
+    assert session.engine.embedding_rescue_enabled is True
+
+    fresh = Session()
+    with patch.object(config_manager, "CONFIG_PATH", cfg_path):
+        config_manager.load_config(fresh)
+    assert fresh.engine.embedding_rescue_enabled is True
+    assert fresh.engine.probability_mode == "both"
+    assert fresh.engine.probability_candidates == ["cat", "dog"]
+    assert fresh.engine.probability_threshold == 0.25
+
+
+def test_embedding_rescue_state_restores_into_ui():
+    """A session saved with the rescue enabled re-checks the box on load;
+    one saved without it leaves the box unchecked (legacy configs included)."""
+    session = MockSession(enabled=True, candidates=["X"])
+    session.engine.embedding_rescue_enabled = True
+    tab = make_tab(session)
+    tab.refresh()
+    assert tab.embedding_rescue_var.get() is True
+
+    legacy = MockSession(enabled=True, candidates=["X"])
+    # Pre-flag engine config: the attribute simply does not exist.
+    legacy.engine = SimpleNamespace(
+        provider="local",
+        model_id="",
+        task="image-classification",
+        probability_enabled=True,
+        probability_mode="both",
+        probability_candidates=["X"],
+        probability_threshold=0.0,
+    )
+    tab2 = make_tab(legacy)
+    assert tab2.embedding_rescue_var.get() is False

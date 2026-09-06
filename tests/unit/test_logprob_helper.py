@@ -186,7 +186,7 @@ def test_all_unmatched_candidates_raise_instead_of_silent_zeros():
         num_labels=2,
         outputs=[{"label": "cat", "score": 0.9}, {"label": "dog", "score": 0.1}],
     )
-    with pytest.raises(ValueError, match="none of the candidates matched"):
+    with pytest.raises(ValueError, match="none of the candidate tokens matched the selected model"):
         run_local_logprob_inference(pipe, "img.jpg", ["A", "B", "C", "D"], device=-1)
 
 
