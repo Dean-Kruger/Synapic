@@ -31,4 +31,4 @@ jobs:
           mypy src
       - name: Run tests
         run: |
-          PYTHONPATH=$PWD/src:$PYTHONPATH pytest -q --verbose --ignore=tests/test_ui_dedup.py --ignore=tests/ui/test_provider_tab_local.py --ignore=tests/unit/test_step4_export.py --ignore=tests/test_vector_embedder.py
+          PYTHONPATH=$PWD pytest -q --verbose --ignore=tests/test_ui_dedup.py --ignore=tests/ui/test_provider_tab_local.py --ignore=tests/unit/test_step4_export.py --ignore=tests/test_vector_embedder.py
