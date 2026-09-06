@@ -55,10 +55,8 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          $notes = "Automated build of Synapic $tag."
-          if (Test-Path RELEASE_NOTES.md) {
-            $notes = Get-Content RELEASE_NOTES.md -Raw
-          }
-          gh release create $tag "Synapic-Setup.exe#Synapic-Setup.exe" --title "Synapic $tag" --notes $notes --latest
+          # --generate-notes includes the annotated tag message plus commit list.
+          gh release create $tag "Synapic-Setup.exe" --generate-notes --latest `
+            || gh release upload $tag "Synapic-Setup.exe" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
