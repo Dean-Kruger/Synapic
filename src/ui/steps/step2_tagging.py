@@ -2286,9 +2286,9 @@ class DownloadManagerDialog(ctk.CTkToplevel):
             with ThreadPoolExecutor(max_workers=10) as executor:
                 results = list(executor.map(fetch_size, unique))
             self.after(0, lambda: self._show_prefetch_results(results) if self.winfo_exists() else None)
-        except Exception as e:
+        except Exception as exc:
             self.after(0, lambda: self.lbl_status.configure(
-                text=f"Could not load models: {e}", text_color="red"
+                text=f"Could not load models: {exc}", text_color="red"
             ) if self.winfo_exists() else None)
 
     def start_search(self):

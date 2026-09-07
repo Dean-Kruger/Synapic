@@ -492,7 +492,7 @@ def test_clip_scorer_model_loaded_once_and_reused(monkeypatch):
 
     s1 = TransformersCLIPScorer("m").cosine_similarities("a.jpg", ["x"])
     s2 = TransformersCLIPScorer("m").cosine_similarities("b.jpg", ["x"])
-    s3 = TransformersCLIPScorer("other").cosine_similarities("c.jpg", ["x"])
+    _ = TransformersCLIPScorer("other").cosine_similarities("c.jpg", ["x"])
 
     # One cached model per distinct model id.
     assert len(TransformersCLIPScorer._loaded_models) == 2
@@ -519,8 +519,6 @@ def test_clip_scorer_gpu_moves_inputs_and_model(monkeypatch):
     calls = []
     _install_fake_clip(monkeypatch, [[1.0, 0.0]], [[1.0, 0.0]], calls)
     _reset_clip_caches()
-
-    import types
 
     torch_stub = sys.modules["torch"]
     torch_stub.cuda.is_available = lambda: True
