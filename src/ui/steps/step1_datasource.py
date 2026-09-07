@@ -24,6 +24,7 @@ Author: Synapic Project
 
 import customtkinter as ctk
 import logging
+from collections import defaultdict
 from tkinter import messagebox
 from src.utils.background_worker import BackgroundWorker
 
@@ -929,10 +930,12 @@ class Step1Datasource(ctk.CTkFrame):
                         prev = self.controller.session.datasource.daminion_saved_search
                         if prev in self._ss_map and self._ss_map[prev]:
                             self.ss_var.set(prev)
-                    self.controller.session.datasource.daminion_saved_search_id = self._ss_map[prev][0]
-                    # TODO: Handle multiple IDs if needed
+                            self.controller.session.datasource.daminion_saved_search_id = self._ss_map[prev][0]
+                            # TODO: Handle multiple IDs if needed
                         else:
                             self.ss_var.set(ss_names[0])
+                            if self._ss_map.get(ss_names[0]):
+                                self.controller.session.datasource.daminion_saved_search_id = self._ss_map[ss_names[0]][0]
 
                 if hasattr(self, "col_dropdown"):
                     self.col_dropdown.configure(
