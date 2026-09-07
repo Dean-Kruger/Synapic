@@ -897,9 +897,12 @@ class Step1Datasource(ctk.CTkFrame):
 
             # 1. Saved Searches
             searches = client.get_saved_searches()
-            self._ss_map = {
-                s.get("name"): s.get("id") for s in searches if s.get("name")
-            }
+            self._ss_map = defaultdict(list)
+            for s in searches:
+                name = s.get("name")
+                sid = s.get("id")
+                if name and sid:
+                    self._ss_map[name].append(sid)
             ss_names = sorted(list(self._ss_map.keys())) if self._ss_map else []
 
             # 2. Shared Collections
@@ -924,8 +927,10 @@ class Step1Datasource(ctk.CTkFrame):
                     if ss_names:
                         # Try to restore previous selection
                         prev = self.controller.session.datasource.daminion_saved_search
-                        if prev in self._ss_map:
+                        if prev in self._ss_map and self._ss_map[prev]:
                             self.ss_var.set(prev)
+                    self.controller.session.datasource.daminion_saved_search_id = self._ss_map[prev][0]
+                    # TODO: Handle multiple IDs if needed
                         else:
                             self.ss_var.set(ss_names[0])
 
