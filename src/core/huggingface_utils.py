@@ -1787,7 +1787,7 @@ def _candidate_compatibility_reason(
         return (
             "None of the candidate tokens match this model's labels. "
             "Probability scoring requires candidates that correspond to the model's actual classification labels. "
-            "Model labels include: {sample_text}."
+            f"Model labels include: {sample_text}."
         )
 
     if not exact and fuzzy and not unmatched:

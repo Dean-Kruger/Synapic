@@ -30,6 +30,7 @@ import logging
 import tkinter.messagebox as messagebox
 from src.utils.background_worker import BackgroundWorker
 from src.utils.registry_config import load_ui_preferences, save_ui_preferences
+from src.core import config
 
 # Import provider tab classes
 from .provider_tab_local import create_local_tab

@@ -19,9 +19,7 @@ if "src.core" not in sys.modules:
 
 import pytest
 
-from src.core.keyword_scoring_adapters import (
-    _build_classification_prompt,
-)
+from src.core.keyword_scoring_adapters import _build_classification_prompt
 from src.core.session import DatasourceConfig, EngineConfig, Session
 
 
