@@ -625,7 +625,7 @@ class DaminionClient:
                         query=final_search,
                         index=current_index,
                         page_size=batch_size,
-                        max_items_count=100000,
+                        max_items_count=100000
                     )
                     batch_len = len(batch) if batch else 0
                     logger.debug(
@@ -662,7 +662,7 @@ class DaminionClient:
                         query=query,
                         index=current_index,
                         page_size=batch_size,
-                        max_items_count=100000,
+                        max_items_count=100000
                     )
                     batch_len = len(batch) if batch else 0
                     logger.debug(
@@ -692,7 +692,7 @@ class DaminionClient:
                     batch = self._api.collections.get_items(
                         collection_id=collection_id,
                         index=current_index,
-                        page_size=batch_size,
+                        page_size=batch_size
                     )
                     if not batch:
                         break
@@ -727,7 +727,7 @@ class DaminionClient:
                         operators=f"{tag_id},any",
                         index=current_index,
                         page_size=batch_size,
-                        max_items_count=100000,
+                        max_items_count=100000
                     )
                     batch_len = len(batch) if batch else 0
                     logger.debug(
